@@ -18,6 +18,8 @@ import (
 	"google.golang.org/api/option"
 )
 
+// === ТИПЫ ДАННЫХ ===
+
 type Player struct {
 	Name string `json:"name" firestore:"name"`
 }
@@ -41,24 +43,55 @@ type ipLimit struct {
 	resetTime time.Time
 }
 
+type FullPlayerData struct {
+	Name    string      `json:"name"`
+	Data    interface{} `json:"data"`
+	Records interface{} `json:"records"`
+}
+
+// === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ (ЛИМИТЕР И КЭШ) ===
+
 var (
-	limiterMu sync.Mutex
-	ipMap     = make(map[string]*ipLimit)
+	limiterMu   sync.Mutex
+	ipMap       = make(map[string]*ipLimit)
+	cleanerOnce sync.Once
+
+	cacheMu     sync.Mutex
+	cachedData  []byte
+	cacheExpiry time.Time
 )
 
-// Бессмертный рейтлимитер: если боты забивают мапу, она сбрасывается без утечки памяти и нагрузки на CPU
+// === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+
+func sendError(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+func startCleaner() {
+	go func() {
+		ticker := time.NewTicker(2 * time.Minute)
+		for range ticker.C {
+			limiterMu.Lock()
+			now := time.Now()
+			for ip, limit := range ipMap {
+				if now.After(limit.resetTime) {
+					delete(ipMap, ip)
+				}
+			}
+			limiterMu.Unlock()
+		}
+	}()
+}
+
 func isRateLimited(ip string) bool {
+	cleanerOnce.Do(startCleaner)
+
 	limiterMu.Lock()
 	defer limiterMu.Unlock()
 
 	now := time.Now()
-
-	// Защита от утечки памяти: если мапа разрослась, сносим её целиком,
-	// а не блокируем честных пользователей!
-	if len(ipMap) > 2000 {
-		ipMap = make(map[string]*ipLimit)
-	}
-
 	lim, exists := ipMap[ip]
 	if !exists || now.After(lim.resetTime) {
 		ipMap[ip] = &ipLimit{
@@ -101,14 +134,12 @@ func getFirestore(ctx context.Context) (*firestore.Client, error) {
 	return app.Firestore(ctx)
 }
 
-// Умная защита от CSRF (пропускает localhost для тестов) + жесткая проверка подписи JWT
 func checkAdminAuth(r *http.Request) bool {
 	if r.Method != "GET" && r.Method != "OPTIONS" {
 		origin := r.Header.Get("Origin")
 		isLocal := strings.HasPrefix(origin, "http://localhost:") || origin == "http://127.0.0.1:5500"
 
 		if origin != "https://smltdemonlist.vercel.app" && !isLocal {
-			println("Блокировка CSRF: подозрительный запрос с ориджина:", origin)
 			return false
 		}
 	}
@@ -120,13 +151,11 @@ func checkAdminAuth(r *http.Request) bool {
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		println("КРИТИЧЕСКАЯ ОШИБКА: JWT_SECRET не задан!")
 		return false
 	}
 
 	token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			println("Внимание: попытка подменить алгоритм подписи токена!")
 			return nil, jwt.ErrSignatureInvalid
 		}
 		return []byte(jwtSecret), nil
@@ -139,6 +168,8 @@ func checkAdminAuth(r *http.Request) bool {
 	claims, ok := token.Claims.(jwt.MapClaims)
 	return ok && claims["role"] == "admin"
 }
+
+// === ОСНОВНОЙ ХЕНДЛЕР С СИСТЕМОЙ РОУТИНГА ===
 
 func Handler(w http.ResponseWriter, r *http.Request) {
 	origin := r.Header.Get("Origin")
@@ -160,55 +191,37 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sendError := func(code int, msg string) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(code)
-		json.NewEncoder(w).Encode(map[string]string{"error": msg})
-	}
-
+	// Честный и безопасный рейтлимитер
 	if isRateLimited(getClientIP(r)) {
-		sendError(http.StatusTooManyRequests, "Too many requests. Slow down!")
+		sendError(w, http.StatusTooManyRequests, "Too many requests. Slow down!")
 		return
 	}
 
 	ctx := context.Background()
 	client, err := getFirestore(ctx)
 	if err != nil {
-		sendError(http.StatusInternalServerError, "Ошибка подключения к Firestore")
+		sendError(w, http.StatusInternalServerError, "Ошибка подключения к Firestore")
 		return
 	}
 	defer client.Close()
 
-	// РОУТЫ
+	// Чистый роутинг без дублирующих проверок на суффиксы
 	switch r.URL.Path {
+
 	case "/auth/login":
 		if r.Method != "POST" {
-			sendError(http.StatusMethodNotAllowed, "Method not allowed")
+			sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
-
-	case "/auth/verify":
-		if r.Method != "GET" {
-			sendError(http.StatusMethodNotAllowed, "Method not allowed")
-			return
-		}
-
-	case "/players":
-
-	default:
-		sendError(http.StatusNotFound, "Маршрут не найден")
-	}
-
-	if strings.HasSuffix(r.URL.Path, "/auth/login") && r.Method == "POST" {
 		var req LoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			sendError(http.StatusBadRequest, "Некорректный запрос")
+			sendError(w, http.StatusBadRequest, "Некорректный запрос")
 			return
 		}
 
 		adminDoc, err := client.Collection("config").Doc("admin").Get(ctx)
 		if err != nil {
-			sendError(http.StatusInternalServerError, "Ошибка БД: не найден конфиг админа")
+			sendError(w, http.StatusInternalServerError, "Ошибка БД: не найден конфиг админа")
 			return
 		}
 		var adminData struct {
@@ -217,19 +230,18 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		adminDoc.DataTo(&adminData)
 
 		if adminData.PasswordHash == "" {
-			sendError(http.StatusInternalServerError, "Ошибка конфигурации: пароль админа пуст")
+			sendError(w, http.StatusInternalServerError, "Ошибка конфигурации: пароль админа пуст")
 			return
 		}
 
-		err = bcrypt.CompareHashAndPassword([]byte(adminData.PasswordHash), []byte(req.Password))
-		if err != nil {
-			sendError(http.StatusUnauthorized, "Неверный пароль")
+		if err = bcrypt.CompareHashAndPassword([]byte(adminData.PasswordHash), []byte(req.Password)); err != nil {
+			sendError(w, http.StatusUnauthorized, "Неверный пароль")
 			return
 		}
 
 		jwtSecret := os.Getenv("JWT_SECRET")
 		if jwtSecret == "" {
-			sendError(http.StatusInternalServerError, "Ошибка сервера: JWT_SECRET не настроен")
+			sendError(w, http.StatusInternalServerError, "Ошибка сервера: JWT_SECRET не настроен")
 			return
 		}
 
@@ -240,7 +252,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 		tokenString, err := token.SignedString([]byte(jwtSecret))
 		if err != nil {
-			sendError(http.StatusInternalServerError, "Ошибка создания токена")
+			sendError(w, http.StatusInternalServerError, "Ошибка создания токена")
 			return
 		}
 
@@ -250,33 +262,40 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			Expires:  time.Now().Add(24 * time.Hour),
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteStrictMode, // Меняем Lax на Strict для максимальной защиты
+			SameSite: http.SameSiteStrictMode,
 			Path:     "/",
 		})
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "success"})
-		return
-	}
 
-	if strings.HasSuffix(r.URL.Path, "/auth/logout") {
+	case "/auth/logout":
 		http.SetCookie(w, &http.Cookie{
 			Name:     "auth_token",
 			Value:    "",
-			Expires:  time.Now().Add(-1 * time.Hour), // или time.Unix(0, 0)
+			Expires:  time.Now().Add(-1 * time.Hour),
 			MaxAge:   -1,
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteStrictMode, // Меняем на Strict здесь
+			SameSite: http.SameSiteStrictMode,
 			Path:     "/",
 		})
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-		return
-	}
 
-	if strings.HasSuffix(r.URL.Path, "/stats/countries") && r.Method == "GET" {
-		// В идеале этот кусок оптимизировать, но для начала сойдет чтение коллекции
+	case "/auth/verify":
+		if checkAdminAuth(r) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "authorized"})
+		} else {
+			sendError(w, http.StatusUnauthorized, "Unauthorized")
+		}
+
+	case "/stats/countries":
+		if r.Method != "GET" {
+			sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
 		iter := client.Collection("players").Documents(ctx)
 		stats := make(map[string]int)
 
@@ -286,7 +305,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			if err != nil {
-				sendError(http.StatusInternalServerError, "Ошибка базы данных")
+				sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 				return
 			}
 
@@ -302,10 +321,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(stats)
-		return
-	}
 
-	if strings.HasSuffix(r.URL.Path, "/players") {
+	case "/players":
 		docRef := client.Collection("list_data").Doc("players")
 
 		if r.Method == "GET" {
@@ -326,40 +343,37 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 		if r.Method == "POST" {
 			if !checkAdminAuth(r) {
-				sendError(http.StatusUnauthorized, "Unauthorized")
+				sendError(w, http.StatusUnauthorized, "Unauthorized")
 				return
 			}
 			var list []Player
 			if err := json.NewDecoder(r.Body).Decode(&list); err != nil {
-				sendError(http.StatusBadRequest, "Некорректный JSON")
+				sendError(w, http.StatusBadRequest, "Некорректный JSON")
 				return
 			}
 
-			// ВАЛИДАЦИЯ: Защита от дурака и хакера
 			if len(list) == 0 {
-				sendError(http.StatusBadRequest, "Список игроков не может быть пустым")
+				sendError(w, http.StatusBadRequest, "Список игроков не может быть пустым")
 				return
 			}
 			for _, p := range list {
 				trimmed := strings.TrimSpace(p.Name)
 				if trimmed == "" || len(trimmed) > 50 {
-					sendError(http.StatusBadRequest, "Некорректное или слишком длинное имя игрока")
+					sendError(w, http.StatusBadRequest, "Некорректное или слишком длинное имя игрока")
 					return
 				}
 			}
 
 			_, err = docRef.Set(ctx, map[string]interface{}{"list": list})
 			if err != nil {
-				sendError(http.StatusInternalServerError, "Ошибка сохранения игроков")
+				sendError(w, http.StatusInternalServerError, "Ошибка сохранения игроков")
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-			return
 		}
-	}
 
-	if strings.HasSuffix(r.URL.Path, "/projects") {
+	case "/projects":
 		docRef := client.Collection("list_data").Doc("projects")
 
 		if r.Method == "GET" {
@@ -380,31 +394,32 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 		if r.Method == "POST" {
 			if !checkAdminAuth(r) {
-				sendError(http.StatusUnauthorized, "Unauthorized")
+				sendError(w, http.StatusUnauthorized, "Unauthorized")
 				return
 			}
 			var list []Project
 			if err := json.NewDecoder(r.Body).Decode(&list); err != nil {
-				sendError(http.StatusBadRequest, "Некорректный JSON")
+				sendError(w, http.StatusBadRequest, "Некорректный JSON")
 				return
 			}
 			_, err = docRef.Set(ctx, map[string]interface{}{"list": list})
 			if err != nil {
-				sendError(http.StatusInternalServerError, "Ошибка сохранения проектов")
+				sendError(w, http.StatusInternalServerError, "Ошибка сохранения проектов")
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		}
+
+	case "/demons":
+		if r.Method != "GET" {
+			sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
-	}
-
-	if strings.HasSuffix(r.URL.Path, "/demons") && r.Method == "GET" {
-		// Добавляем жесткий лимит .Limit(100), чтобы сервер не лег при росте базы
 		iter := client.Collection("demons").Limit(100).Documents(ctx)
 		docs, err := iter.GetAll()
 		if err != nil {
-			sendError(http.StatusInternalServerError, "Ошибка получения демонов")
+			sendError(w, http.StatusInternalServerError, "Ошибка получения демонов")
 			return
 		}
 		var list []interface{}
@@ -413,8 +428,81 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(list)
-		return
-	}
 
-	sendError(http.StatusNotFound, "Маршрут не найден")
+	case "/api/leaderboard":
+		if r.Method != "GET" {
+			sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		// Проверяем кэш в памяти бэкенда
+		cacheMu.Lock()
+		if time.Now().Before(cacheExpiry) && cachedData != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(cachedData)
+			cacheMu.Unlock()
+			return
+		}
+		cacheMu.Unlock()
+
+		// Тянем список игроков, добавленных хостом
+		doc, err := client.Collection("list_data").Doc("players").Get(ctx)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]interface{}{})
+			return
+		}
+		var playerData struct {
+			List []Player `firestore:"list"`
+		}
+		doc.DataTo(&playerData)
+
+		var result []FullPlayerData
+		httpClient := &http.Client{Timeout: 6 * time.Second}
+
+		// Агрегируем статистику с demonlist API на бэкенде
+		for _, p := range playerData.List {
+			escapedName := strings.ReplaceAll(p.Name, " ", "%20")
+
+			respData, err := httpClient.Get("https://api.demonlist.org/api/v1/players/by_name/" + escapedName)
+			if err != nil {
+				continue
+			}
+			var pData interface{}
+			json.NewDecoder(respData.Body).Decode(&pData)
+			respData.Body.Close()
+
+			respRecs, err := httpClient.Get("https://api.demonlist.org/api/v1/players/by_name/" + escapedName + "/records/")
+			if err != nil {
+				continue
+			}
+			var pRecs interface{}
+			json.NewDecoder(respRecs.Body).Decode(&pRecs)
+			respRecs.Body.Close()
+
+			result = append(result, FullPlayerData{
+				Name:    p.Name,
+				Data:    pData,
+				Records: pRecs,
+			})
+		}
+
+		jsonData, err := json.Marshal(result)
+		if err != nil {
+			sendError(w, http.StatusInternalServerError, "Ошибка обработки данных")
+			return
+		}
+
+		// Обновляем кэш на 10 минут
+		cacheMu.Lock()
+		cachedData = jsonData
+		cacheExpiry = time.Now().Add(10 * time.Minute)
+		cacheMu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(jsonData)
+
+	default:
+		sendError(w, http.StatusNotFound, "Маршрут не найден")
+	}
 }
