@@ -1290,3 +1290,22 @@ function escapeHtml(text) {
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
 }
+
+// Пасхалка от Rimix'а
+const secretCode = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
+let inputSequence = [];
+
+document.addEventListener('keydown', (e) => {
+    inputSequence.push(e.key);
+    
+    // Оставляем в массиве только последние 10 нажатий
+    if (inputSequence.length > secretCode.length) {
+        inputSequence.shift();
+    }
+
+    // Проверяем, совпадает ли массив с кодом
+    if (inputSequence.join('') === secretCode.join('')) {
+        console.log("Ты нашёл посхалку от Rimix'а!");
+        inputSequence = []; // Сбрасываем, чтобы можно было ввести еще раз
+    }
+});
