@@ -82,19 +82,16 @@ body.theme-transitioning {
     position: relative;
 }
 
-.bg-glow {
+.bg-smiley {
     position: absolute;
-    top: 50%;
-    right: -200px;
-    width: 1000px;
-    height: 1000px;
-    background: var(--color-secondary);
-    filter: blur(120px);
-    opacity: 0.4;
-    border-radius: 50%;
+    top: 15%;
+    right: 5%;
+    font-size: 10rem;
+    opacity: 0.2;
     z-index: -1;
     pointer-events: none;
-    transform: translateY(-50%);
+    user-select: none;
+    filter: grayscale(20%);
 }
 
 .container {

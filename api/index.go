@@ -37,7 +37,6 @@ type LoginRequest struct {
 	CaptchaToken string `json:"captchaToken"`
 }
 
-
 type ipLimit struct {
 	requests  int
 	resetTime time.Time
@@ -219,6 +218,11 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		var req LoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			sendError(http.StatusBadRequest, "Некорректный запрос")
+			return
+		}
+
+		if !verifyTurnstile(req.CaptchaToken, getClientIP(r)) {
+			sendError(http.StatusBadRequest, "Капча не пройдена или токен устарел")
 			return
 		}
 
