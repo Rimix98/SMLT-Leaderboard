@@ -120,7 +120,8 @@ a:hover {
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: var(--color-surface);
+    background: color-mix(in srgb, var(--color-surface), transparent 20%);
+    backdrop-filter: blur(8px);
     border: 1px solid var(--color-border);
     cursor: pointer;
     display: flex;
@@ -132,7 +133,7 @@ a:hover {
 }
 
 .theme-toggle:hover {
-    background: var(--color-surface-2);
+    background: color-mix(in srgb, var(--color-surface), transparent 10%);
     transform: scale(1.1);
 }
 
@@ -147,7 +148,8 @@ a:hover {
     left: var(--spacing-md);
     padding: var(--spacing-xs) var(--spacing-sm);
     font-size: var(--font-size-xs);
-    background: var(--color-surface);
+    background: color-mix(in srgb, var(--color-surface), transparent 20%);
+    backdrop-filter: blur(8px);
     border: 1px solid var(--color-border);
     color: var(--color-text-muted);
     border-radius: var(--border-radius-sm);
@@ -157,7 +159,7 @@ a:hover {
 }
 
 .host-btn:hover {
-    background: var(--color-surface-2);
+    background: color-mix(in srgb, var(--color-surface), transparent 10%);
     color: var(--color-text-primary);
 }
 
@@ -173,6 +175,10 @@ a:hover {
     backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--color-border);
     padding: var(--spacing-md);
+}
+
+[data-theme="light"] .app-header {
+    background-color: rgba(255, 255, 255, 0.5);
 }
 
 .header-content {
