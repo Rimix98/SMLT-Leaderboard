@@ -53,16 +53,10 @@ func isRateLimited(ip string) bool {
 
 	now := time.Now()
 
-	// Умная очистка памяти в Serverless: чистим только протухшие сессии
-	if len(ipMap) > 1000 {
-		for k, v := range ipMap {
-			if now.After(v.resetTime) {
-				delete(ipMap, k)
-			}
-		}
-		if len(ipMap) > 1500 {
-			return true
-		}
+	// Защита от утечки памяти: если мапа разрослась, сносим её целиком,
+	// а не блокируем честных пользователей!
+	if len(ipMap) > 2000 {
+		ipMap = make(map[string]*ipLimit)
 	}
 
 	lim, exists := ipMap[ip]
@@ -75,7 +69,7 @@ func isRateLimited(ip string) bool {
 	}
 
 	lim.requests++
-	return lim.requests > 60 // Лимит: 60 запросов в минуту
+	return lim.requests > 60
 }
 
 func getClientIP(r *http.Request) string {
@@ -186,15 +180,23 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	defer client.Close()
 
 	// РОУТЫ
-	if strings.HasSuffix(r.URL.Path, "/auth/verify") && r.Method == "GET" {
-		if !checkAdminAuth(r) {
-			sendError(http.StatusUnauthorized, "Unauthorized")
+	switch r.URL.Path {
+	case "/auth/login":
+		if r.Method != "POST" {
+			sendError(http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-		return
+
+	case "/auth/verify":
+		if r.Method != "GET" {
+			sendError(http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+	case "/players":
+
+	default:
+		sendError(http.StatusNotFound, "Маршрут не найден")
 	}
 
 	if strings.HasSuffix(r.URL.Path, "/auth/login") && r.Method == "POST" {
