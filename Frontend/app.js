@@ -987,24 +987,6 @@ async function addPlayer() {
 }
 
 async function removePlayer(name) {
-    if (!confirm(`Удалить игрока "${name}"?`)) return;
-
-    let playerNames = await getPlayerNames();
-    playerNames = playerNames.filter(n => n.toLowerCase() !== name.toLowerCase());
-    
-    try {
-        await savePlayerNames(playerNames);
-        await loadAllPlayers();
-        showToast(`Игрок "${name}" удалён`, 'success');
-    } catch (e) {
-        showToast(e.message, 'error');
-        if (e.message.includes('сессия истекла')) {
-            logoutHost();
-        }
-    }
-}
-
-async function removePlayer(name) {
     if (!isHost) {
         showToast('Только хост может удалять игроков', 'error');
         return;

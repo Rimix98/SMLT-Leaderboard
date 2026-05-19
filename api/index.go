@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -458,33 +459,62 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		doc.DataTo(&playerData)
 
 		var result []FullPlayerData
-		httpClient := &http.Client{Timeout: 6 * time.Second}
+		httpClient := &http.Client{Timeout: 3 * time.Second} // Снизили таймаут, чтобы не копить зависшие запросы
 
-		// Агрегируем статистику с demonlist API на бэкенде
+		// Если список игроков пуст, сразу отдаем пустой массив
+		if len(playerData.List) == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("[]"))
+			return
+		}
+
+		var wg sync.WaitGroup
+		var mu sync.Mutex // Защищает общий слайс result от состояния гонки (Race Condition)
+
+		// Агрегируем статистику с demonlist API конкурентно
 		for _, p := range playerData.List {
-			escapedName := strings.ReplaceAll(p.Name, " ", "%20")
+			wg.Add(1)
+			go func(playerName string) {
+				defer wg.Done()
 
-			respData, err := httpClient.Get("https://api.demonlist.org/api/v1/players/by_name/" + escapedName)
-			if err != nil {
-				continue
-			}
-			var pData interface{}
-			json.NewDecoder(respData.Body).Decode(&pData)
-			respData.Body.Close()
+				// ФИКС PATH TRAVERSAL: Строгое экранирование спецсимволов и путей
+				escapedName := url.PathEscape(playerName)
 
-			respRecs, err := httpClient.Get("https://api.demonlist.org/api/v1/players/by_name/" + escapedName + "/records/")
-			if err != nil {
-				continue
-			}
-			var pRecs interface{}
-			json.NewDecoder(respRecs.Body).Decode(&pRecs)
-			respRecs.Body.Close()
+				// Запрос 1: Основные данные игрока
+				respData, err := httpClient.Get("https://api.demonlist.org/api/v1/players/by_name/" + escapedName)
+				if err != nil {
+					return
+				}
+				var pData interface{}
+				json.NewDecoder(respData.Body).Decode(&pData)
+				respData.Body.Close()
 
-			result = append(result, FullPlayerData{
-				Name:    p.Name,
-				Data:    pData,
-				Records: pRecs,
-			})
+				// Запрос 2: Рекорды игрока
+				respRecs, err := httpClient.Get("https://api.demonlist.org/api/v1/players/by_name/" + escapedName + "/records/")
+				if err != nil {
+					return
+				}
+				var pRecs interface{}
+				json.NewDecoder(respRecs.Body).Decode(&pRecs)
+				respRecs.Body.Close()
+
+				// Безопасно сохраняем данные в общий слайс под блокировкой мутекса
+				mu.Lock()
+				result = append(result, FullPlayerData{
+					Name:    playerName,
+					Data:    pData,
+					Records: pRecs,
+				})
+				mu.Unlock()
+			}(p.Name)
+		}
+
+		// Ждем завершения всех горутин
+		wg.Wait()
+
+		// Если из-за сетевых ошибок ни один игрок не зафетчился, отдаем пустой массив вместо nil
+		if result == nil {
+			result = []FullPlayerData{}
 		}
 
 		jsonData, err := json.Marshal(result)
