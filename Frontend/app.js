@@ -210,7 +210,7 @@ function closeHostModal() {
     }
 }
 
-const BACKEND_URL = '/api'; 
+const BACKEND_URL = '/api';
 
 async function verifyHost(inputPassword) {
     try {

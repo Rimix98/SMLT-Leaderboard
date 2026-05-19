@@ -1,13 +1,9 @@
 {
   "version": 2,
-  "routes": [
-    { "src": "/auth/login", "dest": "/api/index.go" },
-    { "src": "/players", "dest": "/api/index.go" },
-    { "src": "/admin/players", "dest": "/api/index.go" },
-    { "src": "/projects", "dest": "/api/index.go" },
-    { "src": "/admin/projects", "dest": "/api/index.go" },
-    { "src": "/demons", "dest": "/api/index.go" },
-    { "src": "/", "dest": "/Frontend/index.html" },
-    { "src": "/(.*)", "dest": "/Frontend/$1" }
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.go"
+    }
   ]
 }

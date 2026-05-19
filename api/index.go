@@ -45,19 +45,15 @@ var (
 	ipMap     = make(map[string]*ipLimit)
 )
 
-// Безопасный рейтлимитер с автоматической зачисткой памяти на лету
+// Бессмертный рейтлимитер: если боты забивают мапу, она сбрасывается без утечки памяти и нагрузки на CPU
 func isRateLimited(ip string) bool {
 	limiterMu.Lock()
 	defer limiterMu.Unlock()
 
 	now := time.Now()
 
-	// Зачищаем по одному протухшему IP за запрос, чтобы не раздувать память
-	for k, v := range ipMap {
-		if now.After(v.resetTime) {
-			delete(ipMap, k)
-			break
-		}
+	if len(ipMap) > 1500 {
+		ipMap = make(map[string]*ipLimit) // Полный сброс при угрозе переполнения ОЗУ
 	}
 
 	lim, exists := ipMap[ip]
@@ -70,14 +66,9 @@ func isRateLimited(ip string) bool {
 	}
 
 	lim.requests++
-	return lim.requests > 60 // Лимит: 60 запросов в минуту
+	return lim.requests > 60 // Лимит: 60 запросов в минуту с одного IP
 }
 
-// ==========================================
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ И АУТЕНТИФИКАЦИЯ
-// ==========================================
-
-// Безопасное получение IP без доверия к X-Forwarded-For (так как Cloudflare отключен)
 func getClientIP(r *http.Request) string {
 	if ip := r.Header.Get("X-Real-IP"); ip != "" {
 		return ip
@@ -99,6 +90,7 @@ func getFirestore(ctx context.Context) (*firestore.Client, error) {
 		return app.Firestore(ctx)
 	}
 
+	// Для локальной разработки (чтение из файла)
 	config := &firebase.Config{ProjectID: "smlt-97ce4"}
 	opt := option.WithCredentialsFile("serviceAccountKey.json")
 	app, err := firebase.NewApp(ctx, config, opt)
@@ -108,12 +100,14 @@ func getFirestore(ctx context.Context) (*firestore.Client, error) {
 	return app.Firestore(ctx)
 }
 
-// Защищенная авторизация админа (CSRF-защита + проверка алгоритма JWT)
+// Умная защита от CSRF (пропускает localhost для тестов) + жесткая проверка подписи JWT
 func checkAdminAuth(r *http.Request) bool {
 	if r.Method != "GET" && r.Method != "OPTIONS" {
 		origin := r.Header.Get("Origin")
-		if origin != "https://smltdemonlist.vercel.app" {
-			println("Блокировка CSRF: запрос с левого ориджина:", origin)
+		isLocal := strings.HasPrefix(origin, "http://localhost:") || origin == "http://127.0.0.1:5500"
+
+		if origin != "https://smltdemonlist.vercel.app" && !isLocal {
+			println("Блокировка CSRF: подозрительный запрос с ориджина:", origin)
 			return false
 		}
 	}
@@ -125,7 +119,7 @@ func checkAdminAuth(r *http.Request) bool {
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		println("КРИТИЧЕСКАЯ ОШИБКА: JWT_SECRET не задан в переменных окружения!")
+		println("КРИТИЧЕСКАЯ ОШИБКА: JWT_SECRET не задан!")
 		return false
 	}
 
@@ -145,13 +139,9 @@ func checkAdminAuth(r *http.Request) bool {
 	return ok && claims["role"] == "admin"
 }
 
-// ==========================================
-// ОСНОВНОЙ ОБРАБОТЧИК
-// ==========================================
-
 func Handler(w http.ResponseWriter, r *http.Request) {
 	origin := r.Header.Get("Origin")
-	allowedOrigin := "https://smltdemonlist.vercel.app" // Без слеша на конце для строгого соответствия
+	allowedOrigin := "https://smltdemonlist.vercel.app"
 
 	if origin == "http://localhost:3000" || origin == "http://127.0.0.1:5500" || strings.HasPrefix(origin, "http://localhost:") {
 		allowedOrigin = origin
@@ -183,13 +173,12 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	client, err := getFirestore(ctx)
 	if err != nil {
-		sendError(http.StatusInternalServerError, "Ошибка подключения к базе данных (Firestore)")
+		sendError(http.StatusInternalServerError, "Ошибка подключения к Firestore")
 		return
 	}
 	defer client.Close()
 
-	// Изменили пути, убрав жесткий префикс внутри кода, так как Vercel роутит по названию папок/файлов,
-	// но оставляем относительную проверку хвоста пути:
+	// РОУТЫ
 	if strings.HasSuffix(r.URL.Path, "/auth/verify") && r.Method == "GET" {
 		if !checkAdminAuth(r) {
 			sendError(http.StatusUnauthorized, "Unauthorized")
@@ -219,7 +208,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		adminDoc.DataTo(&adminData)
 
 		if adminData.PasswordHash == "" {
-			sendError(http.StatusInternalServerError, "Ошибка конфигурации: пароль админа не задан в БД")
+			sendError(http.StatusInternalServerError, "Ошибка конфигурации: пароль админа пуст")
 			return
 		}
 
@@ -252,7 +241,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			Expires:  time.Now().Add(24 * time.Hour),
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
+			SameSite: http.SameSiteLaxMode, // Изменено на Lax, так как деплой на одном домене Vercel
 			Path:     "/",
 		})
 
@@ -268,7 +257,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			Expires:  time.Now().Add(-1 * time.Hour),
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
+			SameSite: http.SameSiteLaxMode,
 			Path:     "/",
 		})
 		w.Header().Set("Content-Type", "application/json")
