@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="SMLT - Discord сервер с ивентами, коллабами, турнирами и прохождениями уровней">
+    <meta name="theme-color" content="#0a0a0a">
+    <title>SMLT - Главная</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div id="app">
+        <div class="bg-glow"></div>
+
+        <!-- Кнопка смены темы -->
+        <button class="theme-toggle" id="themeToggle" title="Сменить тему">
+            <span class="theme-icon">🌙</span>
+        </button>
+
+        <!-- Кнопка хоста -->
+        <button class="host-btn host-btn-left" id="hostBtn" title="Войти как хост">
+            <span>Хост</span>
+        </button>
+
+        <header class="app-header">
+            <div class="header-content">
+                <div class="header-brand">
+                    <div class="header-title">
+                        <h1>SMLT</h1>
+                        <span class="header-subtitle">Discord Community</span>
+                    </div>
+                </div>
+                <nav class="header-nav">
+                    <a href="index.html" class="nav-link active">Главная</a>
+                    <a href="demonlist.html" class="nav-link">Демонлист</a>
+                    <a href="projects.html" class="nav-link">Проекты</a>
+                </nav>
+            </div>
+        </header>
+
+        <main class="app-main home-page">
+            <div class="container">
+                <!-- Главный баннер -->
+                <section class="hero-section">
+                    <div class="hero-content">
+                        <h2 class="hero-title">Добро пожаловать в SMLT!</h2>
+                        <p class="hero-description">
+                            SMLT - это дискорд сервер, где происходят разные ивенты, например коллабы, турниры,
+                            прохождения уровней по частям, и даже игры в майнкрафте.
+                        </p>
+                        <p class="hero-description">
+                            Все участники сервера - участники SMLT, независимо от его скилла.
+                            Идея нашего сервера - <strong>удовольствие</strong>.
+                        </p>
+                    </div>
+                </section>
+
+                <!-- Кнопки навигации -->
+                <section class="nav-buttons">
+                    <a href="demonlist.html" class="nav-card">
+                        <span class="nav-card-icon">🏆</span>
+                        <span class="nav-card-title">Демонлист</span>
+                        <span class="nav-card-desc">Таблица лидеров Geometry Dash</span>
+                    </a>
+                    <a href="projects.html" class="nav-card">
+                        <span class="nav-card-icon">📁</span>
+                        <span class="nav-card-title">Проекты SMLT</span>
+                        <span class="nav-card-desc">Уровни и коллабы от участников</span>
+                    </a>
+                </section>
+
+                <!-- Информация -->
+                <section class="info-section">
+                    <div class="info-card">
+                        <h3 class="info-title">📋 Информация</h3>
+                        <div class="info-content">
+                            <div class="info-item">
+                                <span class="info-label">Discord Server</span>
+                                <a href="https://discord.gg/VK56W7ZzdA" target="_blank"
+                                    class="info-value">discord.gg/VK56W7ZzdA</a>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Admin</span>
+                                <div class="info-value">
+                                    Discord: <span class="highlight">@.samoletik</span><br>
+                                    Telegram: <span class="highlight">@samoltik</span>
+                                </div>
+                            </div>
+                            <div class="info-item security">
+                                <span class="info-label">🔒 За безопасность отвечал</span>
+                                <span class="info-value highlight">@rimix.98</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+
+    </div>
+
+    <!-- Модальное окно входа хоста -->
+    <div id="hostModal" class="modal-overlay">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title">🔐 Вход хоста</div>
+                <button class="modal-close" onclick="closeHostModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="hostPassword">Введите пароль:</label>
+                    <input type="password" id="hostPassword" class="form-input" placeholder="Пароль">
+                </div>
+                <button class="btn btn-primary" onclick="verifyHost(document.getElementById('hostPassword').value)">Войти</button>
+                <div id="hostError" class="error-message" style="display: none;">Неверный пароль!</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastContainer"></div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

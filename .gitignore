@@ -1,0 +1,17 @@
+.env
+.env.local
+.env.*.local
+serviceAccountKey.json
+
+
+.vercel/
+.vscode/
+
+
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.log
+__debug_bin
