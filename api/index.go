@@ -52,8 +52,16 @@ func isRateLimited(ip string) bool {
 
 	now := time.Now()
 
-	if len(ipMap) > 1500 {
-		ipMap = make(map[string]*ipLimit) // Полный сброс при угрозе переполнения ОЗУ
+	// Умная очистка памяти в Serverless: чистим только протухшие сессии
+	if len(ipMap) > 1000 {
+		for k, v := range ipMap {
+			if now.After(v.resetTime) {
+				delete(ipMap, k)
+			}
+		}
+		if len(ipMap) > 1500 {
+			return true
+		}
 	}
 
 	lim, exists := ipMap[ip]
@@ -66,7 +74,7 @@ func isRateLimited(ip string) bool {
 	}
 
 	lim.requests++
-	return lim.requests > 60 // Лимит: 60 запросов в минуту с одного IP
+	return lim.requests > 60 // Лимит: 60 запросов в минуту
 }
 
 func getClientIP(r *http.Request) string {
@@ -239,7 +247,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			Expires:  time.Now().Add(24 * time.Hour),
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteLaxMode, // Изменено на Lax, так как деплой на одном домене Vercel
+			SameSite: http.SameSiteStrictMode, // Меняем Lax на Strict для максимальной защиты
 			Path:     "/",
 		})
 
@@ -248,18 +256,19 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.HasSuffix(r.URL.Path, "/auth/logout") && r.Method == "POST" {
+	if strings.HasSuffix(r.URL.Path, "/auth/logout") {
 		http.SetCookie(w, &http.Cookie{
 			Name:     "auth_token",
 			Value:    "",
-			Expires:  time.Now().Add(-1 * time.Hour),
+			Expires:  time.Now().Add(-1 * time.Hour), // или time.Unix(0, 0)
+			MaxAge:   -1,
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteLaxMode,
+			SameSite: http.SameSiteStrictMode, // Меняем на Strict здесь
 			Path:     "/",
 		})
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 		return
 	}
 
@@ -292,6 +301,20 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 				sendError(http.StatusBadRequest, "Некорректный JSON")
 				return
 			}
+
+			// ВАЛИДАЦИЯ: Защита от дурака и хакера
+			if len(list) == 0 {
+				sendError(http.StatusBadRequest, "Список игроков не может быть пустым")
+				return
+			}
+			for _, p := range list {
+				trimmed := strings.TrimSpace(p.Name)
+				if trimmed == "" || len(trimmed) > 50 {
+					sendError(http.StatusBadRequest, "Некорректное или слишком длинное имя игрока")
+					return
+				}
+			}
+
 			_, err = docRef.Set(ctx, map[string]interface{}{"list": list})
 			if err != nil {
 				sendError(http.StatusInternalServerError, "Ошибка сохранения игроков")
@@ -344,7 +367,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if strings.HasSuffix(r.URL.Path, "/demons") && r.Method == "GET" {
-		iter := client.Collection("demons").Documents(ctx)
+		// Добавляем жесткий лимит .Limit(100), чтобы сервер не лег при росте базы
+		iter := client.Collection("demons").Limit(100).Documents(ctx)
 		docs, err := iter.GetAll()
 		if err != nil {
 			sendError(http.StatusInternalServerError, "Ошибка получения демонов")

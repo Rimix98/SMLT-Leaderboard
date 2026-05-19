@@ -940,10 +940,32 @@ async function addPlayer() {
         await savePlayerNames(playerNames);
         closeAddPlayerModal();
         nameInput.value = '';
-        await loadAllPlayers(); // перечиextended загрузку из базы
+        await loadAllPlayers(); 
         showToast('Игрок успешно добавлен', 'success');
     } catch (e) {
         showToast(e.message, 'error');
+        // Если бэк послал нас, значит сессия сдохла — принудительно разлогиниваем во фронте
+        if (e.message.includes('сессия истекла') || e.message.includes('401')) {
+            logoutHost();
+        }
+    }
+}
+
+async function removePlayer(name) {
+    if (!confirm(`Удалить игрока "${name}"?`)) return;
+
+    let playerNames = await getPlayerNames();
+    playerNames = playerNames.filter(n => n.toLowerCase() !== name.toLowerCase());
+    
+    try {
+        await savePlayerNames(playerNames);
+        await loadAllPlayers();
+        showToast(`Игрок "${name}" удалён`, 'success');
+    } catch (e) {
+        showToast(e.message, 'error');
+        if (e.message.includes('сессия истекла')) {
+            logoutHost();
+        }
     }
 }
 
