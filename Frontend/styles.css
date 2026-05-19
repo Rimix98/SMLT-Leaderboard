@@ -165,7 +165,8 @@ a:hover {
 
 /* === Header === */
 .app-header {
-    background-color: var(--color-surface);
+    background-color: rgba(20, 20, 20, 0.5);
+    backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--color-border);
     padding: var(--spacing-md);
 }
