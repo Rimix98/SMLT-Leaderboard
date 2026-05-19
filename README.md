@@ -1,6 +1,7 @@
 SMLT Community — Demonlist & Project Tracker
 
 Платформа для отслеживания рекордов игроков сообщества SMLT в Geometry Dash и координации совместных проектов (коллабов).
+
 🚀 Стек технологий
 
     Backend: Go (Golang) в формате Serverless-хендлера, Google Cloud Firestore, JWT, Bcrypt.
