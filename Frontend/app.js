@@ -323,6 +323,41 @@ async function getPlayerNames() {
     }
 }
 
+
+async function loadGeoStats() {
+    try {
+        const response = await fetch(`${API_BASE}/stats/countries`);
+        const stats = await response.json(); // Прилетит объект: { RU: 15, US: 5... }
+
+        const container = document.getElementById('geo-stats-container');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        // Сортируем страны по количеству игроков (от большего к меньшему)
+        const sortedStats = Object.entries(stats).sort((a, b) => b[1] - a[1]);
+        const maxPlayers = sortedStats[0] ? sortedStats[0][1] : 1;
+
+        sortedStats.forEach(([countryCode, count]) => {
+            const flag = FLAGS[countryCode] || '🏳️';
+            // Вычисляем процент ширины полосы относительно лидера топа
+            const percentage = (count / maxPlayers) * 100;
+
+            container.innerHTML += `
+                <div class="geo-row" style="display: flex; align-items: center; margin-bottom: 8px;">
+                    <span style="width: 50px;">${flag} ${countryCode}</span>
+                    <div style="flex-grow: 1; background: #222; height: 12px; border-radius: 6px; margin: 0 10px; overflow: hidden;">
+                        <div style="width: ${percentage}%; background: #00bcd4; height: 100%; border-radius: 6px;"></div>
+                    </div>
+                    <span style="width: 30px; text-align: right;">${count}</span>
+                </div>
+            `;
+        });
+    } catch (e) {
+        showToast('Не удалось загрузить гео-статистику', 'error');
+    }
+}
+
 async function savePlayerNames(names) {
     // Форматируем массив под структуру Player в Go (объект с полем name)
     const formattedPlayers = names.map(n => ({ name: n }));

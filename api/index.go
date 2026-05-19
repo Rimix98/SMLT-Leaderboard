@@ -14,6 +14,7 @@ import (
 	firebase "firebase.google.com/go"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
 
@@ -269,6 +270,36 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		})
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		return
+	}
+
+	if strings.HasSuffix(r.URL.Path, "/stats/countries") && r.Method == "GET" {
+		// В идеале этот кусок оптимизировать, но для начала сойдет чтение коллекции
+		iter := client.Collection("players").Documents(ctx)
+		stats := make(map[string]int)
+
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				sendError(http.StatusInternalServerError, "Ошибка базы данных")
+				return
+			}
+
+			var p struct {
+				Country string `firestore:"country"`
+			}
+			doc.DataTo(&p)
+
+			if p.Country != "" {
+				stats[p.Country]++
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
 		return
 	}
 
