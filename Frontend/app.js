@@ -210,7 +210,7 @@ function closeHostModal() {
     }
 }
 
-const BACKEND_URL = ''; // Используем относительные пути для гибкости (Vercel сам свяжет фронт и бэк)
+const BACKEND_URL = '/api'; 
 
 async function verifyHost(inputPassword) {
     try {
