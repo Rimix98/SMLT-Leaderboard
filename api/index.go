@@ -90,10 +90,8 @@ func getFirestore(ctx context.Context) (*firestore.Client, error) {
 		return app.Firestore(ctx)
 	}
 
-	// Для локальной разработки (чтение из файла)
-	config := &firebase.Config{ProjectID: "smlt-97ce4"}
 	opt := option.WithCredentialsFile("serviceAccountKey.json")
-	app, err := firebase.NewApp(ctx, config, opt)
+	app, err := firebase.NewApp(ctx, nil, opt)
 	if err != nil {
 		return nil, err
 	}
