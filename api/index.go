@@ -47,14 +47,22 @@ var (
 	ipMap     = make(map[string]*ipLimit)
 )
 
+// Вставляй это в самый конец index.go, после всех хэндлеров
 func isRateLimited(ip string) bool {
 	limiterMu.Lock()
 	defer limiterMu.Unlock()
 
 	now := time.Now()
-	lim, exists := ipMap[ip]
 
-	if !exists || now.After(lim.resetTime) {
+	for k, v := range ipMap {
+		if now.After(v.resetTime) {
+			delete(ipMap, k)
+			break
+		}
+	}
+
+	limit, exists := ipMap[ip]
+	if !exists || now.After(limit.resetTime) {
 		ipMap[ip] = &ipLimit{
 			requests:  1,
 			resetTime: now.Add(1 * time.Minute),
@@ -62,8 +70,12 @@ func isRateLimited(ip string) bool {
 		return false
 	}
 
-	lim.requests++
-	return lim.requests > 60 // Лимит: 60 запросов в минуту
+	limit.requests++
+	if limit.requests > 60 {
+		return true
+	}
+
+	return false
 }
 
 // ==========================================
@@ -71,10 +83,10 @@ func isRateLimited(ip string) bool {
 // ==========================================
 
 func getClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		ips := strings.Split(xff, ",")
-		return strings.TrimSpace(ips[0])
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return ip
 	}
+
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
@@ -102,7 +114,16 @@ func getFirestore(ctx context.Context) (*firestore.Client, error) {
 }
 
 func checkAdminAuth(r *http.Request) bool {
-	// Строгое чтение JWT-токена из HttpOnly Куки
+
+	if r.Method != "GET" && r.Method != "OPTIONS" {
+		origin := r.Header.Get("Origin")
+		// Убери слеш на конце, браузер присылает строго без него
+		if origin != "https://smltdemonlist.vercel.app" {
+			println("Блокировка CSRF: запрос с левого ориджина:", origin)
+			return false
+		}
+	}
+
 	cookie, err := r.Cookie("auth_token")
 	if err != nil {
 		return false
@@ -110,12 +131,16 @@ func checkAdminAuth(r *http.Request) bool {
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		// Если секрета нет, логируем ошибку и не пускаем никого
 		println("КРИТИЧЕСКАЯ ОШИБКА: JWT_SECRET не задан в переменных окружения!")
 		return false
 	}
 
 	token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (interface{}, error) {
+
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			println("Внимание: попытка подменить алгоритм подписи токена!")
+			return nil, jwt.ErrSignatureInvalid
+		}
 		return []byte(jwtSecret), nil
 	})
 
@@ -151,6 +176,25 @@ func verifyTurnstile(token, ip string) bool {
 	}
 	json.NewDecoder(resp.Body).Decode(&result)
 	return result.Success
+}
+
+func init() {
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute)
+			limiterMu.Lock()
+			now := time.Now()
+			for ip, limit := range ipMap {
+				if now.After(limit.resetTime) {
+					delete(ipMap, ip)
+				}
+			}
+			limiterMu.Unlock()
+
+		}
+
+	}()
+
 }
 
 // ==========================================
