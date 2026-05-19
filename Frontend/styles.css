@@ -70,6 +70,14 @@ body {
     transition: background-color var(--transition-normal), color var(--transition-normal);
 }
 
+body.home-page {
+    background-image: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url('blyazabyl.png');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+}
+
 body.theme-transitioning {
     animation: themeFade 0.3s ease-in-out;
 }
