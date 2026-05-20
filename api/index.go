@@ -2,8 +2,12 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -13,10 +17,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"crypto/sha256"
-	"encoding/hex"
-	"io"
-	"fmt"
 
 	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go"
@@ -645,9 +645,6 @@ func requestPath(r *http.Request) string {
 	return path
 }
 
-
-
-
 // Handler — точка входа Vercel Go (api/index.go)
 func Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -704,7 +701,14 @@ var (
 	rlOnce            sync.Once
 )
 
-
+func initRateLimiter() {
+	rlOnce.Do(func() {
+		globalRateLimiter = newUpstashLimiter()
+		if globalRateLimiter == nil {
+			globalRateLimiter = newMemoryLimiter()
+		}
+	})
+}
 
 // --- Upstash (REST), работает между инстансами Vercel ---
 
