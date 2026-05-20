@@ -7,7 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"ы
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
