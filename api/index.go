@@ -13,6 +13,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
+	"fmt"
 
 	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go"
