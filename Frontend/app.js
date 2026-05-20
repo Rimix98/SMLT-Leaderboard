@@ -232,7 +232,7 @@ async function verifyHost(inputPassword) {
             throw new Error('Сервер вернул некорректный ответ');
         }
 
-        if (res.ok && data.status === "success") {
+        if (res.ok && data.success === true) {
             isHost = true;
             localStorage.setItem('smlt-host', 'true');
             // Токен в sessionStorage больше не пишем, бэкенд сам поставил HttpOnly куку!

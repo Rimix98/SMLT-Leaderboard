@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,7 +75,7 @@ func init() {
 
 	fsClient, err = app.Firestore(ctx)
 	if err != nil {
-		log.Fatalf("Ошибка инициализации Firestore: %v", err)
+		log.Fatalf("Ошибка инициализации Firebase: %v", err)
 	}
 }
 
@@ -85,7 +86,14 @@ func sendError(w http.ResponseWriter, status int, msg string) {
 }
 
 // Берем реальный IP на уровне TCP, игнорируя поддельные заголовки
-func getClientIP(r *http.Request) string {
+func getRealIP(r *http.Request) string {
+	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+		// Берем первый IP из списка (клиентский)
+		return strings.Split(ip, ",")[0]
+	}
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return ip
+	}
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
@@ -98,11 +106,13 @@ func getClientIP(r *http.Request) string {
 // 1. Бронебойный Rate Limiter
 func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip := getClientIP(r)
+		ip := getRealIP(r)
 
 		muLim.Lock()
+		// Вместо обнуления всей мапы:
 		if len(ipMap) > maxIPs {
-			ipMap = make(map[string]*ipLimit) // Экстренный сброс при атаке
+			http.Error(w, "Rate limit map full", http.StatusServiceUnavailable)
+			return
 		}
 
 		limiter, exists := ipMap[ip]
@@ -274,6 +284,84 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
+// Проверка валидности JWT токена
+func handleAuthVerify(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("auth_token")
+	if err != nil {
+		sendError(w, http.StatusUnauthorized, "Нет токена")
+		return
+	}
+
+	token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil
+	})
+
+	if err != nil || !token.Valid {
+		sendError(w, http.StatusUnauthorized, "Невалидный токен")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"valid": true})
+}
+
+// Получить список игроков
+func handleGetPlayers(w http.ResponseWriter, r *http.Request) {
+	ctx := context.Background()
+	doc, err := fsClient.Collection("config").Doc("players").Get(ctx)
+	if err != nil {
+		// Если документа нет, возвращаем пустой массив
+		json.NewEncoder(w).Encode([]string{})
+		return
+	}
+
+	var players []Player
+	if err := doc.DataTo(&players); err != nil {
+		json.NewEncoder(w).Encode([]string{})
+		return
+	}
+
+	// Возвращаем только имена
+	names := make([]string, len(players))
+	for i, p := range players {
+		names[i] = p.Name
+	}
+	json.NewEncoder(w).Encode(names)
+}
+
+// Сохранить список игроков (требует авторизацию)
+func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
+	var playerList []Player
+	if err := json.NewDecoder(r.Body).Decode(&playerList); err != nil {
+		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
+		return
+	}
+
+	// Защита от переполнения
+	if len(playerList) > 1000 {
+		sendError(w, http.StatusBadRequest, "Слишком много игроков (макс 1000)")
+		return
+	}
+
+	// Валидация имен игроков
+	for _, p := range playerList {
+		if len(p.Name) == 0 || len(p.Name) > 100 {
+			sendError(w, http.StatusBadRequest, "Недопустимая длина имени игрока")
+			return
+		}
+	}
+
+	ctx := context.Background()
+	_, err := fsClient.Collection("config").Doc("players").Set(ctx, playerList)
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
 // === РОУТЕР (Точка входа) ===
 func MainHandler(w http.ResponseWriter, r *http.Request) {
 	// Базовые заголовки (CORS + защита контента)
@@ -281,15 +369,27 @@ func MainHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 
-	// Простейший роутер
-	mux := http.NewServeMux()
-
-	// Публичные роуты (с лимитом)
-	mux.HandleFunc("/api/login", rateLimitMiddleware(handleLogin))
-	mux.HandleFunc("/api/leaderboard", rateLimitMiddleware(handleLeaderboard))
-
-	// Защищенные роуты (Лимит -> Авторизация)
-	mux.HandleFunc("/api/projects", rateLimitMiddleware(authMiddleware(handleSaveProject)))
-
-	mux.ServeHTTP(w, r)
+	// Маршрутизация по пути и методу
+	switch r.URL.Path {
+	case "/api/login":
+		rateLimitMiddleware(handleLogin)(w, r)
+	case "/api/auth/verify":
+		rateLimitMiddleware(handleAuthVerify)(w, r)
+	case "/api/leaderboard":
+		rateLimitMiddleware(handleLeaderboard)(w, r)
+	case "/api/players":
+		if r.Method == "GET" {
+			// GET: без авторизации (загрузка списка игроков)
+			rateLimitMiddleware(handleGetPlayers)(w, r)
+		} else if r.Method == "POST" {
+			// POST: с авторизацией (сохранение списка)
+			rateLimitMiddleware(authMiddleware(handleSavePlayers))(w, r)
+		} else {
+			sendError(w, http.StatusMethodNotAllowed, "Метод не разрешен")
+		}
+	case "/api/projects":
+		rateLimitMiddleware(authMiddleware(handleSaveProject))(w, r)
+	default:
+		sendError(w, http.StatusNotFound, "Роут не найден")
+	}
 }
