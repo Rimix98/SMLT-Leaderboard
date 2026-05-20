@@ -29,12 +29,8 @@ var (
 
 	httpClient = &http.Client{Timeout: 10 * time.Second}
 
-	ipMap  = make(map[string]*ipLimit)
-	muLim  sync.Mutex
-	maxIPs = 10000
-
 	trustProxy     bool
-	maxRequestBody = int64(1024 * 1024) // [FIXED] Лимит тела запроса 1 МБ
+	maxRequestBody = int64(1024 * 1024)
 )
 
 // === ТИПЫ ДАННЫХ ===
@@ -50,11 +46,6 @@ type Project struct {
 
 type Player struct {
 	Name string `json:"name" firestore:"name"`
-}
-
-type ipLimit struct {
-	requests  int
-	resetTime time.Time
 }
 
 type FullPlayerData struct {
@@ -75,9 +66,9 @@ var defaultPlayerNames = []string{
 
 // === ИНИЦИАЛИЗАЦИЯ ===
 func init() {
-	// [FIXED] Не вызываем log.Fatalf — иначе Vercel отдаёт HTML 500 вместо JSON
 	trustProxy = os.Getenv("TRUST_PROXY") == "true" || os.Getenv("VERCEL") == "1"
-	startRateLimitJanitor()
+	initRateLimiter()
+	initFirestore()
 }
 
 func initFirestore() {
@@ -106,7 +97,6 @@ func initFirestore() {
 }
 
 func requireFirestore(w http.ResponseWriter) bool {
-	initFirestore()
 	if fsErr != nil || fsClient == nil {
 		sendError(w, http.StatusServiceUnavailable, "База данных недоступна")
 		return false
@@ -116,24 +106,6 @@ func requireFirestore(w http.ResponseWriter) bool {
 
 func jwtSecretKey() []byte {
 	return []byte(os.Getenv("JWT_SECRET"))
-}
-
-// [FIXED] Фоновая очистка ipMap — предотвращает бесконечный рост и ложные 503
-func startRateLimitJanitor() {
-	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			now := time.Now()
-			muLim.Lock()
-			for ip, lim := range ipMap {
-				if now.After(lim.resetTime) {
-					delete(ipMap, ip)
-				}
-			}
-			muLim.Unlock()
-		}
-	}()
 }
 
 // === УТИЛИТЫ ===
@@ -185,39 +157,6 @@ func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{})
 }
 
 // === MIDDLEWARES ===
-
-func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ip := getRealIP(r) // [FIXED] вместо r.RemoteAddr
-
-		muLim.Lock()
-
-		limiter, exists := ipMap[ip]
-		// [FIXED] Блокируем только новые IP при переполнении мапы (janitor освобождает слоты)
-		if !exists && len(ipMap) >= maxIPs {
-			muLim.Unlock()
-			http.Error(w, "Rate limit map full", http.StatusServiceUnavailable)
-			return
-		}
-
-		if !exists || time.Now().After(limiter.resetTime) {
-			ipMap[ip] = &ipLimit{requests: 1, resetTime: time.Now().Add(1 * time.Minute)}
-			muLim.Unlock()
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		if limiter.requests >= 60 {
-			muLim.Unlock()
-			sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
-			return
-		}
-
-		limiter.requests++
-		muLim.Unlock()
-		next.ServeHTTP(w, r)
-	}
-}
 
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -711,7 +650,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	switch requestPath(r) {
 	case "/api/login":
-		rateLimitMiddleware(handleLogin)(w, r)
+		rateLimitLoginMiddleware(handleLogin)(w, r)
 	case "/api/logout":
 		rateLimitMiddleware(handleLogout)(w, r)
 	case "/api/auth/verify":

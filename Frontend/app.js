@@ -93,14 +93,66 @@ const COUNTRY_TO_CODE = {
 };
 
 // ============================================
-// СОСТОЯНИЕ ПРИЛОЖЕНИЯ
+// DOM helpers + состояние (модульный стиль без глобальных let)
 // ============================================
 
-let isHost = false;
-let players = [];
-let projects = [];
-let allPlayers = [];
-let levels = [];
+/**
+ * Создаёт элемент без innerHTML для пользовательских данных.
+ * @param {string} tag
+ * @param {{ className?: string, attrs?: Record<string,string|boolean>, style?: Partial<CSSStyleDeclaration>, dataset?: Record<string,string>, title?: string }} [opts]
+ * @param {(Node|string|null|false)[]} [children]
+ */
+function h(tag, opts = {}, children = []) {
+    const node = document.createElement(tag);
+    if (opts.className) node.className = opts.className;
+    if (opts.style) Object.assign(node.style, opts.style);
+    if (opts.dataset) Object.assign(node.dataset, opts.dataset);
+    if (opts.title != null) node.title = opts.title;
+    if (opts.attrs) {
+        for (const [k, v] of Object.entries(opts.attrs)) {
+            if (v === false || v == null) continue;
+            node.setAttribute(k, String(v));
+        }
+    }
+    for (const child of children) {
+        if (child == null || child === false) continue;
+        node.append(typeof child === 'string' ? document.createTextNode(child) : child);
+    }
+    return node;
+}
+
+function clearEl(el) {
+    while (el.firstChild) el.firstChild.remove();
+}
+
+const store = {
+    isHost: false,
+    players: [],
+    allPlayers: [],
+    projects: [],
+    /** Состояние блока «топ уровней» (раньше window.allLevels / window.levelData) */
+    levels: {
+        all: null,
+        levelData: null,
+        expanded: false,
+        filter: '',
+        _body: null,
+    },
+    /** Кэш строк лидерборда для инкрементального обновления */
+    _leaderboard: { body: null, lastSig: '' },
+};
+
+function encodeCountryToken(country) {
+    return btoa(unescape(encodeURIComponent(country)));
+}
+
+function decodeCountryToken(token) {
+    try {
+        return decodeURIComponent(escape(atob(token)));
+    } catch {
+        return '';
+    }
+}
 
 // ============================================
 // ИНИЦИАЛИЗАЦИЯ
@@ -110,6 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     initHostStatus();
     initEventListeners();
+    mountDelegatedClicks();
 
     // Загружаем данные в зависимости от страницы
     if (document.getElementById('leaderboardTable')) {
@@ -119,6 +172,39 @@ document.addEventListener('DOMContentLoaded', () => {
         loadProjects();
     }
 });
+
+/** Делегирование вместо inline onclick в разметке из JS */
+function mountDelegatedClicks() {
+    document.getElementById('leaderboardTable')?.addEventListener('click', (e) => {
+        const row = e.target.closest('[data-profile-index]');
+        if (!row) return;
+        const idx = Number(row.dataset.profileIndex);
+        if (!Number.isFinite(idx)) return;
+        showProfile(idx);
+    });
+    document.getElementById('countryList')?.addEventListener('click', (e) => {
+        const item = e.target.closest('[data-country-token]');
+        if (!item) return;
+        const country = decodeCountryToken(item.dataset.countryToken);
+        if (country) showCountryTop(country);
+    });
+    document.getElementById('levelsTable')?.addEventListener('click', (e) => {
+        const row = e.target.closest('[data-level-id]');
+        if (!row) return;
+        showLevelVictors(row.dataset.levelId);
+    });
+    document.getElementById('projectsGrid')?.addEventListener('click', (e) => {
+        const editBtn = e.target.closest('[data-action="edit-project"]');
+        const delBtn = e.target.closest('[data-action="delete-project"]');
+        if (editBtn) {
+            const idx = Number(editBtn.dataset.projectIndex);
+            if (Number.isFinite(idx)) editProject(idx);
+        } else if (delBtn) {
+            const idx = Number(delBtn.dataset.projectIndex);
+            if (Number.isFinite(idx)) deleteProject(idx);
+        }
+    });
+}
 
 function initEventListeners() {
     // Кнопка смены темы
@@ -131,7 +217,7 @@ function initEventListeners() {
     const hostBtn = document.getElementById('hostBtn');
     if (hostBtn) {
         hostBtn.addEventListener('click', () => {
-            if (isHost) {
+            if (store.isHost) {
                 logoutHost();
             } else {
                 showHostModal();
@@ -221,17 +307,17 @@ async function initHostStatus() {
                 credentials: 'include'
             }, 'auth-verify');
             const data = await parseJsonResponse(res);
-            isHost = res.ok && data.success === true;
-            if (!isHost) {
+            store.isHost = res.ok && data.success === true;
+            if (!store.isHost) {
                 localStorage.removeItem('smlt-host');
             }
         } catch (err) {
             if (isAbortError(err)) return;
-            isHost = false;
+            store.isHost = false;
             localStorage.removeItem('smlt-host');
         }
     } else {
-        isHost = false;
+        store.isHost = false;
     }
 
     updateHostButton();
@@ -277,7 +363,7 @@ async function verifyHost(inputPassword) {
         const data = await parseJsonResponse(res);
 
         if (res.ok && data.success === true) {
-            isHost = true;
+            store.isHost = true;
             localStorage.setItem('smlt-host', 'true');
             // Токен в sessionStorage больше не пишем, бэкенд сам поставил HttpOnly куку!
 
@@ -295,7 +381,7 @@ async function verifyHost(inputPassword) {
         } else {
             const errorMsg = data.error || 'Неверный пароль хоста!';
             showToast(errorMsg, 'error');
-            isHost = false;
+            store.isHost = false;
         }
     } catch (err) {
         if (isAbortError(err)) return;
@@ -306,7 +392,7 @@ async function verifyHost(inputPassword) {
     }
 }
 async function logoutHost() {
-    isHost = false;
+    store.isHost = false;
     localStorage.removeItem('smlt-host');
     sessionStorage.removeItem('adminToken'); 
     
@@ -326,21 +412,21 @@ async function logoutHost() {
 
 function updateHostButton() {
     const hostBtn = document.getElementById('hostBtn');
-    if (hostBtn) {
-        if (isHost) {
-            hostBtn.classList.add('is-host');
-            hostBtn.innerHTML = '<span>👑 Хост</span>';
-        } else {
-            hostBtn.classList.remove('is-host');
-            hostBtn.innerHTML = '<span>Хост</span>';
-        }
+    if (!hostBtn) return;
+    clearEl(hostBtn);
+    if (store.isHost) {
+        hostBtn.classList.add('is-host');
+        hostBtn.appendChild(h('span', {}, ['👑 Хост']));
+    } else {
+        hostBtn.classList.remove('is-host');
+        hostBtn.appendChild(h('span', {}, ['Хост']));
     }
 }
 
 function updateAdminControls() {
     const adminElements = document.querySelectorAll('.admin-only');
     adminElements.forEach(el => {
-        el.style.display = isHost ? '' : 'none';
+        el.style.display = store.isHost ? '' : 'none';
     });
 }
 
@@ -372,33 +458,54 @@ async function getPlayerNames() {
 async function loadGeoStats() {
     try {
         const response = await fetchWithAbort(`${API_BASE}/stats/countries`, {}, 'geo-stats');
-        const stats = await response.json(); // Прилетит объект: { RU: 15, US: 5... }
+        const stats = await response.json();
 
         const container = document.getElementById('geo-stats-container');
         if (!container) return;
 
-        container.innerHTML = '';
+        clearEl(container);
 
-        // Сортируем страны по количеству игроков (от большего к меньшему)
         const sortedStats = Object.entries(stats).sort((a, b) => b[1] - a[1]);
         const maxPlayers = sortedStats[0] ? sortedStats[0][1] : 1;
 
         sortedStats.forEach(([countryCode, count]) => {
             const flag = FLAGS[countryCode] || '🏳️';
             const percentage = (count / maxPlayers) * 100;
-            // [FIXED] escapeHtml только для innerHTML (сторонний API)
-            const safeCode = escapeHtml(countryCode);
-            const safeCount = escapeHtml(String(count));
-
-            container.innerHTML += `
-                <div class="geo-row" style="display: flex; align-items: center; margin-bottom: 8px;">
-                    <span style="width: 50px;">${flag} ${safeCode}</span>
-                    <div style="flex-grow: 1; background: #222; height: 12px; border-radius: 6px; margin: 0 10px; overflow: hidden;">
-                        <div style="width: ${percentage}%; background: #00bcd4; height: 100%; border-radius: 6px;"></div>
-                    </div>
-                    <span style="width: 30px; text-align: right;">${safeCount}</span>
-                </div>
-            `;
+            const row = h(
+                'div',
+                {
+                    className: 'geo-row',
+                    style: { display: 'flex', alignItems: 'center', marginBottom: '8px' },
+                },
+                [
+                    h('span', { style: { width: '50px' } }, [document.createTextNode(`${flag} ${countryCode}`)]),
+                    h(
+                        'div',
+                        {
+                            style: {
+                                flexGrow: '1',
+                                background: '#222',
+                                height: '12px',
+                                borderRadius: '6px',
+                                margin: '0 10px',
+                                overflow: 'hidden',
+                            },
+                        },
+                        [
+                            h('div', {
+                                style: {
+                                    width: `${percentage}%`,
+                                    background: '#00bcd4',
+                                    height: '100%',
+                                    borderRadius: '6px',
+                                },
+                            }),
+                        ]
+                    ),
+                    h('span', { style: { width: '30px', textAlign: 'right' } }, [String(count)]),
+                ]
+            );
+            container.appendChild(row);
         });
     } catch (e) {
         if (isAbortError(e)) return;
@@ -547,12 +654,15 @@ async function loadPlayersFromClientAPI() {
     }
 
     if (loaded.length === 0) {
-        table.innerHTML = '<div class="empty-state"><p>Не удалось загрузить данные игроков</p></div>';
+        clearEl(table);
+        table.appendChild(
+            h('div', { className: 'empty-state' }, [h('p', {}, ['Не удалось загрузить данные игроков'])])
+        );
         return;
     }
 
-    players = loaded.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
-    allPlayers = [...players];
+    store.players = loaded.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
+    store.allPlayers = [...store.players];
     renderPlayers();
     renderHardestLevels();
 }
@@ -576,14 +686,14 @@ async function loadAllPlayers() {
             return;
         }
 
-        players = rawData.map(mapLeaderboardEntry).filter(p => p.id);
-        if (players.length === 0) {
+        store.players = rawData.map(mapLeaderboardEntry).filter(p => p.id);
+        if (store.players.length === 0) {
             await loadPlayersFromClientAPI();
             return;
         }
 
-        players.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
-        allPlayers = [...players];
+        store.players.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
+        store.allPlayers = [...store.players];
         renderPlayers();
         renderHardestLevels();
 
@@ -593,7 +703,10 @@ async function loadAllPlayers() {
             await loadPlayersFromClientAPI();
         } catch (err) {
             if (isAbortError(err)) return;
-            table.innerHTML = '<div class="empty-state"><p>Не удалось загрузить данные</p></div>';
+            clearEl(table);
+            table.appendChild(
+                h('div', { className: 'empty-state' }, [h('p', {}, ['Не удалось загрузить данные'])])
+            );
             showToast('Ошибка загрузки лидерборда', 'error');
         }
     }
@@ -601,12 +714,64 @@ async function loadAllPlayers() {
 
 function filterPlayers(query) {
     if (!query) {
-        players = [...allPlayers];
+        store.players = [...store.allPlayers];
     } else {
         const q = query.toLowerCase().trim();
-        players = allPlayers.filter(p => p.name.toLowerCase().includes(q));
+        store.players = store.allPlayers.filter(p => p.name.toLowerCase().includes(q));
     }
     renderPlayers();
+}
+
+function ensureLeaderboardShell(table) {
+    let shell = table.querySelector('.js-leaderboard-shell');
+    if (shell) return shell;
+    clearEl(table);
+    const header = h('div', { className: 'table-header' }, [
+        h('div', { className: 'cell cell-position' }, ['#']),
+        h('div', { className: 'cell cell-player' }, ['Игрок']),
+        h('div', { className: 'cell cell-points' }, ['Очки']),
+        h('div', { className: 'cell cell-records' }, ['Hardest']),
+    ]);
+    const body = h('div', { className: 'js-leaderboard-body' });
+    store._leaderboard.body = body;
+    shell = h('div', { className: 'js-leaderboard-shell' }, [header, body]);
+    table.appendChild(shell);
+    return shell;
+}
+
+function createPlayerRow(index, p) {
+    const rc = index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other';
+    const score = p.score ? p.score.toFixed(2) : '—';
+    const rank = p.rank || '—';
+    const hardest = p.hardest?.level?.name || '—';
+    return h('div', { className: 'player-row', dataset: { profileIndex: String(index) } }, [
+        h('div', { className: `cell cell-position ${rc}` }, [String(index + 1)]),
+        h('div', { className: 'cell cell-player' }, [
+            h('span', { className: 'player-flag' }, [getFlag(p.nationality)]),
+            h('div', { className: 'player-info' }, [
+                h('span', { className: 'player-name' }, [p.name]),
+                h('span', { className: 'player-score' }, [`${score} pts · #${rank}`]),
+            ]),
+        ]),
+        h('div', { className: 'cell cell-points' }, [score]),
+        h('div', { className: 'cell cell-records' }, [hardest]),
+    ]);
+}
+
+function updatePlayerRow(row, index, p) {
+    row.dataset.profileIndex = String(index);
+    const rc = index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other';
+    const score = p.score ? p.score.toFixed(2) : '—';
+    const rank = p.rank || '—';
+    const hardest = p.hardest?.level?.name || '—';
+    const [cellPos, cellPlayer, cellPoints, cellRec] = row.children;
+    cellPos.className = `cell cell-position ${rc}`;
+    cellPos.textContent = String(index + 1);
+    cellPlayer.querySelector('.player-flag').textContent = getFlag(p.nationality);
+    cellPlayer.querySelector('.player-name').textContent = p.name;
+    cellPlayer.querySelector('.player-score').textContent = `${score} pts · #${rank}`;
+    cellPoints.textContent = score;
+    cellRec.textContent = hardest;
 }
 
 function renderPlayers() {
@@ -614,41 +779,39 @@ function renderPlayers() {
     const count = document.getElementById('playersCount');
     if (!table) return;
 
-    if (players.length === 0) {
-        table.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🏆</div><p>Игроки не найдены</p></div>';
+    if (store.players.length === 0) {
+        store._leaderboard.body = null;
+        clearEl(table);
+        table.appendChild(
+            h('div', { className: 'empty-state' }, [
+                h('div', { className: 'empty-state-icon' }, ['🏆']),
+                h('p', {}, ['Игроки не найдены']),
+            ])
+        );
+        if (count) count.textContent = '0 игроков';
+        renderStats();
         return;
     }
 
-    if (count) count.textContent = `${players.length} игроков`;
-    let html = '<div class="table-header"><div class="cell cell-position">#</div><div class="cell cell-player">Игрок</div><div class="cell cell-points">Очки</div><div class="cell cell-records">Hardest</div></div>';
+    ensureLeaderboardShell(table);
+    const body = store._leaderboard.body;
+    if (!body) return;
 
-    players.forEach((p, i) => {
-        const rc = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
-        const flag = getFlag(p.nationality);
-        const name = escapeHtml(p.name);
-        const score = p.score ? p.score.toFixed(2) : '—';
-        const rank = p.rank || '—';
+    if (count) count.textContent = `${store.players.length} игроков`;
 
-        let hardestDisplay = '—';
-        if (p.hardest && p.hardest.level) {
-            hardestDisplay = escapeHtml(p.hardest.level.name || 'Unknown');
-        }
-
-        html += `<div class="player-row" onclick="showProfile(${i})">
-            <div class="cell cell-position ${rc}">${i + 1}</div>
-            <div class="cell cell-player">
-                <span class="player-flag">${flag}</span>
-                <div class="player-info">
-                    <span class="player-name">${name}</span>
-                    <span class="player-score">${score} pts · #${rank}</span>
-                </div>
-            </div>
-            <div class="cell cell-points">${score}</div>
-            <div class="cell cell-records">${hardestDisplay}</div>
-        </div>`;
-    });
-
-    table.innerHTML = html;
+    const n = store.players.length;
+    let rows = [...body.children];
+    while (rows.length < n) {
+        body.appendChild(createPlayerRow(rows.length, store.players[rows.length]));
+        rows = [...body.children];
+    }
+    while (rows.length > n) {
+        body.lastElementChild?.remove();
+        rows = [...body.children];
+    }
+    for (let i = 0; i < n; i++) {
+        updatePlayerRow(rows[i], i, store.players[i]);
+    }
     renderStats();
 }
 
@@ -657,14 +820,14 @@ function renderStats() {
     const statPoints = document.getElementById('statPoints');
     const statHardest = document.getElementById('statHardest');
 
-    if (statPlayers) statPlayers.textContent = players.length;
+    if (statPlayers) statPlayers.textContent = store.players.length;
 
-    const totalPoints = players.reduce((sum, p) => sum + (p.score || 0), 0);
+    const totalPoints = store.players.reduce((sum, p) => sum + (p.score || 0), 0);
     if (statPoints) statPoints.textContent = totalPoints.toFixed(2);
 
     let hardestLevel = null;
     let hardestPlayer = null;
-    players.forEach(p => {
+    store.players.forEach(p => {
         if (p.hardest && p.hardest.level) {
             if (!hardestLevel || p.hardest.level.placement < hardestLevel.placement) {
                 hardestLevel = p.hardest.level;
@@ -690,43 +853,55 @@ function renderCountryStats() {
     if (!countryList) return;
 
     const countryCounts = {};
-    players.forEach(p => {
+    store.players.forEach(p => {
         const country = p.nationality;
         if (country) {
             const key = country.toLowerCase().trim();
             if (!countryCounts[key]) {
-                countryCounts[key] = { name: country, count: 0, players: [] };
+                countryCounts[key] = { name: country, count: 0, members: [] };
             }
             countryCounts[key].count++;
-            countryCounts[key].players.push(p);
+            countryCounts[key].members.push(p);
         }
     });
 
     const sorted = Object.values(countryCounts).sort((a, b) => b.count - a.count);
 
     if (sorted.length === 0) {
-        countryList.innerHTML = '<div style="color: var(--color-text-muted); font-size: var(--font-size-sm);">Нет данных</div>';
+        clearEl(countryList);
+        countryList.appendChild(
+            h('div', { style: { color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' } }, ['Нет данных'])
+        );
         return;
     }
 
-    let html = '';
-    sorted.forEach((c, idx) => {
-        const flag = getFlag(c.name);
-        const countryName = escapeHtml(c.name);
-        html += `<div class="country-item" onclick="showCountryTop('${escapeHtml(c.name)}')" style="cursor: pointer;" title="Топ игроков ${countryName}">
-            <div class="country-info">
-                <span class="country-flag">${flag}</span>
-                <span class="country-name">${countryName}</span>
-            </div>
-            <span class="country-count">${c.count}</span>
-        </div>`;
+    clearEl(countryList);
+    const frag = document.createDocumentFragment();
+    sorted.forEach((c) => {
+        const token = encodeCountryToken(c.name);
+        const row = h(
+            'div',
+            {
+                className: 'country-item',
+                style: { cursor: 'pointer' },
+                dataset: { countryToken: token },
+                title: `Топ игроков ${c.name}`,
+            },
+            [
+                h('div', { className: 'country-info' }, [
+                    h('span', { className: 'country-flag' }, [getFlag(c.name)]),
+                    h('span', { className: 'country-name' }, [c.name]),
+                ]),
+                h('span', { className: 'country-count' }, [String(c.count)]),
+            ]
+        );
+        frag.appendChild(row);
     });
-
-    countryList.innerHTML = html;
+    countryList.appendChild(frag);
 }
 
 function showCountryTop(country) {
-    const countryPlayers = allPlayers.filter(p => {
+    const countryPlayers = store.allPlayers.filter(p => {
         const pCountry = p.nationality?.toLowerCase().trim();
         return pCountry === country.toLowerCase().trim();
     }).sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
@@ -740,20 +915,39 @@ function showCountryTop(country) {
     title.textContent = `${getFlag(country)} Топ игроков: ${country}`;
 
     if (countryPlayers.length === 0) {
-        body.innerHTML = '<p style="color: var(--color-text-muted);">Нет данных</p>';
+        clearEl(body);
+        body.appendChild(
+            h('p', { style: { color: 'var(--color-text-muted)' } }, ['Нет данных'])
+        );
     } else {
-        let html = '<div class="country-top-list">';
+        clearEl(body);
+        const list = h('div', { className: 'country-top-list' });
         countryPlayers.forEach((p, idx) => {
-            const name = escapeHtml(p.name);
             const score = p.score ? p.score.toFixed(2) : '—';
             const rank = p.rank || '—';
-            html += `<div class="country-top-item" style="display: flex; justify-content: space-between; padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">
-                <span><strong>#${idx + 1}</strong> ${name}</span>
-                <span style="color: var(--color-text-muted);">${score} pts · #${rank}</span>
-            </div>`;
+            list.appendChild(
+                h(
+                    'div',
+                    {
+                        className: 'country-top-item',
+                        style: {
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            padding: 'var(--spacing-sm)',
+                            borderBottom: '1px solid var(--color-border)',
+                        },
+                    },
+                    [
+                        h('span', {}, [
+                            h('strong', {}, [`#${idx + 1} `]),
+                            document.createTextNode(p.name),
+                        ]),
+                        h('span', { style: { color: 'var(--color-text-muted)' } }, [`${score} pts · #${rank}`]),
+                    ]
+                )
+            );
         });
-        html += '</div>';
-        body.innerHTML = html;
+        body.appendChild(list);
     }
 
     modal.classList.add('active');
@@ -774,7 +968,7 @@ function renderHardestLevels() {
     // Collect all completed levels from all players
     const levelMap = new Map();
     
-    players.forEach(player => {
+    store.players.forEach(player => {
         if (player.records) {
             player.records.forEach(record => {
                 if (record.status === 'accepted' && record.level) {
@@ -811,99 +1005,139 @@ function renderHardestLevels() {
         .sort((a, b) => a.placement - b.placement);
 
     if (sortedLevels.length === 0) {
-        levelsTable.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🏆</div><p>Нет данных об уровнях</p></div>';
+        clearEl(levelsTable);
+        levelsTable.appendChild(
+            h('div', { className: 'empty-state' }, [
+                h('div', { className: 'empty-state-icon' }, ['🏆']),
+                h('p', {}, ['Нет данных об уровнях']),
+            ])
+        );
         if (levelsCount) levelsCount.textContent = '0 уровней';
         if (expandContainer) expandContainer.style.display = 'none';
+        store.levels.all = null;
+        store.levels.levelData = null;
         return;
     }
 
     if (levelsCount) levelsCount.textContent = `${sortedLevels.length} уровней`;
 
-    // Store all levels and show only first 39
-    window.allLevels = sortedLevels;
-    window.isLevelsExpanded = false;
-    
+    store.levels.all = sortedLevels;
+    store.levels.expanded = false;
+    store.levels.filter = '';
+    store.levels.levelData = new Map();
+    for (const [k, v] of levelMap) {
+        store.levels.levelData.set(String(k), v);
+    }
+
     renderLevelsList(sortedLevels.slice(0, 39));
-    
-    // Show expand button if there are more than 39 levels
+
     if (expandContainer) {
         expandContainer.style.display = sortedLevels.length > 39 ? 'block' : 'none';
     }
-    
-    // Store level data for modal
-    window.levelData = levelMap;
+}
+
+function ensureLevelsShell(table) {
+    let shell = table.querySelector('.js-levels-shell');
+    if (shell) return shell;
+    clearEl(table);
+    const header = h('div', { className: 'table-header' }, [
+        h('div', { className: 'cell cell-position' }, ['#']),
+        h('div', { className: 'cell cell-player' }, ['Уровень']),
+        h('div', { className: 'cell cell-points' }, ['Позиция']),
+        h('div', { className: 'cell cell-records' }, ['Викторов']),
+    ]);
+    const body = h('div', { className: 'js-levels-body' });
+    store.levels._body = body;
+    shell = h('div', { className: 'js-levels-shell' }, [header, body]);
+    table.appendChild(shell);
+    return shell;
+}
+
+function createLevelRow(index, level) {
+    const rc = index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other';
+    const lid = String(level.id);
+    return h('div', { className: 'player-row', dataset: { levelId: lid } }, [
+        h('div', { className: `cell cell-position ${rc}` }, [String(index + 1)]),
+        h('div', { className: 'cell cell-player' }, [
+            h('div', { className: 'player-info' }, [h('span', { className: 'player-name' }, [level.name])]),
+        ]),
+        h('div', { className: 'cell cell-points' }, [`#${level.placement}`]),
+        h('div', { className: 'cell cell-records' }, [String(level.victors.length)]),
+    ]);
+}
+
+function updateLevelRow(row, index, level) {
+    const lid = String(level.id);
+    row.dataset.levelId = lid;
+    const rc = index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other';
+    const [cellPos, cellPlayer, cellPoints, cellRec] = row.children;
+    cellPos.className = `cell cell-position ${rc}`;
+    cellPos.textContent = String(index + 1);
+    cellPlayer.querySelector('.player-name').textContent = level.name;
+    cellPoints.textContent = `#${level.placement}`;
+    cellRec.textContent = String(level.victors.length);
 }
 
 function renderLevelsList(levels) {
     const levelsTable = document.getElementById('levelsTable');
     if (!levelsTable) return;
 
-    let html = '<div class="table-header"><div class="cell cell-position">#</div><div class="cell cell-player">Уровень</div><div class="cell cell-points">Позиция</div><div class="cell cell-records">Викторов</div></div>';
+    ensureLevelsShell(levelsTable);
+    const body = store.levels._body;
+    if (!body) return;
 
-    levels.forEach((level, i) => {
-        const rc = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
-        const levelName = escapeHtml(level.name);
-        const placement = level.placement;
-        const victorCount = level.victors.length;
-
-        html += `<div class="player-row" onclick="showLevelVictors('${escapeHtml(level.id)}')">
-            <div class="cell cell-position ${rc}">${i + 1}</div>
-            <div class="cell cell-player">
-                <div class="player-info">
-                    <span class="player-name">${levelName}</span>
-                </div>
-            </div>
-            <div class="cell cell-points">#${placement}</div>
-            <div class="cell cell-records">${victorCount}</div>
-        </div>`;
-    });
-
-    levelsTable.innerHTML = html;
+    const n = levels.length;
+    let rows = [...body.children];
+    while (rows.length < n) {
+        body.appendChild(createLevelRow(rows.length, levels[rows.length]));
+        rows = [...body.children];
+    }
+    while (rows.length > n) {
+        body.lastElementChild?.remove();
+        rows = [...body.children];
+    }
+    for (let i = 0; i < n; i++) {
+        updateLevelRow(rows[i], i, levels[i]);
+    }
 }
 
 function expandLevels() {
     const expandContainer = document.getElementById('expandLevelsContainer');
     const expandButton = expandContainer?.querySelector('button');
-    if (!window.allLevels) return;
-    
-    if (window.isLevelsExpanded) {
-        // Collapse
-        window.isLevelsExpanded = false;
-        renderLevelsList(window.allLevels.slice(0, 39));
+    if (!store.levels.all) return;
+
+    if (store.levels.expanded) {
+        store.levels.expanded = false;
+        renderLevelsList(store.levels.all.slice(0, 39));
         if (expandButton) expandButton.textContent = 'Показать ещё';
     } else {
-        // Expand
-        window.isLevelsExpanded = true;
-        renderLevelsList(window.allLevels);
+        store.levels.expanded = true;
+        renderLevelsList(store.levels.all);
         if (expandButton) expandButton.textContent = 'Свернуть';
     }
 }
 
 function filterLevels(query) {
-    if (!window.allLevels) return;
-    
+    if (!store.levels.all) return;
+
     if (!query) {
-        // Show first 39 levels when search is cleared
-        window.isLevelsExpanded = false;
-        renderLevelsList(window.allLevels.slice(0, 39));
-        
+        store.levels.expanded = false;
+        renderLevelsList(store.levels.all.slice(0, 39));
+
         const expandContainer = document.getElementById('expandLevelsContainer');
         const expandButton = expandContainer?.querySelector('button');
         if (expandContainer) {
-            expandContainer.style.display = window.allLevels.length > 39 ? 'block' : 'none';
+            expandContainer.style.display = store.levels.all.length > 39 ? 'block' : 'none';
         }
         if (expandButton) expandButton.textContent = 'Показать ещё';
         return;
     }
-    
+
     const q = query.toLowerCase().trim();
-    const filtered = window.allLevels.filter(level => 
-        level.name.toLowerCase().includes(q)
-    );
-    
+    const filtered = store.levels.all.filter((level) => level.name.toLowerCase().includes(q));
+
     renderLevelsList(filtered);
-    
-    // Hide expand button during search
+
     const expandContainer = document.getElementById('expandLevelsContainer');
     if (expandContainer) {
         expandContainer.style.display = 'none';
@@ -911,7 +1145,7 @@ function filterLevels(query) {
 }
 
 function showLevelVictors(levelId) {
-    const levelData = window.levelData?.get(levelId);
+    const levelData = store.levels.levelData?.get(String(levelId));
     if (!levelData) return;
 
     const modal = document.getElementById('levelModal');
@@ -920,22 +1154,39 @@ function showLevelVictors(levelId) {
 
     if (!modal || !title || !body) return;
 
-    // [FIXED] textContent не требует escapeHtml
     title.textContent = `🏆 ${levelData.name} #${levelData.placement}`;
 
+    clearEl(body);
     if (levelData.victors.length === 0) {
-        body.innerHTML = '<p style="color: var(--color-text-muted);">Нет викторов</p>';
+        body.appendChild(
+            h('p', { style: { color: 'var(--color-text-muted)' } }, ['Нет викторов'])
+        );
     } else {
-        let html = '<div class="level-victors-list">';
+        const list = h('div', { className: 'level-victors-list' });
         levelData.victors.forEach((victor, idx) => {
             const flag = getFlag(victor.nationality);
-            const name = escapeHtml(victor.name);
-            html += `<div class="level-victor-item" style="display: flex; justify-content: space-between; padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">
-                <span><strong>#${idx + 1}</strong> ${flag} ${name}</span>
-            </div>`;
+            const span = h('span', {}, [
+                h('strong', {}, [`#${idx + 1} `]),
+                document.createTextNode(`${flag} `),
+                document.createTextNode(victor.name),
+            ]);
+            list.appendChild(
+                h(
+                    'div',
+                    {
+                        className: 'level-victor-item',
+                        style: {
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            padding: 'var(--spacing-sm)',
+                            borderBottom: '1px solid var(--color-border)',
+                        },
+                    },
+                    [span]
+                )
+            );
         });
-        html += '</div>';
-        body.innerHTML = html;
+        body.appendChild(list);
     }
 
     modal.classList.add('active');
@@ -947,72 +1198,81 @@ function closeLevelModal() {
 }
 
 function showProfile(idx) {
-    const p = players[idx];
+    const p = store.players[idx];
     if (!p) return;
 
-    const rec = p.records ? p.records.filter(r => r.status === 'accepted' && r.level) : [];
+    const rec = p.records ? p.records.filter((r) => r.status === 'accepted' && r.level) : [];
     const flag = getFlag(p.nationality);
     const name = p.name;
 
-    // [FIXED] textContent экранирует сам; escapeHtml только для innerHTML ниже
     document.getElementById('profileTitle').textContent = `${flag} ${name}`;
 
     const score = p.score ? p.score.toFixed(2) : '—';
     const rank = p.rank || '—';
 
-    let html = `<div class="profile-stats">
-        <div class="profile-stat">
-            <div class="profile-stat-value">${score}</div>
-            <div class="profile-stat-label">Очки</div>
-        </div>
-        <div class="profile-stat">
-            <div class="profile-stat-value">#${rank}</div>
-            <div class="profile-stat-label">Глобальный топ</div>
-        </div>
-        <div class="profile-stat">
-            <div class="profile-stat-value">${rec.length}</div>
-            <div class="profile-stat-label">Уровней</div>
-        </div>
-    </div>`;
+    const body = document.getElementById('profileBody');
+    clearEl(body);
+
+    const stat = (value, label) =>
+        h('div', { className: 'profile-stat' }, [
+            h('div', { className: 'profile-stat-value' }, [String(value)]),
+            h('div', { className: 'profile-stat-label' }, [label]),
+        ]);
+
+    body.appendChild(
+        h('div', { className: 'profile-stats' }, [stat(score, 'Очки'), stat(`#${rank}`, 'Глобальный топ'), stat(String(rec.length), 'Уровней')])
+    );
 
     if (p.hardest) {
-        const hardestName = escapeHtml(p.hardest.level?.name || p.hardest);
-        html += `<div class="profile-info-row">
-            <span class="profile-info-label">Hardest:</span>
-            <span class="profile-info-value">${hardestName}</span>
-        </div>`;
+        const hardestLabel = p.hardest.level?.name != null ? String(p.hardest.level.name) : String(p.hardest);
+        body.appendChild(
+            h('div', { className: 'profile-info-row' }, [
+                h('span', { className: 'profile-info-label' }, ['Hardest:']),
+                h('span', { className: 'profile-info-value' }, [hardestLabel]),
+            ])
+        );
     }
 
-    const countryDisplay = escapeHtml(p.nationality || 'Не указана');
-    html += `<div class="profile-info-row">
-        <span class="profile-info-label">Страна:</span>
-        <span class="profile-info-value">${flag} ${countryDisplay}</span>
-    </div>`;
+    body.appendChild(
+        h('div', { className: 'profile-info-row' }, [
+            h('span', { className: 'profile-info-label' }, ['Страна:']),
+            h('span', { className: 'profile-info-value' }, [`${flag} ${p.nationality || 'Не указана'}`]),
+        ])
+    );
 
-    html += `<div class="profile-records-section">
-        <h4>Пройденные уровни (${rec.length})</h4>
-        <div class="profile-records-list">`;
+    const recordsSection = h('div', { className: 'profile-records-section' }, [
+        h('h4', {}, [`Пройденные уровни (${rec.length})`]),
+        h('div', { className: 'profile-records-list' }, []),
+    ]);
+    const recordsList = recordsSection.querySelector('.profile-records-list');
 
     if (rec.length > 0) {
-        rec.forEach(r => {
-            const levelName = escapeHtml(r.level?.name || 'Unknown');
-            const placement = r.level?.placement || '?';
-            const progress = r.progress || 100;
-            html += `<div class="record-item">
-                <span class="record-demon">${levelName}<span class="record-placement">#${placement}</span></span>
-                <span class="record-progress ${progress >= 100 ? 'progress-100' : ''}">${progress}%</span>
-            </div>`;
+        rec.forEach((r) => {
+            const levelName = r.level?.name || 'Unknown';
+            const placement = r.level?.placement ?? '?';
+            const progress = r.percent ?? r.progress ?? 100;
+            recordsList.appendChild(
+                h('div', { className: 'record-item' }, [
+                    h('span', { className: 'record-demon' }, [
+                        document.createTextNode(levelName),
+                        h('span', { className: 'record-placement' }, [`#${placement}`]),
+                    ]),
+                    h('span', { className: `record-progress${progress >= 100 ? ' progress-100' : ''}` }, [`${progress}%`]),
+                ])
+            );
         });
     } else {
-        html += '<div class="no-records">Нет записей</div>';
+        recordsList.appendChild(h('div', { className: 'no-records' }, ['Нет записей']));
     }
+    body.appendChild(recordsSection);
 
-    html += '</div></div>';
-    html += `<div class="profile-link">
-        <a href="https://demonlist.org/profile/${p.id}/" target="_blank" rel="noopener noreferrer">🔗 Показать аккаунт в Global Demonlist →</a>
-    </div>`;
+    const link = document.createElement('a');
+    link.href = `https://demonlist.org/profile/${encodeURIComponent(String(p.id))}/`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = '🔗 Показать аккаунт в Global Demonlist →';
+    body.appendChild(h('div', { className: 'profile-link' }, [link]));
 
-    document.getElementById('profileBody').innerHTML = html;
     document.getElementById('profileModal').classList.add('active');
 }
 
@@ -1027,7 +1287,7 @@ function closeProfileModal(e) {
 // ============================================
 
 function showAddPlayerModal() {
-    if (!isHost) {
+    if (!store.isHost) {
         showToast('Только хост может добавлять игроков', 'error');
         return;
     }
@@ -1074,7 +1334,7 @@ async function addPlayer() {
 }
 
 async function removePlayer(name) {
-    if (!isHost) {
+    if (!store.isHost) {
         showToast('Только хост может удалять игроков', 'error');
         return;
     }
@@ -1135,83 +1395,152 @@ async function saveProjects(data) {
 }
 
 async function loadProjects() {
-    projects = await getProjects();
+    store.projects = await getProjects();
     renderProjects();
+}
+
+function buildParticipantNodes(participants) {
+    const frag = document.createDocumentFragment();
+    (participants || []).forEach((line) => {
+        const match = line.match(/^(.+?)\s*\((.+?)\)$/);
+        const span = h('span', { className: 'participant-tag' }, []);
+        if (match) {
+            const name = match[1].trim();
+            const roles = match[2].split(',').map((r) => r.trim());
+            span.appendChild(document.createTextNode(`${name} - (`));
+            roles.forEach((role, i) => {
+                if (i) span.appendChild(document.createTextNode(', '));
+                span.appendChild(h('span', { className: `role ${getRoleClass(role)}` }, [role]));
+            });
+            span.appendChild(document.createTextNode(')'));
+        } else {
+            span.textContent = line;
+        }
+        frag.appendChild(span);
+    });
+    return frag;
+}
+
+function toYoutubeId11(raw) {
+    const id = extractVideoId(String(raw || ''));
+    return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
 }
 
 function renderProjects() {
     const grid = document.getElementById('projectsGrid');
     if (!grid) return;
 
-    if (projects.length === 0) {
-        grid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;">
-            <div class="empty-state-icon">📁</div>
-            <p>Проектов пока нет</p>
-        </div>`;
+    clearEl(grid);
+
+    if (store.projects.length === 0) {
+        grid.appendChild(
+            h(
+                'div',
+                {
+                    className: 'empty-state',
+                    style: { gridColumn: '1 / -1' },
+                },
+                [h('div', { className: 'empty-state-icon' }, ['📁']), h('p', {}, ['Проектов пока нет'])]
+            )
+        );
         return;
     }
 
-    let html = '';
-    projects.forEach((project, idx) => {
+    store.projects.forEach((project, idx) => {
         const statusClass = getStatusClass(project.status);
+        const vid = toYoutubeId11(String(project.videoId || ''));
 
-        html += `<div class="project-card">
-            ${project.videoId
-                ? `<div class="project-video">
-                    <iframe src="https://www.youtube.com/embed/${escapeHtml(project.videoId)}?rel=0" frameborder="0" allowfullscreen allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin"></iframe>
-                </div>
-                <div style="padding: var(--spacing-xs) var(--spacing-md); background: var(--color-surface-2); text-align: center;">
-                    <a href="https://www.youtube.com/watch?v=${escapeHtml(project.videoId)}" target="_blank" rel="noopener noreferrer" style="font-size: var(--font-size-xs); color: var(--color-secondary);">🔗 Открыть на YouTube</a>
-                </div>`
-                : `<div class="project-video"><div class="project-video-placeholder">🎬</div></div>`}
-            
-            <div class="project-content">
-                <h3 class="project-title">${escapeHtml(project.name || `Проект #${idx + 1}`)}</h3>
-                <div class="project-info">
-                    <div class="project-info-item">
-                        <span class="project-info-label">ID:</span>
-                        <span class="project-info-value">${escapeHtml(project.id || '—')}</span>
-                    </div>
-                    <div class="project-info-item">
-                        <span class="project-info-label">Статус:</span>
-                        <span class="project-status ${statusClass}">${escapeHtml(project.status || 'планируется')}</span>
-                    </div>
-                    <div class="project-info-item">
-                        <span class="project-info-label">Верифнут:</span>
-                        <span class="project-info-value">${escapeHtml(project.verifier || '—')}</span>
-                    </div>
-                    ${project.comment ? `<div class="project-info-item">
-                        <span class="project-info-label">Коммент:</span>
-                        <span class="project-info-value">${escapeHtml(project.comment)}</span>
-                    </div>` : ''}
-                </div>
-                <div class="project-participants">
-                    <div class="project-participants-title">Участники:</div>
-                    <div class="project-participants-list">
-                        ${(project.participants || []).map(p => {
-                            const match = p.match(/^(.+?)\s*\((.+?)\)$/);
-                            if (match) {
-                                const name = match[1].trim();
-                                const roles = match[2].split(',').map(r => r.trim());
-                                const rolesHtml = roles.map(role => {
-                                    const roleClass = getRoleClass(role);
-                                    return `<span class="role ${escapeHtml(roleClass)}">${escapeHtml(role)}</span>`;
-                                }).join(', ');
-                                return `<span class="participant-tag">${escapeHtml(name)} - (${rolesHtml})</span>`;
-                            }
-                            return `<span class="participant-tag">${escapeHtml(p)}</span>`;
-                        }).join('')}
-                    </div>
-                </div>
-                ${isHost ? `<div class="project-actions">
-                    <button class="btn btn-secondary btn-sm" onclick="editProject(${idx})">✏️ Редактировать</button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteProject(${idx})">🗑️ Удалить</button>
-                </div>` : ''}
-            </div>
-        </div>`;
+        const cardParts = [];
+        if (vid) {
+            const wrap = h('div', { className: 'project-video' }, []);
+            const iframe = document.createElement('iframe');
+            iframe.src = `https://www.youtube.com/embed/${vid}?rel=0`;
+            iframe.setAttribute('frameborder', '0');
+            iframe.setAttribute('allowfullscreen', '');
+            iframe.setAttribute(
+                'allow',
+                'accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
+            );
+            iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+            wrap.appendChild(iframe);
+            cardParts.push(wrap);
+            const bar = h(
+                'div',
+                {
+                    style: {
+                        padding: 'var(--spacing-xs) var(--spacing-md)',
+                        background: 'var(--color-surface-2)',
+                        textAlign: 'center',
+                    },
+                },
+                []
+            );
+            const a = document.createElement('a');
+            a.href = `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}`;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.style.fontSize = 'var(--font-size-xs)';
+            a.style.color = 'var(--color-secondary)';
+            a.textContent = '🔗 Открыть на YouTube';
+            bar.appendChild(a);
+            cardParts.push(bar);
+        } else {
+            cardParts.push(
+                h('div', { className: 'project-video' }, [h('div', { className: 'project-video-placeholder' }, ['🎬'])])
+            );
+        }
+
+        const infoItems = [
+            h('div', { className: 'project-info-item' }, [
+                h('span', { className: 'project-info-label' }, ['ID:']),
+                h('span', { className: 'project-info-value' }, [project.id || '—']),
+            ]),
+            h('div', { className: 'project-info-item' }, [
+                h('span', { className: 'project-info-label' }, ['Статус:']),
+                h('span', { className: `project-status ${statusClass}` }, [project.status || 'планируется']),
+            ]),
+            h('div', { className: 'project-info-item' }, [
+                h('span', { className: 'project-info-label' }, ['Верифнут:']),
+                h('span', { className: 'project-info-value' }, [project.verifier || '—']),
+            ]),
+        ];
+        if (project.comment) {
+            infoItems.push(
+                h('div', { className: 'project-info-item' }, [
+                    h('span', { className: 'project-info-label' }, ['Коммент:']),
+                    h('span', { className: 'project-info-value' }, [project.comment]),
+                ])
+            );
+        }
+
+        const participantsList = h('div', { className: 'project-participants-list' }, []);
+        participantsList.appendChild(buildParticipantNodes(project.participants));
+
+        const contentChildren = [
+            h('h3', { className: 'project-title' }, [project.name || `Проект #${idx + 1}`]),
+            h('div', { className: 'project-info' }, infoItems),
+            h('div', { className: 'project-participants' }, [
+                h('div', { className: 'project-participants-title' }, ['Участники:']),
+                participantsList,
+            ]),
+        ];
+
+        if (store.isHost) {
+            contentChildren.push(
+                h('div', { className: 'project-actions' }, [
+                    h('button', { className: 'btn btn-secondary btn-sm', attrs: { type: 'button' }, dataset: { action: 'edit-project', projectIndex: String(idx) } }, [
+                        '✏️ Редактировать',
+                    ]),
+                    h('button', { className: 'btn btn-danger btn-sm', attrs: { type: 'button' }, dataset: { action: 'delete-project', projectIndex: String(idx) } }, [
+                        '🗑️ Удалить',
+                    ]),
+                ])
+            );
+        }
+
+        cardParts.push(h('div', { className: 'project-content' }, contentChildren));
+        grid.appendChild(h('div', { className: 'project-card' }, cardParts));
     });
-
-    grid.innerHTML = html;
 }
 
 function getStatusClass(status) {
@@ -1240,7 +1569,7 @@ function getRoleClass(role) {
 }
 
 function showAddProjectModal() {
-    if (!isHost) {
+    if (!store.isHost) {
         showToast('Только хост может добавлять проекты', 'error');
         return;
     }
@@ -1262,12 +1591,12 @@ function closeProjectModal() {
 }
 
 function editProject(idx) {
-    if (!isHost) {
+    if (!store.isHost) {
         showToast('Только хост может редактировать проекты', 'error');
         return;
     }
 
-    const project = projects[idx];
+    const project = store.projects[idx];
     if (!project) return;
 
     document.getElementById('projectIndex').value = idx;
@@ -1299,45 +1628,45 @@ async function saveProject() {
             .filter(p => p)
     };
 
-    const oldProject = idx === -1 ? null : { ...projects[idx] };
+    const oldProject = idx === -1 ? null : { ...store.projects[idx] };
     if (idx === -1) {
-        projects.push(project);
+        store.projects.push(project);
     } else {
-        projects[idx] = project;
+        store.projects[idx] = project;
     }
 
     try {
-        await saveProjects(projects);
+        await saveProjects(store.projects);
         showToast(idx === -1 ? 'Проект добавлен!' : 'Проект обновлён!', 'success');
         closeProjectModal();
         renderProjects();
     } catch (e) {
         if (isAbortError(e)) return;
         if (idx === -1) {
-            projects.pop();
+            store.projects.pop();
         } else {
-            projects[idx] = oldProject;
+            store.projects[idx] = oldProject;
         }
         showToast(e.message, 'error');
     }
 }
 
 async function deleteProject(idx) {
-    if (!isHost) {
+    if (!store.isHost) {
         showToast('Только хост может удалять проекты', 'error');
         return;
     }
 
     if (!confirm('Удалить этот проект?')) return;
 
-    const removed = projects.splice(idx, 1);
+    const removed = store.projects.splice(idx, 1);
     try {
-        await saveProjects(projects);
+        await saveProjects(store.projects);
         renderProjects();
         showToast('Проект удалён', 'success');
     } catch (e) {
         if (isAbortError(e)) return;
-        projects.splice(idx, 0, removed[0]);
+        store.projects.splice(idx, 0, removed[0]);
         showToast(e.message, 'error');
     }
 }
@@ -1374,20 +1703,26 @@ function closeInfoModal(e) {
     }
 }
 
-async function sha256(message) {
-    const msgBuffer = new TextEncoder().encode(message);                    
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-function escapeHtml(text) {
-    if (!text) return '';
-    return text
-        .toString()
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
+// HTML-шаблоны (demonlist.html, projects.html, index.html) вызывают эти имена в inline onclick
+if (typeof window !== 'undefined') {
+    Object.assign(window, {
+        verifyHost,
+        logoutHost,
+        expandLevels,
+        showInfoModal,
+        closeInfoModal,
+        closeHostModal,
+        closeProfileModal,
+        closeCountryModal,
+        closeLevelModal,
+        showAddPlayerModal,
+        closeAddPlayerModal,
+        addPlayer,
+        removePlayer,
+        showAddProjectModal,
+        closeProjectModal,
+        saveProject,
+        editProject,
+        deleteProject,
+    });
 }
