@@ -171,17 +171,23 @@ function updateThemeIcon(theme) {
 async function initHostStatus() {
     if (localStorage.getItem('smlt-host') === 'true') {
         try {
-            const res = await fetch(`${BACKEND_URL}/auth/verify`, { 
-                credentials: 'include' 
+            const res = await fetch(`${BACKEND_URL}/auth/verify`, {
+                credentials: 'include'
             });
-            isHost = res.ok; 
+            const data = await res.json().catch(() => ({}));
+            // [SECURITY FIX] Бэкенд отдаёт { success: true } при валидной HttpOnly-куке
+            isHost = res.ok && data.success === true;
+            if (!isHost) {
+                localStorage.removeItem('smlt-host');
+            }
         } catch {
             isHost = false;
+            localStorage.removeItem('smlt-host');
         }
     } else {
         isHost = false;
     }
-    
+
     updateHostButton();
     updateAdminControls();
 }
@@ -340,16 +346,18 @@ async function loadGeoStats() {
 
         sortedStats.forEach(([countryCode, count]) => {
             const flag = FLAGS[countryCode] || '🏳️';
-            // Вычисляем процент ширины полосы относительно лидера топа
             const percentage = (count / maxPlayers) * 100;
+            // [SECURITY FIX] Экранирование данных стороннего API перед innerHTML
+            const safeCode = escapeHtml(countryCode);
+            const safeCount = escapeHtml(String(count));
 
             container.innerHTML += `
                 <div class="geo-row" style="display: flex; align-items: center; margin-bottom: 8px;">
-                    <span style="width: 50px;">${flag} ${countryCode}</span>
+                    <span style="width: 50px;">${flag} ${safeCode}</span>
                     <div style="flex-grow: 1; background: #222; height: 12px; border-radius: 6px; margin: 0 10px; overflow: hidden;">
                         <div style="width: ${percentage}%; background: #00bcd4; height: 100%; border-radius: 6px;"></div>
                     </div>
-                    <span style="width: 30px; text-align: right;">${count}</span>
+                    <span style="width: 30px; text-align: right;">${safeCount}</span>
                 </div>
             `;
         });
@@ -968,14 +976,25 @@ async function removePlayer(name) {
 
     if (!confirm(`Удалить игрока "${name}"?`)) return;
 
-    let playerNames = await getPlayerNames();
-    playerNames = playerNames.filter(n => n.toLowerCase() !== name.toLowerCase());
     try {
-        await savePlayerNames(playerNames);
-        loadAllPlayers();
+        // [SECURITY FIX] Удаление через защищённый DELETE /api/players
+        const res = await fetch(`${BACKEND_URL}/players`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ name })
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Ошибка удаления игрока');
+        }
+        await loadAllPlayers();
         showToast(`Игрок "${name}" удалён`, 'success');
     } catch (e) {
         showToast(e.message, 'error');
+        if (e.message.includes('сессия') || e.message.includes('401') || e.message.includes('доступ')) {
+            logoutHost();
+        }
     }
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strconv"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,13 +25,11 @@ var (
 	fsClient  *firestore.Client
 	jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
-	// Безопасный HTTP клиент с жестким таймаутом (защита от зависания горутин)
 	httpClient = &http.Client{Timeout: 10 * time.Second}
 
-	// Rate Limiter
 	ipMap  = make(map[string]*ipLimit)
 	muLim  sync.Mutex
-	maxIPs = 10000 // Защита от OOM при DDoS
+	maxIPs = 10000
 )
 
 // === ТИПЫ ДАННЫХ ===
@@ -64,8 +63,8 @@ func init() {
 	ctx := context.Background()
 	creds := os.Getenv("FIREBASE_CREDENTIALS")
 	if creds == "" {
-		log.Println("ВНИМАНИЕ: FIREBASE_CREDENTIALS не задан")
-		return
+		// [SECURITY FIX] Падение при старте вместо nil pointer в рантайме
+		log.Fatalf("FIREBASE_CREDENTIALS не задан")
 	}
 
 	app, err := firebase.NewApp(ctx, nil, option.WithCredentialsJSON([]byte(creds)))
@@ -75,7 +74,7 @@ func init() {
 
 	fsClient, err = app.Firestore(ctx)
 	if err != nil {
-		log.Fatalf("Ошибка инициализации Firebase: %v", err)
+		log.Fatalf("Ошибка подключения Firestore: %v", err)
 	}
 }
 
@@ -85,14 +84,18 @@ func sendError(w http.ResponseWriter, status int, msg string) {
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
-// Берем реальный IP на уровне TCP, игнорируя поддельные заголовки
+func methodNotAllowed(w http.ResponseWriter, allowed string) {
+	w.Header().Set("Allow", allowed)
+	sendError(w, http.StatusMethodNotAllowed, "Метод не разрешен")
+}
+
+// [SECURITY FIX] Реальный IP клиента за reverse proxy / load balancer
 func getRealIP(r *http.Request) string {
-	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
-		// Берем первый IP из списка (клиентский)
-		return strings.Split(ip, ",")[0]
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		return strings.TrimSpace(strings.Split(xff, ",")[0])
 	}
-	if ip := r.Header.Get("X-Real-IP"); ip != "" {
-		return ip
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
 	}
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -103,19 +106,20 @@ func getRealIP(r *http.Request) string {
 
 // === MIDDLEWARES ===
 
-// 1. Бронебойный Rate Limiter
 func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip := getRealIP(r)
+		ip := getRealIP(r) // [SECURITY FIX] вместо r.RemoteAddr
 
 		muLim.Lock()
-		// Вместо обнуления всей мапы:
-		if len(ipMap) > maxIPs {
+
+		limiter, exists := ipMap[ip]
+		// [SECURITY FIX] Блокируем только новые IP при переполнении мапы (без полного сброса)
+		if !exists && len(ipMap) >= maxIPs {
+			muLim.Unlock()
 			http.Error(w, "Rate limit map full", http.StatusServiceUnavailable)
 			return
 		}
 
-		limiter, exists := ipMap[ip]
 		if !exists || time.Now().After(limiter.resetTime) {
 			ipMap[ip] = &ipLimit{requests: 1, resetTime: time.Now().Add(1 * time.Minute)}
 			muLim.Unlock()
@@ -135,7 +139,6 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// 2. Валидация JWT Админа
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("auth_token")
@@ -158,8 +161,12 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 // === ХЭНДЛЕРЫ ===
 
-// Обработчик входа (Bcrypt cost должен быть не больше 10-12)
 func handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
 	var req struct {
 		Password string `json:"password"`
 	}
@@ -169,14 +176,11 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	adminHash := os.Getenv("ADMIN_HASH")
-
-	// Проверка пароля. Если база ляжет, это место спасет от перебора
 	if err := bcrypt.CompareHashAndPassword([]byte(adminHash), []byte(req.Password)); err != nil {
 		sendError(w, http.StatusUnauthorized, "Неверный пароль")
 		return
 	}
 
-	// Выдача токена
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"admin": true,
 		"exp":   time.Now().Add(24 * time.Hour).Unix(),
@@ -187,8 +191,8 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		Name:     "auth_token",
 		Value:    tokenString,
 		Expires:  time.Now().Add(24 * time.Hour),
-		HttpOnly: true, // Защита от XSS (JS не прочитает куку)
-		Secure:   true, // Только по HTTPS
+		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 		Path:     "/",
 	})
@@ -197,95 +201,34 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
-// Сохранение проекта с жесткой валидацией
-func handleSaveProject(w http.ResponseWriter, r *http.Request) {
-	var p Project
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
 		return
 	}
 
-	// ЗАЩИТА: Не даем забить базу мусором
-	if len(p.Name) == 0 || len(p.Name) > 100 {
-		sendError(w, http.StatusBadRequest, "Недопустимая длина имени")
-		return
-	}
-	if len(p.Comment) > 1000 {
-		sendError(w, http.StatusBadRequest, "Слишком длинный комментарий")
-		return
-	}
-	if len(p.VideoID) > 50 {
-		sendError(w, http.StatusBadRequest, "Слишком длинный VideoID")
-		return
-	}
-
-	ctx := context.Background()
-	_, err := fsClient.Collection("projects").Doc(p.ID).Set(ctx, p)
-	if err != nil {
-		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
-		return
-	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "auth_token",
+		Value:    "",
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		Path:     "/",
+		MaxAge:   -1,
+	})
 
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
-// Защищенный фетчинг лидерборда (Worker Pool)
-func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
-	// ... (Здесь должен быть код получения players из Firestore)
-	// Допустим, мы получили []Player{...} в переменную players
-	players := []Player{{Name: "Player1"}, {Name: "Player2"}} // Заглушка
-
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	result := make([]FullPlayerData, 0, len(players))
-
-	// СЕМАФОР: Ограничиваем до 5 одновременных запросов к demonlist.org
-	sem := make(chan struct{}, 5)
-
-	for _, p := range players {
-		wg.Add(1)
-		sem <- struct{}{} // Занимаем слот
-
-		go func(playerName string) {
-			defer wg.Done()
-			defer func() { <-sem }() // Освобождаем слот
-
-			escaped := url.PathEscape(playerName)
-
-			// Запрос 1 (с учетом таймаута из глобального httpClient)
-			resp1, err := httpClient.Get("https://api.demonlist.org/api/v1/players/by_name/" + escaped)
-			if err != nil {
-				return
-			}
-			defer resp1.Body.Close()
-			var data interface{}
-			json.NewDecoder(resp1.Body).Decode(&data)
-
-			// Запрос 2
-			resp2, err := httpClient.Get("https://api.demonlist.org/api/v1/players/by_name/" + escaped + "/records/")
-			if err != nil {
-				return
-			}
-			defer resp2.Body.Close()
-			var recs interface{}
-			json.NewDecoder(resp2.Body).Decode(&recs)
-
-			mu.Lock()
-			result = append(result, FullPlayerData{
-				Name:    playerName,
-				Data:    data,
-				Records: recs,
-			})
-			mu.Unlock()
-		}(p.Name)
+// [SECURITY FIX] Проверка JWT из HttpOnly-куки для синхронизации с фронтендом
+func handleAuthVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
 	}
 
-	wg.Wait()
-	json.NewEncoder(w).Encode(result)
-}
-
-// Проверка валидности JWT токена
-func handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("auth_token")
 	if err != nil {
 		sendError(w, http.StatusUnauthorized, "Нет токена")
@@ -302,26 +245,239 @@ func handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"valid": true})
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
-// Получить список игроков
-func handleGetPlayers(w http.ResponseWriter, r *http.Request) {
+func handleGetProjects(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+
 	ctx := context.Background()
+	iter := fsClient.Collection("projects").Documents(ctx)
+	projects := make([]Project, 0)
+
+	for {
+		doc, err := iter.Next()
+		if err != nil {
+			break
+		}
+		var p Project
+		if err := doc.DataTo(&p); err != nil {
+			continue
+		}
+		projects = append(projects, p)
+	}
+
+	json.NewEncoder(w).Encode(projects)
+}
+
+func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	var projectList []Project
+	if err := json.NewDecoder(r.Body).Decode(&projectList); err != nil {
+		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
+		return
+	}
+
+	if len(projectList) > 500 {
+		sendError(w, http.StatusBadRequest, "Слишком много проектов")
+		return
+	}
+
+	for _, p := range projectList {
+		if len(p.Name) == 0 || len(p.Name) > 100 {
+			sendError(w, http.StatusBadRequest, "Недопустимая длина имени")
+			return
+		}
+		if len(p.Comment) > 1000 {
+			sendError(w, http.StatusBadRequest, "Слишком длинный комментарий")
+			return
+		}
+		if len(p.VideoID) > 50 {
+			sendError(w, http.StatusBadRequest, "Слишком длинный VideoID")
+			return
+		}
+		if p.ID == "" {
+			sendError(w, http.StatusBadRequest, "ID проекта обязателен")
+			return
+		}
+	}
+
+	ctx := context.Background()
+	batch := fsClient.Batch()
+	for _, p := range projectList {
+		ref := fsClient.Collection("projects").Doc(p.ID)
+		batch.Set(ref, p)
+	}
+	if _, err := batch.Commit(ctx); err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func formatUserID(id interface{}) string {
+	switch v := id.(type) {
+	case float64:
+		return strconv.FormatInt(int64(v), 10)
+	case json.Number:
+		return v.String()
+	case string:
+		return v
+	case int:
+		return strconv.Itoa(v)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	default:
+		return ""
+	}
+}
+
+func extractUserID(data interface{}, playerName string) string {
+	m, ok := data.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	d, ok := m["data"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	users, ok := d["users"].([]interface{})
+	if !ok {
+		return ""
+	}
+
+	nl := strings.ToLower(strings.TrimSpace(playerName))
+	for _, u := range users {
+		user, ok := u.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		username, _ := user["username"].(string)
+		if strings.ToLower(strings.TrimSpace(username)) == nl {
+			return formatUserID(user["id"])
+		}
+	}
+	if len(users) > 0 {
+		if user, ok := users[0].(map[string]interface{}); ok {
+			return formatUserID(user["id"])
+		}
+	}
+	return ""
+}
+
+func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	ctx := context.Background()
+	players, err := loadPlayersFromFirestore(ctx)
+	if err != nil || len(players) == 0 {
+		json.NewEncoder(w).Encode([]FullPlayerData{})
+		return
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	result := make([]FullPlayerData, 0, len(players))
+	sem := make(chan struct{}, 5)
+
+	for _, p := range players {
+		wg.Add(1)
+		sem <- struct{}{}
+
+		go func(playerName string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			search := url.QueryEscape(playerName)
+			resp1, err := httpClient.Get("https://api.demonlist.org/leaderboard/user/list?search=" + search + "&limit=50")
+			if err != nil {
+				return
+			}
+			defer resp1.Body.Close()
+			var data interface{}
+			json.NewDecoder(resp1.Body).Decode(&data)
+
+			userID := extractUserID(data, playerName)
+			var recs interface{}
+			if userID != "" {
+				resp2, err := httpClient.Get("https://api.demonlist.org/user/record/list?user_id=" + url.QueryEscape(userID) + "&limit=50")
+				if err == nil {
+					defer resp2.Body.Close()
+					json.NewDecoder(resp2.Body).Decode(&recs)
+				}
+			}
+
+			mu.Lock()
+			result = append(result, FullPlayerData{
+				Name:    playerName,
+				Data:    data,
+				Records: recs,
+			})
+			mu.Unlock()
+		}(p.Name)
+	}
+
+	wg.Wait()
+	json.NewEncoder(w).Encode(result)
+}
+
+func loadPlayersFromFirestore(ctx context.Context) ([]Player, error) {
 	doc, err := fsClient.Collection("config").Doc("players").Get(ctx)
 	if err != nil {
-		// Если документа нет, возвращаем пустой массив
-		json.NewEncoder(w).Encode([]string{})
-		return
+		return nil, err
 	}
 
 	var players []Player
-	if err := doc.DataTo(&players); err != nil {
+	if err := doc.DataTo(&players); err == nil && len(players) > 0 {
+		return players, nil
+	}
+
+	if raw, ok := doc.Data()["players"]; ok {
+		b, err := json.Marshal(raw)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(b, &players); err != nil {
+			return nil, err
+		}
+		return players, nil
+	}
+
+	return players, nil
+}
+
+func savePlayersToFirestore(ctx context.Context, players []Player) error {
+	_, err := fsClient.Collection("config").Doc("players").Set(ctx, map[string]interface{}{
+		"players": players,
+	})
+	return err
+}
+
+func handleGetPlayers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	ctx := context.Background()
+	players, err := loadPlayersFromFirestore(ctx)
+	if err != nil {
 		json.NewEncoder(w).Encode([]string{})
 		return
 	}
 
-	// Возвращаем только имена
 	names := make([]string, len(players))
 	for i, p := range players {
 		names[i] = p.Name
@@ -329,21 +485,23 @@ func handleGetPlayers(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(names)
 }
 
-// Сохранить список игроков (требует авторизацию)
 func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
 	var playerList []Player
 	if err := json.NewDecoder(r.Body).Decode(&playerList); err != nil {
 		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
 		return
 	}
 
-	// Защита от переполнения
 	if len(playerList) > 1000 {
 		sendError(w, http.StatusBadRequest, "Слишком много игроков (макс 1000)")
 		return
 	}
 
-	// Валидация имен игроков
 	for _, p := range playerList {
 		if len(p.Name) == 0 || len(p.Name) > 100 {
 			sendError(w, http.StatusBadRequest, "Недопустимая длина имени игрока")
@@ -352,8 +510,60 @@ func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.Background()
-	_, err := fsClient.Collection("config").Doc("players").Set(ctx, playerList)
+	if err := savePlayersToFirestore(ctx, playerList); err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+// [SECURITY FIX] Удаление игрока только с валидным JWT
+func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		methodNotAllowed(w, http.MethodDelete)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
+		return
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		sendError(w, http.StatusBadRequest, "Имя игрока обязательно")
+		return
+	}
+
+	ctx := context.Background()
+	players, err := loadPlayersFromFirestore(ctx)
 	if err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		return
+	}
+
+	filtered := make([]Player, 0, len(players))
+	removed := false
+	lowerName := strings.ToLower(name)
+	for _, p := range players {
+		if strings.ToLower(strings.TrimSpace(p.Name)) == lowerName {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+
+	if !removed {
+		sendError(w, http.StatusNotFound, "Игрок не найден")
+		return
+	}
+
+	if err := savePlayersToFirestore(ctx, filtered); err != nil {
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -364,31 +574,39 @@ func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
 
 // === РОУТЕР (Точка входа) ===
 func MainHandler(w http.ResponseWriter, r *http.Request) {
-	// Базовые заголовки (CORS + защита контента)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 
-	// Маршрутизация по пути и методу
 	switch r.URL.Path {
 	case "/api/login":
 		rateLimitMiddleware(handleLogin)(w, r)
+	case "/api/logout":
+		rateLimitMiddleware(handleLogout)(w, r)
 	case "/api/auth/verify":
 		rateLimitMiddleware(handleAuthVerify)(w, r)
 	case "/api/leaderboard":
 		rateLimitMiddleware(handleLeaderboard)(w, r)
 	case "/api/players":
-		if r.Method == "GET" {
-			// GET: без авторизации (загрузка списка игроков)
+		switch r.Method {
+		case http.MethodGet:
 			rateLimitMiddleware(handleGetPlayers)(w, r)
-		} else if r.Method == "POST" {
-			// POST: с авторизацией (сохранение списка)
+		case http.MethodPost:
 			rateLimitMiddleware(authMiddleware(handleSavePlayers))(w, r)
-		} else {
-			sendError(w, http.StatusMethodNotAllowed, "Метод не разрешен")
+		case http.MethodDelete:
+			rateLimitMiddleware(authMiddleware(handleDeletePlayer))(w, r)
+		default:
+			methodNotAllowed(w, "GET, POST, DELETE")
 		}
 	case "/api/projects":
-		rateLimitMiddleware(authMiddleware(handleSaveProject))(w, r)
+		switch r.Method {
+		case http.MethodGet:
+			rateLimitMiddleware(handleGetProjects)(w, r)
+		case http.MethodPost:
+			rateLimitMiddleware(authMiddleware(handleSaveProjects))(w, r)
+		default:
+			methodNotAllowed(w, "GET, POST")
+		}
 	default:
 		sendError(w, http.StatusNotFound, "Роут не найден")
 	}
