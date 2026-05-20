@@ -392,7 +392,7 @@ func extractUserID(data interface{}, playerName string) string {
 		return ""
 	}
 	users, ok := d["users"].([]interface{})
-	if !ok {
+	if !ok || len(users) == 0 {
 		return ""
 	}
 
@@ -407,12 +407,41 @@ func extractUserID(data interface{}, playerName string) string {
 			return formatUserID(user["id"])
 		}
 	}
-	if len(users) > 0 {
-		if user, ok := users[0].(map[string]interface{}); ok {
-			return formatUserID(user["id"])
-		}
-	}
 	return ""
+}
+
+func fetchAPIWithRetry(url string, maxRetries int) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		resp, err := httpClient.Get(url)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			lastErr = fmt.Errorf("http %d", resp.StatusCode)
+			if attempt < maxRetries-1 {
+				time.Sleep(time.Second * time.Duration(attempt+1))
+			}
+			continue
+		}
+
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+		if err != nil {
+			lastErr = fmt.Errorf("read body: %w", err)
+			continue
+		}
+
+		if len(body) == 0 {
+			lastErr = errors.New("empty response")
+			continue
+		}
+
+		return body, nil
+	}
+	return nil, lastErr
 }
 
 func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
@@ -439,25 +468,54 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 
 			entry := FullPlayerData{Name: playerName}
 			search := url.QueryEscape(playerName)
-			resp1, err := httpClient.Get("https://api.demonlist.org/leaderboard/user/list?search=" + search + "&limit=50")
-			if err == nil {
-				defer resp1.Body.Close()
-				var data interface{}
-				if json.NewDecoder(resp1.Body).Decode(&data) == nil {
-					entry.Data = data
-					if userID := extractUserID(data, playerName); userID != "" {
-						resp2, err := httpClient.Get("https://api.demonlist.org/user/record/list?user_id=" + url.QueryEscape(userID) + "&limit=50")
-						if err == nil {
-							defer resp2.Body.Close()
-							var recs interface{}
-							if json.NewDecoder(resp2.Body).Decode(&recs) == nil {
-								entry.Records = recs
-							}
-						}
-					}
-				}
+
+			body1, err := fetchAPIWithRetry("https://api.demonlist.org/leaderboard/user/list?search="+search+"&limit=50", 3)
+			if err != nil {
+				log.Printf("[leaderboard] fetch user list for %s: %v", playerName, err)
+				mu.Lock()
+				result = append(result, entry)
+				mu.Unlock()
+				return
 			}
 
+			var data interface{}
+			if err := json.Unmarshal(body1, &data); err != nil {
+				log.Printf("[leaderboard] parse user list for %s: %v", playerName, err)
+				mu.Lock()
+				result = append(result, entry)
+				mu.Unlock()
+				return
+			}
+
+			entry.Data = data
+			userID := extractUserID(data, playerName)
+			if userID == "" {
+				log.Printf("[leaderboard] no user id found for %s", playerName)
+				mu.Lock()
+				result = append(result, entry)
+				mu.Unlock()
+				return
+			}
+
+			body2, err := fetchAPIWithRetry("https://api.demonlist.org/user/record/list?user_id="+url.QueryEscape(userID)+"&limit=50", 3)
+			if err != nil {
+				log.Printf("[leaderboard] fetch records for %s (id=%s): %v", playerName, userID, err)
+				mu.Lock()
+				result = append(result, entry)
+				mu.Unlock()
+				return
+			}
+
+			var recs interface{}
+			if err := json.Unmarshal(body2, &recs); err != nil {
+				log.Printf("[leaderboard] parse records for %s: %v", playerName, err)
+				mu.Lock()
+				result = append(result, entry)
+				mu.Unlock()
+				return
+			}
+
+			entry.Records = recs
 			mu.Lock()
 			result = append(result, entry)
 			mu.Unlock()
@@ -573,7 +631,7 @@ func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
-// [SECURITY FIX] Удаление игрока только с валидным JWT
+// [CONCURRENCY FIX] Использование транзакций Firestore вместо read-modify-write
 func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		methodNotAllowed(w, http.MethodDelete)
@@ -598,30 +656,47 @@ func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.Background()
-	players, err := loadPlayersFromFirestore(ctx)
-	if err != nil {
-		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
-		return
-	}
-
-	filtered := make([]Player, 0, len(players))
-	removed := false
 	lowerName := strings.ToLower(name)
-	for _, p := range players {
-		if strings.ToLower(strings.TrimSpace(p.Name)) == lowerName {
-			removed = true
-			continue
+
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		doc, err := tx.Get(fsClient.Collection("config").Doc("players"))
+		if err != nil {
+			return err
 		}
-		filtered = append(filtered, p)
-	}
 
-	if !removed {
-		sendError(w, http.StatusNotFound, "Игрок не найден")
-		return
-	}
+		var players []Player
+		if err := doc.DataTo(&players); err != nil {
+			if raw, ok := doc.Data()["players"]; ok {
+				b, _ := json.Marshal(raw)
+				json.Unmarshal(b, &players)
+			}
+		}
 
-	if err := savePlayersToFirestore(ctx, filtered); err != nil {
-		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		filtered := make([]Player, 0, len(players))
+		removed := false
+		for _, p := range players {
+			if strings.ToLower(strings.TrimSpace(p.Name)) == lowerName {
+				removed = true
+				continue
+			}
+			filtered = append(filtered, p)
+		}
+
+		if !removed {
+			return errors.New("player_not_found")
+		}
+
+		return tx.Set(fsClient.Collection("config").Doc("players"), map[string]interface{}{
+			"players": filtered,
+		})
+	})
+
+	if err != nil {
+		if err.Error() == "player_not_found" {
+			sendError(w, http.StatusNotFound, "Игрок не найден")
+		} else {
+			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		}
 		return
 	}
 
