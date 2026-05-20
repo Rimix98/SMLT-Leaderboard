@@ -214,7 +214,7 @@ const BACKEND_URL = '/api';
 
 async function verifyHost(inputPassword) {
     try {
-        const res = await fetch(`${BACKEND_URL}/auth/login`, { // шлём на BACKEND_URL и на правильный путь
+        const res = await fetch(`${BACKEND_URL}/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include', // чтобы кука от бэкенда сохранилась в браузере
@@ -266,7 +266,7 @@ async function logoutHost() {
     sessionStorage.removeItem('adminToken'); 
     
     try {
-        await fetch(`${BACKEND_URL}/auth/logout`, { 
+        await fetch(`${BACKEND_URL}/logout`, { 
             method: 'POST',
             credentials: 'include'
         });
