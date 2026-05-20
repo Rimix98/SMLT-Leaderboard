@@ -439,78 +439,52 @@ async function fetchRecords(id) {
 async function loadAllPlayers() {
     const table = document.getElementById('leaderboardTable');
     const count = document.getElementById('playersCount');
-    const playerNames = await getPlayerNames();
-
     if (!table) return;
 
-    if (playerNames.length === 0) {
-        table.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🏆</div><p>Список игроков пуст</p></div>';
-        if (count) count.textContent = '0 игроков';
-        return;
-    }
-
-    players = [];
-    const loadedIds = new Set();
-
-    const promises = playerNames.map(async (name) => {
-        name = name.trim();
-        if (!name) return null;
-
-        // ИГНОРИРУЕМ ТЕСТОВЫЙ МУСОР ИЗ БАЗЫ ДАННЫХ
-        if (name === "Test_User_Verify" || name.toLowerCase().includes("test")) {
-            return null; 
+    try {
+        // Делаем ОДИН запрос к нашему мощному бэкенду
+        const res = await fetch('/api/leaderboard');
+        if (!res.ok) throw new Error('Ошибка сервера');
+        
+        const rawData = await res.json();
+        
+        if (rawData.length === 0) {
+            table.innerHTML = '<div class="empty-state"><p>Список игроков пуст</p></div>';
+            if (count) count.textContent = '0 игроков';
+            return;
         }
 
-        try {
-            const fp = await fetchPlayerData(name); //
-            if (!fp) return { error: name }; //
-
-            if (loadedIds.has(fp.id)) return null; //
-            loadedIds.add(fp.id); //
-
-            const rec = await fetchRecords(fp.id); //
-            let hardest = null; //
-            if (rec.length > 0) { //
-                const ar = rec.filter(r => r.status === 'accepted' && r.level); //
-                if (ar.length > 0) hardest = ar.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m); //
+        // Мапим данные от бэкенда в формат фронтенда
+        players = rawData.map(p => {
+            // Тут нужно подогнать парсинг под структуру ответа от API демо-листа
+            const pData = p.data?.data || {}; 
+            const pRecs = p.records?.data?.records || [];
+            
+            let hardest = null;
+            const acceptedRecs = pRecs.filter(r => r.status === 'accepted' && r.level);
+            if (acceptedRecs.length > 0) {
+                hardest = acceptedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
             }
 
             return {
-                id: fp.id,
-                name: fp.username,
-                rank: fp.placement || 0,
-                score: parseFloat(fp.points) || 0,
-                nationality: fp.country || null,
-                records: rec,
+                id: pData.id,
+                name: p.name,
+                rank: pData.placement || 0,
+                score: parseFloat(pData.points) || 0,
+                nationality: pData.country || null,
+                records: pRecs,
                 hardest: hardest
             };
-        } catch (e) {
-            return { error: name }; //
-        }
-    });
+        });
 
-    const results = await Promise.all(promises);
+        players.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
+        allPlayers = [...players];
+        renderPlayers();
+        renderHardestLevels();
 
-    const errors = [];
-    for (const result of results) {
-        if (result && result.error) {
-            errors.push(result.error);
-        } else if (result) {
-            players.push(result);
-        }
-    }
-
-    players.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
-    allPlayers = [...players];
-    renderPlayers();
-    renderHardestLevels();
-
-    if (errors.length > 0) {
-        showToast(`Не найдены: ${errors.join(', ')}`);
-    }
-
-    if (players.length === 0) {
-        table.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🏆</div><p>Не удалось загрузить данные игроков</p></div>';
+    } catch (e) {
+        table.innerHTML = '<div class="empty-state"><p>Не удалось загрузить данные</p></div>';
+        showToast('Ошибка загрузки лидерборда', 'error');
     }
 }
 
