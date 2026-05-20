@@ -7,6 +7,31 @@
 // ============================================
 
 const API_BASE = 'https://api.demonlist.org';
+const BACKEND_URL = '/api';
+
+// [FIXED] Отмена предыдущих fetch при повторном клике / новом запросе
+const pendingRequests = new Map();
+
+function fetchWithAbort(url, options = {}, key = null) {
+    if (!key) {
+        return fetch(url, options);
+    }
+    const prev = pendingRequests.get(key);
+    if (prev) {
+        prev.abort();
+    }
+    const controller = new AbortController();
+    pendingRequests.set(key, controller);
+    return fetch(url, { ...options, signal: controller.signal }).finally(() => {
+        if (pendingRequests.get(key) === controller) {
+            pendingRequests.delete(key);
+        }
+    });
+}
+
+function isAbortError(err) {
+    return err?.name === 'AbortError';
+}
 
 // Флаги стран (эмодзи)
 const FLAGS = {
@@ -171,16 +196,17 @@ function updateThemeIcon(theme) {
 async function initHostStatus() {
     if (localStorage.getItem('smlt-host') === 'true') {
         try {
-            const res = await fetch(`${BACKEND_URL}/auth/verify`, {
+            const res = await fetchWithAbort(`${BACKEND_URL}/auth/verify`, {
                 credentials: 'include'
-            });
+            }, 'auth-verify');
             const data = await res.json().catch(() => ({}));
             // [SECURITY FIX] Бэкенд отдаёт { success: true } при валидной HttpOnly-куке
             isHost = res.ok && data.success === true;
             if (!isHost) {
                 localStorage.removeItem('smlt-host');
             }
-        } catch {
+        } catch (err) {
+            if (isAbortError(err)) return;
             isHost = false;
             localStorage.removeItem('smlt-host');
         }
@@ -216,19 +242,17 @@ function closeHostModal() {
     }
 }
 
-const BACKEND_URL = '/api';
-
 async function verifyHost(inputPassword) {
     try {
-        const res = await fetch(`${BACKEND_URL}/login`, {
+        const res = await fetchWithAbort(`${BACKEND_URL}/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include', // чтобы кука от бэкенда сохранилась в браузере
-            body: JSON.stringify({ 
+            credentials: 'include',
+            body: JSON.stringify({
                 password: inputPassword,
-                captchaToken: "" // если капча пока не прикручена на фронте
+                captchaToken: ''
             })
-        });
+        }, 'host-login');
 
         let data;
         try {
@@ -260,9 +284,10 @@ async function verifyHost(inputPassword) {
             isHost = false;
         }
     } catch (err) {
+        if (isAbortError(err)) return;
         console.error('Ошибка входа:', err);
-        showToast(err.message === 'Сервер вернул некорректный ответ' 
-            ? 'Ошибка сервера: некорректный формат данных' 
+        showToast(err.message === 'Сервер вернул некорректный ответ'
+            ? 'Ошибка сервера: некорректный формат данных'
             : 'Ошибка соединения с сервером. Проверьте сеть или статус сервера.', 'error');
     }
 }
@@ -320,7 +345,7 @@ const DEFAULT_PLAYER_NAMES = [
 
 async function getPlayerNames() {
     try {
-        const res = await fetch(`${BACKEND_URL}/players`);
+        const res = await fetchWithAbort(`${BACKEND_URL}/players`, {}, 'players-list');
         if (!res.ok) return DEFAULT_PLAYER_NAMES;
         const data = await res.json();
         return Array.isArray(data) && data.length > 0 ? data : DEFAULT_PLAYER_NAMES;
@@ -332,7 +357,7 @@ async function getPlayerNames() {
 
 async function loadGeoStats() {
     try {
-        const response = await fetch(`${API_BASE}/stats/countries`);
+        const response = await fetchWithAbort(`${API_BASE}/stats/countries`, {}, 'geo-stats');
         const stats = await response.json(); // Прилетит объект: { RU: 15, US: 5... }
 
         const container = document.getElementById('geo-stats-container');
@@ -347,7 +372,7 @@ async function loadGeoStats() {
         sortedStats.forEach(([countryCode, count]) => {
             const flag = FLAGS[countryCode] || '🏳️';
             const percentage = (count / maxPlayers) * 100;
-            // [SECURITY FIX] Экранирование данных стороннего API перед innerHTML
+            // [FIXED] escapeHtml только для innerHTML (сторонний API)
             const safeCode = escapeHtml(countryCode);
             const safeCount = escapeHtml(String(count));
 
@@ -362,6 +387,7 @@ async function loadGeoStats() {
             `;
         });
     } catch (e) {
+        if (isAbortError(e)) return;
         showToast('Не удалось загрузить гео-статистику', 'error');
     }
 }
@@ -370,12 +396,12 @@ async function savePlayerNames(names) {
     // Форматируем массив под структуру Player в Go (объект с полем name)
     const formattedPlayers = names.map(n => ({ name: n }));
 
-    const res = await fetch(`${BACKEND_URL}/players`, {
+    const res = await fetchWithAbort(`${BACKEND_URL}/players`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // ОБЯЗАТЕЛЬНО для передачи куки auth_token
+        credentials: 'include',
         body: JSON.stringify(formattedPlayers)
-    });
+    }, 'players-save');
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Ошибка сохранения игроков (возможно, сессия истекла)');
@@ -451,7 +477,7 @@ async function loadAllPlayers() {
 
     try {
         // Делаем ОДИН запрос к нашему мощному бэкенду
-        const res = await fetch('/api/leaderboard');
+        const res = await fetchWithAbort('/api/leaderboard', {}, 'leaderboard');
         if (!res.ok) throw new Error('Ошибка сервера');
         
         const rawData = await res.json();
@@ -491,6 +517,7 @@ async function loadAllPlayers() {
         renderHardestLevels();
 
     } catch (e) {
+        if (isAbortError(e)) return;
         table.innerHTML = '<div class="empty-state"><p>Не удалось загрузить данные</p></div>';
         showToast('Ошибка загрузки лидерборда', 'error');
     }
@@ -817,7 +844,8 @@ function showLevelVictors(levelId) {
 
     if (!modal || !title || !body) return;
 
-    title.textContent = `🏆 ${escapeHtml(levelData.name)} #${levelData.placement}`;
+    // [FIXED] textContent не требует escapeHtml
+    title.textContent = `🏆 ${levelData.name} #${levelData.placement}`;
 
     if (levelData.victors.length === 0) {
         body.innerHTML = '<p style="color: var(--color-text-muted);">Нет викторов</p>';
@@ -848,8 +876,9 @@ function showProfile(idx) {
 
     const rec = p.records ? p.records.filter(r => r.status === 'accepted' && r.level) : [];
     const flag = getFlag(p.nationality);
-    const name = escapeHtml(p.name);
+    const name = p.name;
 
+    // [FIXED] textContent экранирует сам; escapeHtml только для innerHTML ниже
     document.getElementById('profileTitle').textContent = `${flag} ${name}`;
 
     const score = p.score ? p.score.toFixed(2) : '—';
@@ -960,8 +989,8 @@ async function addPlayer() {
         await loadAllPlayers(); 
         showToast('Игрок успешно добавлен', 'success');
     } catch (e) {
+        if (isAbortError(e)) return;
         showToast(e.message, 'error');
-        // Если бэк послал нас, значит сессия сдохла — принудительно разлогиниваем во фронте
         if (e.message.includes('сессия истекла') || e.message.includes('401')) {
             logoutHost();
         }
@@ -978,12 +1007,12 @@ async function removePlayer(name) {
 
     try {
         // [SECURITY FIX] Удаление через защищённый DELETE /api/players
-        const res = await fetch(`${BACKEND_URL}/players`, {
+        const res = await fetchWithAbort(`${BACKEND_URL}/players`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
             body: JSON.stringify({ name })
-        });
+        }, 'players-delete');
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.error || 'Ошибка удаления игрока');
@@ -991,6 +1020,7 @@ async function removePlayer(name) {
         await loadAllPlayers();
         showToast(`Игрок "${name}" удалён`, 'success');
     } catch (e) {
+        if (isAbortError(e)) return;
         showToast(e.message, 'error');
         if (e.message.includes('сессия') || e.message.includes('401') || e.message.includes('доступ')) {
             logoutHost();
@@ -1006,7 +1036,7 @@ const DEFAULT_PROJECTS = [];
 
 async function getProjects() {
     try {
-        const res = await fetch(`${BACKEND_URL}/projects`);
+        const res = await fetchWithAbort(`${BACKEND_URL}/projects`, {}, 'projects-list');
         if (!res.ok) return [];
         const data = await res.json();
         return Array.isArray(data) ? data : [];
@@ -1016,12 +1046,12 @@ async function getProjects() {
 }
 
 async function saveProjects(data) {
-    const res = await fetch(`${BACKEND_URL}/projects`, {
+    const res = await fetchWithAbort(`${BACKEND_URL}/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', 
+        credentials: 'include',
         body: JSON.stringify(data)
-    });
+    }, 'projects-save');
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Ошибка сохранения (возможно, сессия истекла)');
@@ -1206,6 +1236,7 @@ async function saveProject() {
         closeProjectModal();
         renderProjects();
     } catch (e) {
+        if (isAbortError(e)) return;
         if (idx === -1) {
             projects.pop();
         } else {
@@ -1229,6 +1260,7 @@ async function deleteProject(idx) {
         renderProjects();
         showToast('Проект удалён', 'success');
     } catch (e) {
+        if (isAbortError(e)) return;
         projects.splice(idx, 0, removed[0]);
         showToast(e.message, 'error');
     }

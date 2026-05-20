@@ -30,6 +30,9 @@ var (
 	ipMap  = make(map[string]*ipLimit)
 	muLim  sync.Mutex
 	maxIPs = 10000
+
+	trustProxy     bool
+	maxRequestBody = int64(1024 * 1024) // [FIXED] Лимит тела запроса 1 МБ
 )
 
 // === ТИПЫ ДАННЫХ ===
@@ -76,6 +79,28 @@ func init() {
 	if err != nil {
 		log.Fatalf("Ошибка подключения Firestore: %v", err)
 	}
+
+	// [FIXED] Доверяем X-Forwarded-For только за известным прокси (Vercel / TRUST_PROXY)
+	trustProxy = os.Getenv("TRUST_PROXY") == "true" || os.Getenv("VERCEL") == "1"
+	startRateLimitJanitor()
+}
+
+// [FIXED] Фоновая очистка ipMap — предотвращает бесконечный рост и ложные 503
+func startRateLimitJanitor() {
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			now := time.Now()
+			muLim.Lock()
+			for ip, lim := range ipMap {
+				if now.After(lim.resetTime) {
+					delete(ipMap, ip)
+				}
+			}
+			muLim.Unlock()
+		}
+	}()
 }
 
 // === УТИЛИТЫ ===
@@ -89,14 +114,7 @@ func methodNotAllowed(w http.ResponseWriter, allowed string) {
 	sendError(w, http.StatusMethodNotAllowed, "Метод не разрешен")
 }
 
-// [SECURITY FIX] Реальный IP клиента за reverse proxy / load balancer
-func getRealIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return strings.TrimSpace(strings.Split(xff, ",")[0])
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
+func remoteAddrIP(r *http.Request) string {
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
@@ -104,16 +122,45 @@ func getRealIP(r *http.Request) string {
 	return ip
 }
 
+// [FIXED] Без прокси — только RemoteAddr; за доверенным прокси — заголовки от LB
+func getRealIP(r *http.Request) string {
+	remoteIP := remoteAddrIP(r)
+	if !trustProxy {
+		return remoteIP
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		candidate := strings.TrimSpace(strings.Split(xff, ",")[0])
+		if parsed := net.ParseIP(candidate); parsed != nil {
+			return candidate
+		}
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		candidate := strings.TrimSpace(xri)
+		if parsed := net.ParseIP(candidate); parsed != nil {
+			return candidate
+		}
+	}
+	return remoteIP
+}
+
+// [FIXED] Ограничение размера тела + запрет неизвестных полей JSON
+func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{}) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	return dec.Decode(dest)
+}
+
 // === MIDDLEWARES ===
 
 func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip := getRealIP(r) // [SECURITY FIX] вместо r.RemoteAddr
+		ip := getRealIP(r) // [FIXED] вместо r.RemoteAddr
 
 		muLim.Lock()
 
 		limiter, exists := ipMap[ip]
-		// [SECURITY FIX] Блокируем только новые IP при переполнении мапы (без полного сброса)
+		// [FIXED] Блокируем только новые IP при переполнении мапы (janitor освобождает слоты)
 		if !exists && len(ipMap) >= maxIPs {
 			muLim.Unlock()
 			http.Error(w, "Rate limit map full", http.StatusServiceUnavailable)
@@ -168,9 +215,10 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Password string `json:"password"`
+		Password     string `json:"password"`
+		CaptchaToken string `json:"captchaToken"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeRequestJSON(w, r, &req); err != nil {
 		sendError(w, http.StatusBadRequest, "Кривой запрос")
 		return
 	}
@@ -280,7 +328,7 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var projectList []Project
-	if err := json.NewDecoder(r.Body).Decode(&projectList); err != nil {
+	if err := decodeRequestJSON(w, r, &projectList); err != nil {
 		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
 		return
 	}
@@ -492,7 +540,7 @@ func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var playerList []Player
-	if err := json.NewDecoder(r.Body).Decode(&playerList); err != nil {
+	if err := decodeRequestJSON(w, r, &playerList); err != nil {
 		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
 		return
 	}
@@ -529,7 +577,7 @@ func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeRequestJSON(w, r, &req); err != nil {
 		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
 		return
 	}
