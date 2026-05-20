@@ -33,6 +33,27 @@ function isAbortError(err) {
     return err?.name === 'AbortError';
 }
 
+// [FIXED] Безопасный разбор JSON (Vercel 500 отдаёт HTML, не JSON)
+async function parseJsonResponse(res) {
+    const contentType = res.headers.get('content-type') || '';
+    const text = await res.text();
+    if (!text) {
+        return {};
+    }
+    if (!contentType.includes('application/json')) {
+        if (text.trimStart().startsWith('<')) {
+            throw new Error('API недоступен (ошибка сервера). Проверьте переменные окружения на Vercel.');
+        }
+        throw new Error('Сервер вернул некорректный ответ');
+    }
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        console.error('Ошибка парсинга JSON:', e, text.slice(0, 200));
+        throw new Error('Сервер вернул некорректный ответ');
+    }
+}
+
 // Флаги стран (эмодзи)
 const FLAGS = {
     'RU': '🇷🇺', 'US': '🇺🇸', 'DE': '🇩🇪', 'FR': '🇫🇷', 'GB': '🇬🇧',
@@ -199,8 +220,7 @@ async function initHostStatus() {
             const res = await fetchWithAbort(`${BACKEND_URL}/auth/verify`, {
                 credentials: 'include'
             }, 'auth-verify');
-            const data = await res.json().catch(() => ({}));
-            // [SECURITY FIX] Бэкенд отдаёт { success: true } при валидной HttpOnly-куке
+            const data = await parseJsonResponse(res);
             isHost = res.ok && data.success === true;
             if (!isHost) {
                 localStorage.removeItem('smlt-host');
@@ -254,13 +274,7 @@ async function verifyHost(inputPassword) {
             })
         }, 'host-login');
 
-        let data;
-        try {
-            data = await res.json();
-        } catch (e) {
-            console.error('Ошибка парсинга JSON:', e);
-            throw new Error('Сервер вернул некорректный ответ');
-        }
+        const data = await parseJsonResponse(res);
 
         if (res.ok && data.success === true) {
             isHost = true;
@@ -470,46 +484,103 @@ async function fetchRecords(id) {
     }
 }
 
+// [FIXED] Парсинг ответа Demonlist из /api/leaderboard (users внутри data.data)
+function mapLeaderboardEntry(p) {
+    const root = p.data || {};
+    const users = root.data?.users || [];
+    const nl = (p.name || '').toLowerCase().trim();
+    const pData = users.find(u => (u.username || '').toLowerCase().trim() === nl) || users[0] || {};
+
+    const recRoot = p.records || {};
+    const pRecs = recRoot.data?.records || recRoot.records || [];
+
+    let hardest = null;
+    const acceptedRecs = pRecs.filter(r => r.status === 'accepted' && r.level);
+    if (acceptedRecs.length > 0) {
+        hardest = acceptedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
+    }
+
+    return {
+        id: pData.id,
+        name: pData.username || p.name,
+        rank: pData.placement || 0,
+        score: parseFloat(pData.points) || 0,
+        nationality: pData.country || null,
+        records: pRecs,
+        hardest
+    };
+}
+
+function hasLeaderboardData(entries) {
+    return Array.isArray(entries) && entries.some(e => {
+        const users = e.data?.data?.users;
+        return Array.isArray(users) && users.length > 0;
+    });
+}
+
+async function loadPlayersFromClientAPI() {
+    const table = document.getElementById('leaderboardTable');
+    const names = await getPlayerNames();
+    const loaded = [];
+
+    for (let i = 0; i < names.length; i++) {
+        updateProgress(i + 1, names.length);
+        const fp = await fetchPlayerData(names[i]);
+        if (!fp) continue;
+
+        const recs = await fetchRecords(fp.id);
+        let hardest = null;
+        const acceptedRecs = recs.filter(r => r.status === 'accepted' && r.level);
+        if (acceptedRecs.length > 0) {
+            hardest = acceptedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
+        }
+
+        loaded.push({
+            id: fp.id,
+            name: fp.username || names[i],
+            rank: fp.placement || 0,
+            score: parseFloat(fp.points) || 0,
+            nationality: fp.country || null,
+            records: recs,
+            hardest
+        });
+    }
+
+    if (loaded.length === 0) {
+        table.innerHTML = '<div class="empty-state"><p>Не удалось загрузить данные игроков</p></div>';
+        return;
+    }
+
+    players = loaded.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
+    allPlayers = [...players];
+    renderPlayers();
+    renderHardestLevels();
+}
+
 async function loadAllPlayers() {
     const table = document.getElementById('leaderboardTable');
     const count = document.getElementById('playersCount');
     if (!table) return;
 
     try {
-        // Делаем ОДИН запрос к нашему мощному бэкенду
+        let rawData = [];
         const res = await fetchWithAbort('/api/leaderboard', {}, 'leaderboard');
-        if (!res.ok) throw new Error('Ошибка сервера');
-        
-        const rawData = await res.json();
-        
-        if (rawData.length === 0) {
-            table.innerHTML = '<div class="empty-state"><p>Список игроков пуст</p></div>';
-            if (count) count.textContent = '0 игроков';
+
+        if (res.ok) {
+            rawData = await parseJsonResponse(res);
+            if (!Array.isArray(rawData)) rawData = [];
+        }
+
+        if (!hasLeaderboardData(rawData)) {
+            await loadPlayersFromClientAPI();
             return;
         }
 
-        // Мапим данные от бэкенда в формат фронтенда
-        players = rawData.map(p => {
-            // Тут нужно подогнать парсинг под структуру ответа от API демо-листа
-            const pData = p.data?.data || {}; 
-            const pRecs = p.records?.data?.records || [];
-            
-            let hardest = null;
-            const acceptedRecs = pRecs.filter(r => r.status === 'accepted' && r.level);
-            if (acceptedRecs.length > 0) {
-                hardest = acceptedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
-            }
-
-            return {
-                id: pData.id,
-                name: p.name,
-                rank: pData.placement || 0,
-                score: parseFloat(pData.points) || 0,
-                nationality: pData.country || null,
-                records: pRecs,
-                hardest: hardest
-            };
-        });
+        players = rawData.map(mapLeaderboardEntry).filter(p => p.id);
+        if (players.length === 0) {
+            await loadPlayersFromClientAPI();
+            return;
+        }
 
         players.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
         allPlayers = [...players];
@@ -518,8 +589,13 @@ async function loadAllPlayers() {
 
     } catch (e) {
         if (isAbortError(e)) return;
-        table.innerHTML = '<div class="empty-state"><p>Не удалось загрузить данные</p></div>';
-        showToast('Ошибка загрузки лидерборда', 'error');
+        try {
+            await loadPlayersFromClientAPI();
+        } catch (err) {
+            if (isAbortError(err)) return;
+            table.innerHTML = '<div class="empty-state"><p>Не удалось загрузить данные</p></div>';
+            showToast('Ошибка загрузки лидерборда', 'error');
+        }
     }
 }
 

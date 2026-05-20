@@ -3,12 +3,13 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
-	"strconv"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,8 +23,9 @@ import (
 
 // === КОНФИГ И ГЛОБАЛКИ ===
 var (
-	fsClient  *firestore.Client
-	jwtSecret = []byte(os.Getenv("JWT_SECRET"))
+	fsClient *firestore.Client
+	fsOnce   sync.Once
+	fsErr    error
 
 	httpClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -61,28 +63,59 @@ type FullPlayerData struct {
 	Records interface{} `json:"records"`
 }
 
-// === ИНИЦИАЛИЗАЦИЯ (Firebase) ===
+// Список по умолчанию (если Firestore пуст)
+var defaultPlayerNames = []string{
+	"samoletik", "paradoxiz", "clokman", "itzslxnq", "H30n41k_GmD",
+	"Filkoty", "DarBeast", "Florned", "Marzyiiik", "euphoriak8",
+	"npoctou_gamer", "NopanicGD", "CandyCloud22", "Vakum", "Daggit",
+	"Loran", "tapxyhh", "SerGio", "Fanim59", "prostoymofficial",
+	"toxik blaze", "NatrixGMD", "toxatort", "SpaceRS", "yeahme",
+	"Спини", "Linqwq", "RossceorpGD", "69liqu69",
+}
+
+// === ИНИЦИАЛИЗАЦИЯ ===
 func init() {
-	ctx := context.Background()
-	creds := os.Getenv("FIREBASE_CREDENTIALS")
-	if creds == "" {
-		// [SECURITY FIX] Падение при старте вместо nil pointer в рантайме
-		log.Fatalf("FIREBASE_CREDENTIALS не задан")
-	}
-
-	app, err := firebase.NewApp(ctx, nil, option.WithCredentialsJSON([]byte(creds)))
-	if err != nil {
-		log.Fatalf("Ошибка инициализации Firebase: %v", err)
-	}
-
-	fsClient, err = app.Firestore(ctx)
-	if err != nil {
-		log.Fatalf("Ошибка подключения Firestore: %v", err)
-	}
-
-	// [FIXED] Доверяем X-Forwarded-For только за известным прокси (Vercel / TRUST_PROXY)
+	// [FIXED] Не вызываем log.Fatalf — иначе Vercel отдаёт HTML 500 вместо JSON
 	trustProxy = os.Getenv("TRUST_PROXY") == "true" || os.Getenv("VERCEL") == "1"
 	startRateLimitJanitor()
+}
+
+func initFirestore() {
+	fsOnce.Do(func() {
+		ctx := context.Background()
+		creds := os.Getenv("FIREBASE_CREDENTIALS")
+		if creds == "" {
+			fsErr = errors.New("FIREBASE_CREDENTIALS не задан")
+			log.Printf("[firestore] %v", fsErr)
+			return
+		}
+
+		app, err := firebase.NewApp(ctx, nil, option.WithCredentialsJSON([]byte(creds)))
+		if err != nil {
+			fsErr = err
+			log.Printf("[firestore] init app: %v", err)
+			return
+		}
+
+		fsClient, err = app.Firestore(ctx)
+		if err != nil {
+			fsErr = err
+			log.Printf("[firestore] connect: %v", err)
+		}
+	})
+}
+
+func requireFirestore(w http.ResponseWriter) bool {
+	initFirestore()
+	if fsErr != nil || fsClient == nil {
+		sendError(w, http.StatusServiceUnavailable, "База данных недоступна")
+		return false
+	}
+	return true
+}
+
+func jwtSecretKey() []byte {
+	return []byte(os.Getenv("JWT_SECRET"))
 }
 
 // [FIXED] Фоновая очистка ipMap — предотвращает бесконечный рост и ложные 503
@@ -195,7 +228,7 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (interface{}, error) {
-			return jwtSecret, nil
+			return jwtSecretKey(), nil
 		})
 
 		if err != nil || !token.Valid {
@@ -223,7 +256,15 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if os.Getenv("JWT_SECRET") == "" {
+		sendError(w, http.StatusInternalServerError, "Сервер не настроен: JWT_SECRET")
+		return
+	}
 	adminHash := os.Getenv("ADMIN_HASH")
+	if adminHash == "" {
+		sendError(w, http.StatusInternalServerError, "Сервер не настроен: ADMIN_HASH")
+		return
+	}
 	if err := bcrypt.CompareHashAndPassword([]byte(adminHash), []byte(req.Password)); err != nil {
 		sendError(w, http.StatusUnauthorized, "Неверный пароль")
 		return
@@ -233,7 +274,11 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		"admin": true,
 		"exp":   time.Now().Add(24 * time.Hour).Unix(),
 	})
-	tokenString, _ := token.SignedString(jwtSecret)
+	tokenString, err := token.SignedString(jwtSecretKey())
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка выдачи токена")
+		return
+	}
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
@@ -284,7 +329,7 @@ func handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (interface{}, error) {
-		return jwtSecret, nil
+		return jwtSecretKey(), nil
 	})
 
 	if err != nil || !token.Valid {
@@ -299,6 +344,9 @@ func handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 func handleGetProjects(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !requireFirestore(w) {
 		return
 	}
 
@@ -324,6 +372,9 @@ func handleGetProjects(w http.ResponseWriter, r *http.Request) {
 func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
 		return
 	}
 
@@ -429,16 +480,12 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.Background()
-	players, err := loadPlayersFromFirestore(ctx)
-	if err != nil || len(players) == 0 {
-		json.NewEncoder(w).Encode([]FullPlayerData{})
-		return
-	}
+	players := playersForLeaderboard(ctx)
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	result := make([]FullPlayerData, 0, len(players))
-	sem := make(chan struct{}, 5)
+	sem := make(chan struct{}, 8)
 
 	for _, p := range players {
 		wg.Add(1)
@@ -448,31 +495,29 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
+			entry := FullPlayerData{Name: playerName}
 			search := url.QueryEscape(playerName)
 			resp1, err := httpClient.Get("https://api.demonlist.org/leaderboard/user/list?search=" + search + "&limit=50")
-			if err != nil {
-				return
-			}
-			defer resp1.Body.Close()
-			var data interface{}
-			json.NewDecoder(resp1.Body).Decode(&data)
-
-			userID := extractUserID(data, playerName)
-			var recs interface{}
-			if userID != "" {
-				resp2, err := httpClient.Get("https://api.demonlist.org/user/record/list?user_id=" + url.QueryEscape(userID) + "&limit=50")
-				if err == nil {
-					defer resp2.Body.Close()
-					json.NewDecoder(resp2.Body).Decode(&recs)
+			if err == nil {
+				defer resp1.Body.Close()
+				var data interface{}
+				if json.NewDecoder(resp1.Body).Decode(&data) == nil {
+					entry.Data = data
+					if userID := extractUserID(data, playerName); userID != "" {
+						resp2, err := httpClient.Get("https://api.demonlist.org/user/record/list?user_id=" + url.QueryEscape(userID) + "&limit=50")
+						if err == nil {
+							defer resp2.Body.Close()
+							var recs interface{}
+							if json.NewDecoder(resp2.Body).Decode(&recs) == nil {
+								entry.Records = recs
+							}
+						}
+					}
 				}
 			}
 
 			mu.Lock()
-			result = append(result, FullPlayerData{
-				Name:    playerName,
-				Data:    data,
-				Records: recs,
-			})
+			result = append(result, entry)
 			mu.Unlock()
 		}(p.Name)
 	}
@@ -500,10 +545,31 @@ func loadPlayersFromFirestore(ctx context.Context) ([]Player, error) {
 		if err := json.Unmarshal(b, &players); err != nil {
 			return nil, err
 		}
-		return players, nil
+		if len(players) > 0 {
+			return players, nil
+		}
 	}
 
 	return players, nil
+}
+
+func defaultPlayersList() []Player {
+	out := make([]Player, len(defaultPlayerNames))
+	for i, name := range defaultPlayerNames {
+		out[i] = Player{Name: name}
+	}
+	return out
+}
+
+func playersForLeaderboard(ctx context.Context) []Player {
+	initFirestore()
+	if fsClient != nil {
+		players, err := loadPlayersFromFirestore(ctx)
+		if err == nil && len(players) > 0 {
+			return players
+		}
+	}
+	return defaultPlayersList()
 }
 
 func savePlayersToFirestore(ctx context.Context, players []Player) error {
@@ -520,12 +586,7 @@ func handleGetPlayers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.Background()
-	players, err := loadPlayersFromFirestore(ctx)
-	if err != nil {
-		json.NewEncoder(w).Encode([]string{})
-		return
-	}
-
+	players := playersForLeaderboard(ctx)
 	names := make([]string, len(players))
 	for i, p := range players {
 		names[i] = p.Name
@@ -536,6 +597,9 @@ func handleGetPlayers(w http.ResponseWriter, r *http.Request) {
 func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
 		return
 	}
 
@@ -571,6 +635,9 @@ func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
 func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		methodNotAllowed(w, http.MethodDelete)
+		return
+	}
+	if !requireFirestore(w) {
 		return
 	}
 
@@ -620,13 +687,29 @@ func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
-// === РОУТЕР (Точка входа) ===
-func MainHandler(w http.ResponseWriter, r *http.Request) {
+// [FIXED] Vercel rewrite /api/* → /api оставляет Path=/api; берём путь из RequestURI
+func requestPath(r *http.Request) string {
+	path := r.URL.Path
+	if path != "/api" && path != "/api/" {
+		return path
+	}
+	uri := r.RequestURI
+	if i := strings.Index(uri, "?"); i >= 0 {
+		uri = uri[:i]
+	}
+	if uri != "" && uri != path {
+		return uri
+	}
+	return path
+}
+
+// Handler — точка входа Vercel Go (api/index.go)
+func Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 
-	switch r.URL.Path {
+	switch requestPath(r) {
 	case "/api/login":
 		rateLimitMiddleware(handleLogin)(w, r)
 	case "/api/logout":
