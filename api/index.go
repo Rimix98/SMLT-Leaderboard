@@ -642,6 +642,9 @@ func requestPath(r *http.Request) string {
 	return path
 }
 
+
+
+
 // Handler — точка входа Vercel Go (api/index.go)
 func Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

@@ -31,17 +31,7 @@ var (
 	rlOnce            sync.Once
 )
 
-func initRateLimiter() {
-	rlOnce.Do(func() {
-		if u := newUpstashLimiter(); u != nil {
-			globalRateLimiter = u
-			log.Println("[ratelimit] Upstash Redis (распределённый лимит для serverless)")
-			return
-		}
-		globalRateLimiter = newMemoryLimiter()
-		log.Println("[ratelimit] UPSTASH_REDIS_REST_URL/TOKEN не заданы — in-memory лимит только внутри одного контейнера (не защита на Vercel)")
-	})
-}
+
 
 // --- Upstash (REST), работает между инстансами Vercel ---
 
