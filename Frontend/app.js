@@ -1726,17 +1726,3 @@ if (typeof window !== 'undefined') {
         deleteProject,
     });
 }
-
-
-import { Analytics } from '@vercel/analytics/react'; // Импортируем
-
-export default function RootLayout({ children }) {
-  return (
-    <html lang="ru">
-      <body>
-        {children}
-        <Analytics /> {/* Добавляем сюда */}
-      </body>
-    </html>
-  );
-}
