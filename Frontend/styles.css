@@ -1453,6 +1453,9 @@ a:hover {
     }
 =======
 /* === Staff Page === */
+.staff-section {
+    background-color: var(--color-primary);
+}
 .staff-roles-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
