@@ -38,6 +38,17 @@ var (
 )
 
 // === ТИПЫ ДАННЫХ ===
+type StaffPlayer struct {
+	Nickname string `json:"nickname" firestore:"nickname"`
+	Discord  string `json:"discord" firestore:"discord"`
+}
+
+type StaffRole struct {
+	Name    string        `json:"name" firestore:"name"`
+	Color   string        `json:"color" firestore:"color"`
+	Players []StaffPlayer `json:"players" firestore:"players"`
+}
+
 type Project struct {
 	Name         string   `json:"name" firestore:"name"`
 	VideoID      string   `json:"videoId" firestore:"videoId"`
@@ -720,6 +731,78 @@ func requestPath(r *http.Request) string {
 	return path
 }
 
+func handleGetStaff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+
+	ctx := context.Background()
+	doc, err := fsClient.Collection("config").Doc("staff").Get(ctx)
+	if err != nil {
+		// Если документа нет, возвращаем пустой список
+		json.NewEncoder(w).Encode([]StaffRole{})
+		return
+	}
+
+	var data struct {
+		Roles []StaffRole `json:"roles" firestore:"roles"`
+	}
+	if err := doc.DataTo(&data); err != nil {
+		json.NewEncoder(w).Encode([]StaffRole{})
+		return
+	}
+
+	json.NewEncoder(w).Encode(data.Roles)
+}
+
+func handleSaveStaff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+
+	var roles []StaffRole
+	if err := decodeRequestJSON(w, r, &roles); err != nil {
+		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
+		return
+	}
+
+	if len(roles) > 50 {
+		sendError(w, http.StatusBadRequest, "Слишком много ролей")
+		return
+	}
+
+	for _, role := range roles {
+		if len(role.Name) == 0 || len(role.Name) > 100 {
+			sendError(w, http.StatusBadRequest, "Недопустимая длина названия роли")
+			return
+		}
+		if len(role.Players) > 200 {
+			sendError(w, http.StatusBadRequest, "Слишком много игроков в роли")
+			return
+		}
+	}
+
+	ctx := context.Background()
+	_, err := fsClient.Collection("config").Doc("staff").Set(ctx, map[string]interface{}{
+		"roles": roles,
+	})
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
 // Handler — точка входа Vercel Go (api/index.go)
 func Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -735,6 +818,15 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		rateLimitMiddleware(handleAuthVerify)(w, r)
 	case "/api/leaderboard":
 		rateLimitMiddleware(handleLeaderboard)(w, r)
+	case "/api/staff":
+		switch r.Method {
+		case http.MethodGet:
+			rateLimitMiddleware(handleGetStaff)(w, r)
+		case http.MethodPost:
+			rateLimitMiddleware(authMiddleware(handleSaveStaff))(w, r)
+		default:
+			methodNotAllowed(w, "GET, POST")
+		}
 	case "/api/players":
 		switch r.Method {
 		case http.MethodGet:

@@ -1813,31 +1813,56 @@ function initStaffEventListeners() {
     }
 }
 
-function loadStaffRoles() {
+async function loadStaffRoles() {
+    const loadingState = document.getElementById('staffLoadingState');
+    if (loadingState) loadingState.style.display = 'flex';
+
     try {
-        const saved = localStorage.getItem('smlt-staff-roles');
-        if (saved) {
-            store.staffRoles = JSON.parse(saved);
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff`, {}, 'staff-list');
+        if (!res.ok) {
+            store.staffRoles = [];
+        } else {
+            const data = await res.json();
+            store.staffRoles = Array.isArray(data) ? data : [];
         }
     } catch (e) {
-        store.staffRoles = [];
+        if (!isAbortError(e)) {
+            console.error('Ошибка загрузки staff ролей:', e);
+            store.staffRoles = [];
+        }
+    } finally {
+        if (loadingState) loadingState.style.display = 'none';
+        renderStaffRoles();
     }
 }
 
-function saveStaffRoles() {
+async function saveStaffRoles() {
     try {
-        localStorage.setItem('smlt-staff-roles', JSON.stringify(store.staffRoles));
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(store.staffRoles)
+        }, 'staff-save');
+        
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Ошибка сохранения ролей (возможно, сессия истекла)');
+        }
     } catch (e) {
-        console.error('Ошибка сохранения staff ролей:', e);
+        if (!isAbortError(e)) {
+            console.error('Ошибка сохранения staff ролей:', e);
+            showToast(e.message, 'error');
+            if (e.message.includes('сессия') || e.message.includes('401')) {
+                logoutHost();
+            }
+        }
     }
 }
 
 function renderStaffRoles() {
     const container = document.getElementById('staffRolesContainer');
-    const loadingState = document.getElementById('staffLoadingState');
     if (!container) return;
-
-    if (loadingState) loadingState.style.display = 'none';
 
     if (store.staffRoles.length === 0) {
         container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><p>Роли пока не созданы</p></div>';
@@ -1906,7 +1931,7 @@ function closeAddRoleModal() {
     if (modal) modal.classList.remove('active');
 }
 
-function createRole() {
+async function createRole() {
     if (!store.isHost) {
         showToast('Только хост может создавать роли', 'error');
         return;
@@ -1927,14 +1952,14 @@ function createRole() {
         players: []
     });
 
-    saveStaffRoles();
+    await saveStaffRoles();
     renderStaffRoles();
     closeAddRoleModal();
     nameInput.value = '';
     showToast(`Роль «${name}» создана`, 'success');
 }
 
-function deleteRole(index) {
+async function deleteRole(index) {
     if (!store.isHost) {
         showToast('Только хост может удалять роли', 'error');
         return;
@@ -1946,7 +1971,7 @@ function deleteRole(index) {
     if (!confirm(`Удалить роль «${role.name}»?`)) return;
 
     store.staffRoles.splice(index, 1);
-    saveStaffRoles();
+    await saveStaffRoles();
     renderStaffRoles();
     showToast('Роль удалена', 'success');
 }
@@ -1980,7 +2005,7 @@ function closeAddStaffPlayerModal() {
     if (modal) modal.classList.remove('active');
 }
 
-function addPlayerToRole() {
+async function addPlayerToRole() {
     if (!store.isHost) {
         showToast('Только хост может добавлять игроков', 'error');
         return;
@@ -2016,13 +2041,13 @@ function addPlayerToRole() {
         discord: discord
     });
 
-    saveStaffRoles();
+    await saveStaffRoles();
     renderStaffRoles();
     closeAddStaffPlayerModal();
     showToast(`Игрок «${nickname}» добавлен в роль «${role.name}»`, 'success');
 }
 
-function removeStaffPlayer(roleIndex, playerIndex) {
+async function removeStaffPlayer(roleIndex, playerIndex) {
     if (!store.isHost) {
         showToast('Только хост может удалять игроков', 'error');
         return;
@@ -2037,7 +2062,7 @@ function removeStaffPlayer(roleIndex, playerIndex) {
     if (!confirm(`Удалить игрока «${player.nickname}» из роли «${role.name}»?`)) return;
 
     role.players.splice(playerIndex, 1);
-    saveStaffRoles();
+    await saveStaffRoles();
     renderStaffRoles();
     showToast(`Игрок «${player.nickname}» удалён из роли`, 'success');
 }
