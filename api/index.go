@@ -421,10 +421,14 @@ func extractUserID(data interface{}, playerName string) string {
 	return ""
 }
 
-func fetchAPIWithRetry(url string, maxRetries int) ([]byte, error) {
+func fetchAPIWithRetry(ctx context.Context, url string, maxRetries int) ([]byte, error) {
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		resp, err := httpClient.Get(url)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := httpClient.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("request failed: %w", err)
 			continue
@@ -461,7 +465,7 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx := r.Context()
 	players := playersForLeaderboard(ctx)
 
 	var wg sync.WaitGroup
@@ -480,7 +484,7 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 			entry := FullPlayerData{Name: playerName}
 			search := url.QueryEscape(playerName)
 
-			body1, err := fetchAPIWithRetry("https://api.demonlist.org/leaderboard/user/list?search="+search+"&limit=50", 3)
+			body1, err := fetchAPIWithRetry(ctx, "https://api.demonlist.org/leaderboard/user/list?search="+search+"&limit=50", 3)
 			if err != nil {
 				log.Printf("[leaderboard] fetch user list for %s: %v", playerName, err)
 				mu.Lock()
@@ -508,7 +512,7 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			body2, err := fetchAPIWithRetry("https://api.demonlist.org/user/record/list?user_id="+url.QueryEscape(userID)+"&limit=50", 3)
+			body2, err := fetchAPIWithRetry(ctx, "https://api.demonlist.org/user/record/list?user_id="+url.QueryEscape(userID)+"&limit=50", 3)
 			if err != nil {
 				log.Printf("[leaderboard] fetch records for %s (id=%s): %v", playerName, userID, err)
 				mu.Lock()
@@ -759,7 +763,7 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(data.Roles)
 }
 
-func handleSaveStaff(w http.ResponseWriter, r *http.Request) {
+func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
 		return
@@ -768,34 +772,143 @@ func handleSaveStaff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var roles []StaffRole
-	if err := decodeRequestJSON(w, r, &roles); err != nil {
+	var req struct {
+		RoleName string `json:"roleName"`
+		Nickname string `json:"nickname"`
+		Discord  string `json:"discord"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
 		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
 		return
 	}
 
-	if len(roles) > 50 {
-		sendError(w, http.StatusBadRequest, "Слишком много ролей")
+	if req.RoleName == "" || req.Nickname == "" {
+		sendError(w, http.StatusBadRequest, "roleName и nickname обязательны")
 		return
 	}
 
-	for _, role := range roles {
-		if len(role.Name) == 0 || len(role.Name) > 100 {
-			sendError(w, http.StatusBadRequest, "Недопустимая длина названия роли")
-			return
+	ctx := r.Context()
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("staff")
+		doc, err := tx.Get(docRef)
+		if err != nil {
+			return err
 		}
-		if len(role.Players) > 200 {
-			sendError(w, http.StatusBadRequest, "Слишком много игроков в роли")
-			return
+
+		var data struct {
+			Roles []StaffRole `json:"roles" firestore:"roles"`
 		}
+		if err := doc.DataTo(&data); err != nil {
+			return err
+		}
+
+		found := false
+		for i, role := range data.Roles {
+			if strings.EqualFold(role.Name, req.RoleName) {
+				found = true
+				// Check if player already exists
+				for _, p := range role.Players {
+					if strings.EqualFold(p.Nickname, req.Nickname) {
+						return errors.New("player_already_exists")
+					}
+				}
+				// Add player
+				data.Roles[i].Players = append(data.Roles[i].Players, StaffPlayer{
+					Nickname: req.Nickname,
+					Discord:  req.Discord,
+				})
+				break
+			}
+		}
+
+		if !found {
+			return errors.New("role_not_found")
+		}
+
+		return tx.Set(docRef, map[string]interface{}{"roles": data.Roles})
+	})
+
+	if err != nil {
+		if err.Error() == "player_already_exists" {
+			sendError(w, http.StatusConflict, "Игрок уже в этой роли")
+		} else if err.Error() == "role_not_found" {
+			sendError(w, http.StatusNotFound, "Роль не найдена")
+		} else {
+			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		}
+		return
 	}
 
-	ctx := context.Background()
-	_, err := fsClient.Collection("config").Doc("staff").Set(ctx, map[string]interface{}{
-		"roles": roles,
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		methodNotAllowed(w, "POST, DELETE")
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+
+	var req struct {
+		RoleName string `json:"roleName"`
+		Nickname string `json:"nickname"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
+		return
+	}
+
+	ctx := r.Context()
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("staff")
+		doc, err := tx.Get(docRef)
+		if err != nil {
+			return err
+		}
+
+		var data struct {
+			Roles []StaffRole `json:"roles" firestore:"roles"`
+		}
+		if err := doc.DataTo(&data); err != nil {
+			return err
+		}
+
+		found := false
+		for i, role := range data.Roles {
+			if strings.EqualFold(role.Name, req.RoleName) {
+				found = true
+				newPlayers := make([]StaffPlayer, 0, len(role.Players))
+				for _, p := range role.Players {
+					if !strings.EqualFold(p.Nickname, req.Nickname) {
+						newPlayers = append(newPlayers, p)
+					}
+				}
+				if len(newPlayers) == len(role.Players) {
+					return errors.New("player_not_found")
+				}
+				data.Roles[i].Players = newPlayers
+				break
+			}
+		}
+
+		if !found {
+			return errors.New("role_not_found")
+		}
+
+		return tx.Set(docRef, map[string]interface{}{"roles": data.Roles})
 	})
+
 	if err != nil {
-		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		if err.Error() == "player_not_found" {
+			sendError(w, http.StatusNotFound, "Игрок не найден")
+		} else if err.Error() == "role_not_found" {
+			sendError(w, http.StatusNotFound, "Роль не найдена")
+		} else {
+			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		}
 		return
 	}
 
@@ -818,14 +931,16 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		rateLimitMiddleware(handleAuthVerify)(w, r)
 	case "/api/leaderboard":
 		rateLimitMiddleware(handleLeaderboard)(w, r)
+	case "/api/staff/add":
+		rateLimitMiddleware(authMiddleware(handleStaffAdd))(w, r)
+	case "/api/staff/remove":
+		rateLimitMiddleware(authMiddleware(handleStaffRemove))(w, r)
 	case "/api/staff":
 		switch r.Method {
 		case http.MethodGet:
 			rateLimitMiddleware(handleGetStaff)(w, r)
-		case http.MethodPost:
-			rateLimitMiddleware(authMiddleware(handleSaveStaff))(w, r)
 		default:
-			methodNotAllowed(w, "GET, POST")
+			methodNotAllowed(w, "GET")
 		}
 	case "/api/players":
 		switch r.Method {
