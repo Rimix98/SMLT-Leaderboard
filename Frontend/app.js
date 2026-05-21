@@ -3,6 +3,40 @@
    ============================================ */
 
 // ============================================
+// БЕЗОПАСНОСТЬ: Экранирование HTML
+// ============================================
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Функция для безопасного создания класса роли
+function getSafeRoleClass(role) {
+    const safeRole = String(role).replace(/[^a-zA-Z0-9-]/g, '');
+    const roleMap = {
+        'HOST': 'role-host',
+        'DECO': 'role-deco',
+        'GP': 'role-gp',
+        'PLAYTEST': 'role-playtest',
+        'VERIFER': 'role-verifer',
+        'MERGER': 'role-merger',
+        'TRANSITION': 'role-transition'
+    };
+    return roleMap[safeRole.toUpperCase()] || '';
+}
+
+// Функция для безопасного создания текста роли
+function createSafeRoleSpan(roleText) {
+    const span = document.createElement('span');
+    span.className = `role ${getSafeRoleClass(roleText)}`;
+    span.textContent = roleText; // textContent автоматически экранирует
+    return span;
+}
+
+// ============================================
 // КОНСТАНТЫ И КОНФИГУРАЦИЯ
 // ============================================
 
@@ -737,6 +771,29 @@ async function loadPlayersFromClientAPI() {
     renderPlayers();
     renderHardestLevels();
 }
+
+async function getCSRFToken() {
+    const response = await fetch('/api/csrf-token', {
+        credentials: 'include'
+    });
+    const data = await response.json();
+    return data.token;
+}
+
+// Обновить все мутирующие запросы
+async function addPlayer() {
+    const csrfToken = await getCSRFToken();
+    const res = await fetchWithAbort(`${BACKEND_URL}/players`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken
+        },
+        credentials: 'include',
+        body: JSON.stringify(formattedPlayers)
+    }, 'players-save');
+}
+
 
 async function loadAllPlayers() {
     const table = document.getElementById('leaderboardTable');
@@ -1474,20 +1531,24 @@ function buildParticipantNodes(participants) {
     const frag = document.createDocumentFragment();
     (participants || []).forEach((line) => {
         const match = line.match(/^(.+?)\s*\((.+?)\)$/);
-        const span = h('span', { className: 'participant-tag' }, []);
+        const div = document.createElement('div');
+        div.className = 'participant-tag';
+        
         if (match) {
             const name = match[1].trim();
             const roles = match[2].split(',').map((r) => r.trim());
-            span.appendChild(document.createTextNode(`${name} - (`));
+            
+            div.appendChild(document.createTextNode(`${name} - (`));
             roles.forEach((role, i) => {
-                if (i) span.appendChild(document.createTextNode(', '));
-                span.appendChild(h('span', { className: `role ${getRoleClass(role)}` }, [role]));
+                if (i) div.appendChild(document.createTextNode(', '));
+                const roleSpan = createSafeRoleSpan(role);
+                div.appendChild(roleSpan);
             });
-            span.appendChild(document.createTextNode(')'));
+            div.appendChild(document.createTextNode(')'));
         } else {
-            span.textContent = line;
+            div.textContent = line;
         }
-        frag.appendChild(span);
+        frag.appendChild(div);
     });
     return frag;
 }

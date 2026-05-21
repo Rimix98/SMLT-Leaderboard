@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,7 +36,37 @@ var (
 
 	trustProxy     bool
 	maxRequestBody = int64(1024 * 1024)
+
+	jwtBlacklist  Blacklist
+	blacklistOnce sync.Once
 )
+
+type Blacklist interface {
+	IsBlacklisted(token string) bool
+	Add(token string)
+}
+
+type memoryBlacklist struct {
+	mu     sync.RWMutex
+	tokens map[string]struct{}
+}
+
+func newMemoryBlacklist() Blacklist {
+	return &memoryBlacklist{tokens: make(map[string]struct{})}
+}
+
+func (b *memoryBlacklist) IsBlacklisted(token string) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	_, ok := b.tokens[token]
+	return ok
+}
+
+func (b *memoryBlacklist) Add(token string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.tokens[token] = struct{}{}
+}
 
 // === ТИПЫ ДАННЫХ ===
 type StaffPlayer struct {
@@ -110,6 +141,14 @@ func initFirestore() {
 	})
 }
 
+func initJWTBlacklist() {
+	blacklistOnce.Do(func() {
+		// Используем memory blacklist (для Vercel нормально)
+		jwtBlacklist = newMemoryBlacklist()
+		log.Println("[jwt] Blacklist initialized")
+	})
+}
+
 func requireFirestore(w http.ResponseWriter) bool {
 	if fsErr != nil || fsClient == nil {
 		sendError(w, http.StatusServiceUnavailable, "База данных недоступна")
@@ -142,24 +181,58 @@ func remoteAddrIP(r *http.Request) string {
 }
 
 // [FIXED] Без прокси — только RemoteAddr; за доверенным прокси — заголовки от LB
+// ============================================
+// REAL IP DETECTION (с поддержкой прокси)
+// ============================================
+
 func getRealIP(r *http.Request) string {
-	remoteIP := remoteAddrIP(r)
-	if !trustProxy {
-		return remoteIP
-	}
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		candidate := strings.TrimSpace(strings.Split(xff, ",")[0])
-		if parsed := net.ParseIP(candidate); parsed != nil {
-			return candidate
+	// Приоритет: Cloudflare -> X-Forwarded-For -> X-Real-IP -> RemoteAddr
+
+	// Cloudflare
+	if cfIP := r.Header.Get("CF-Connecting-IP"); cfIP != "" {
+		if parsed := net.ParseIP(strings.TrimSpace(cfIP)); parsed != nil {
+			return cfIP
 		}
 	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		candidate := strings.TrimSpace(xri)
-		if parsed := net.ParseIP(candidate); parsed != nil {
-			return candidate
+
+	// True-Client-IP (Akamai, Fastly)
+	if tcIP := r.Header.Get("True-Client-IP"); tcIP != "" {
+		if parsed := net.ParseIP(strings.TrimSpace(tcIP)); parsed != nil {
+			return tcIP
 		}
 	}
-	return remoteIP
+
+	if trustProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			// Берем первый IP в цепочке (оригинальный клиент)
+			ips := strings.Split(xff, ",")
+			if len(ips) > 0 {
+				candidate := strings.TrimSpace(ips[0])
+				if parsed := net.ParseIP(candidate); parsed != nil {
+					return candidate
+				}
+			}
+		}
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			candidate := strings.TrimSpace(xri)
+			if parsed := net.ParseIP(candidate); parsed != nil {
+				return candidate
+			}
+		}
+	}
+
+	return remoteAddrIP(r)
+}
+
+// Добавь хэширование IP для rate limiting (чтобы не хранить raw IP)
+func hashIP(ip string) string {
+	// Солим IP перед хэшированием (GDPR compliance)
+	salt := os.Getenv("RATE_LIMIT_SALT")
+	if salt == "" {
+		salt = "default-salt-change-me"
+	}
+	hash := sha256.Sum256([]byte(ip + salt))
+	return hex.EncodeToString(hash[:16]) // Только первые 16 байт
 }
 
 // [FIXED] Ограничение размера тела + запрет неизвестных полей JSON
@@ -174,13 +247,37 @@ func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{})
 
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		initJWTBlacklist()
+
 		cookie, err := r.Cookie("auth_token")
 		if err != nil {
 			sendError(w, http.StatusUnauthorized, "Нет доступа")
 			return
 		}
 
-		token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (interface{}, error) {
+		tokenString := cookie.Value
+
+		// Проверка blacklist
+		if jwtBlacklist.IsBlacklisted(tokenString) {
+			// Очищаем куку
+			http.SetCookie(w, &http.Cookie{
+				Name:     "auth_token",
+				Value:    "",
+				Expires:  time.Unix(0, 0),
+				MaxAge:   -1,
+				HttpOnly: true,
+				Secure:   true,
+				SameSite: http.SameSiteStrictMode,
+				Path:     "/",
+			})
+			sendError(w, http.StatusUnauthorized, "Сессия аннулирована")
+			return
+		}
+
+		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			}
 			return jwtSecretKey(), nil
 		})
 
@@ -188,6 +285,7 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			sendError(w, http.StatusUnauthorized, "Невалидный токен")
 			return
 		}
+
 		next.ServeHTTP(w, r)
 	}
 }
@@ -247,27 +345,6 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
-func handleLogout(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, http.MethodPost)
-		return
-	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "auth_token",
-		Value:    "",
-		Expires:  time.Unix(0, 0),
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
-		Path:     "/",
-		MaxAge:   -1,
-	})
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"success": true})
-}
-
 // [SECURITY FIX] Проверка JWT из HttpOnly-куки для синхронизации с фронтендом
 func handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -289,6 +366,27 @@ func handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusUnauthorized, "Невалидный токен")
 		return
 	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "auth_token",
+		Value:    "",
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		Path:     "/",
+	})
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
@@ -374,6 +472,25 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func validateProjectID(id string) error {
+	if id == "" {
+		return errors.New("project ID is required")
+	}
+	if len(id) > 100 {
+		return errors.New("project ID too long")
+	}
+	// Только безопасные символы
+	matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, id)
+	if !matched {
+		return errors.New("project ID contains invalid characters")
+	}
+	// Запрещаем path traversal
+	if strings.Contains(id, "..") || strings.ContainsAny(id, "/\\") {
+		return errors.New("project ID contains path traversal")
+	}
+	return nil
 }
 
 func formatUserID(id interface{}) string {
@@ -735,6 +852,7 @@ func requestPath(r *http.Request) string {
 	return path
 }
 
+// Добавь authMiddleware к GET /api/staff
 func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w, http.MethodGet)
@@ -744,10 +862,12 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ✅ Проверяем аутентификацию для GET тоже
+	// (authMiddleware уже добавлен в роутере, см. ниже)
+
 	ctx := context.Background()
 	doc, err := fsClient.Collection("config").Doc("staff").Get(ctx)
 	if err != nil {
-		// Если документа нет, возвращаем пустой список
 		json.NewEncoder(w).Encode([]StaffRole{})
 		return
 	}
@@ -760,7 +880,42 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ✅ Маскируем чувствительные данные для не-админов
+	if !isAdmin(r) {
+		// Отдаем только имена ролей и кол-во игроков, без списка
+		maskedRoles := make([]map[string]interface{}, len(data.Roles))
+		for i, role := range data.Roles {
+			maskedRoles[i] = map[string]interface{}{
+				"name":    role.Name,
+				"color":   role.Color,
+				"players": len(role.Players), // только количество
+			}
+		}
+		json.NewEncoder(w).Encode(maskedRoles)
+		return
+	}
+
 	json.NewEncoder(w).Encode(data.Roles)
+}
+
+// Добавь вспомогательную функцию
+func isAdmin(r *http.Request) bool {
+	cookie, err := r.Cookie("auth_token")
+	if err != nil {
+		return false
+	}
+	token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (interface{}, error) {
+		return jwtSecretKey(), nil
+	})
+	if err != nil || !token.Valid {
+		return false
+	}
+	if claims, ok := token.Claims.(jwt.MapClaims); ok {
+		if admin, ok := claims["admin"].(bool); ok {
+			return admin
+		}
+	}
+	return false
 }
 
 func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
@@ -784,6 +939,19 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 
 	if req.RoleName == "" || req.Nickname == "" {
 		sendError(w, http.StatusBadRequest, "roleName и nickname обязательны")
+		return
+	}
+
+	if err := validateRoleName(req.RoleName); err != nil {
+		sendError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateNickname(req.Nickname); err != nil {
+		sendError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateDiscord(req.Discord); err != nil {
+		sendError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -921,6 +1089,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("X-XSS-Protection", "1; mode=block")
+	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
 	switch requestPath(r) {
 	case "/api/login":
@@ -938,7 +1108,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	case "/api/staff":
 		switch r.Method {
 		case http.MethodGet:
-			rateLimitMiddleware(handleGetStaff)(w, r)
+			rateLimitMiddleware(authMiddleware(handleGetStaff))(w, r)
 		default:
 			methodNotAllowed(w, "GET")
 		}
@@ -959,12 +1129,14 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			rateLimitMiddleware(handleGetProjects)(w, r)
 		case http.MethodPost:
 			rateLimitMiddleware(authMiddleware(handleSaveProjects))(w, r)
+
 		default:
 			methodNotAllowed(w, "GET, POST")
 		}
 	default:
 		sendError(w, http.StatusNotFound, "Роут не найден")
 	}
+
 }
 
 const (
@@ -1099,14 +1271,17 @@ func (m *memoryLimiter) allow(_ context.Context, key string, max int, window tim
 
 func checkRateLimit(w http.ResponseWriter, r *http.Request, max int) bool {
 	initRateLimiter()
-	key := requestPath(r) + "|" + getRealIP(r)
+	rawIP := getRealIP(r)
+	hashedIP := hashIP(rawIP)
+	key := requestPath(r) + "|" + hashedIP
+
 	ok, err := globalRateLimiter.allow(r.Context(), key, max, rateLimitWindow)
 	if err != nil {
 		log.Printf("[ratelimit] %v", err)
 		return true
 	}
 	if !ok {
-		sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
+		sendError(w, http.StatusTooManyRequests, "Слишком много запросов. Попробуйте позже.")
 		return false
 	}
 	return true
@@ -1128,4 +1303,64 @@ func rateLimitLoginMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// ============================================
+// ВАЛИДАЦИЯ ВХОДНЫХ ДАННЫХ
+// ============================================
+
+func validateRoleName(name string) error {
+	if name == "" {
+		return errors.New("role name is empty")
+	}
+	if len(name) > 50 {
+		return errors.New("role name too long (max 50)")
+	}
+	// Только буквы, цифры, пробелы, дефисы, подчеркивания
+	matched, _ := regexp.MatchString(`^[a-zA-Zа-яА-Я0-9\s\-_]+$`, name)
+	if !matched {
+		return errors.New("role name contains invalid characters")
+	}
+	return nil
+}
+
+func validateNickname(nickname string) error {
+	if nickname == "" {
+		return errors.New("nickname is empty")
+	}
+	if len(nickname) > 100 {
+		return errors.New("nickname too long (max 100)")
+	}
+	// Никаких HTML/JS тегов
+	if strings.ContainsAny(nickname, "<>\"'&") {
+		return errors.New("nickname contains invalid characters")
+	}
+	return nil
+}
+
+func validateDiscord(discord string) error {
+	if discord == "" {
+		return nil // optional
+	}
+	if len(discord) > 50 {
+		return errors.New("discord too long")
+	}
+	// Примерный формат: username#1234 или @username
+	matched, _ := regexp.MatchString(`^@?[a-zA-Z0-9_]{2,32}(#\d{4})?$`, discord)
+	if !matched {
+		return errors.New("invalid discord format")
+	}
+	return nil
+}
+
+func handleRevokeAllSessions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	// ✅ Только для экстренных случаев - отзыв всех сессий
+	// Нужно реализовать массовое добавление всех активных токенов
+
+	sendError(w, http.StatusNotImplemented, "Not implemented yet")
 }
