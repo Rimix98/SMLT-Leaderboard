@@ -1,27 +1,17 @@
 <!DOCTYPE html>
 <html lang="ru">
-<<<<<<< HEAD
 <html lang="ru">
-=======
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<<<<<<< HEAD
     <meta name="description" content="SMLT - Staff Page">
     <meta name="theme-color" content="#0a0a0a">
     <title>Стафф — SMLT</title>
-=======
-    <meta name="description" content="SMLT — Управление staff ролями и участниками">
-    <meta name="theme-color" content="#0a0a0a">
-    <title>SMLT — Стафф</title>
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-<<<<<<< HEAD
     <script>
       window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
     </script>
@@ -32,21 +22,11 @@
     <div id="app">
 
         <!-- Кнопка смены темы -->
-=======
-</head>
-
-<body>
-    <div id="app">
-
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         <button class="theme-toggle" id="themeToggle" title="Сменить тему">
             <span class="theme-icon">🌙</span>
         </button>
 
-<<<<<<< HEAD
         <!-- Кнопка хоста -->
-=======
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         <button class="host-btn host-btn-left" id="hostBtn" title="Войти как хост">
             <span>Хост</span>
         </button>
@@ -54,41 +34,22 @@
         <header class="app-header">
             <div class="header-content">
                 <div class="header-brand">
-<<<<<<< HEAD
                     <div class="header-title">
                         <h1>SMLT</h1>
                         <span class="header-subtitle">Discord Community</span>
-=======
-                    <span class="header-logo">👥</span>
-                    <div class="header-title">
-                        <h1>Стафф SMLT</h1>
-                        <span class="header-subtitle">Роли и участники</span>
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
                     </div>
                 </div>
                 <nav class="header-nav">
                     <a href="index.html" class="nav-link">Главная</a>
                     <a href="demonlist.html" class="nav-link">Демонлист</a>
                     <a href="projects.html" class="nav-link">Проекты</a>
-<<<<<<< HEAD
                     <a href="staff.html" class="nav-link">Стафф</a>
                 </nav>
-=======
-                    <a href="staff.html" class="nav-link active">Стафф</a>
-                </nav>
-                <div class="header-actions">
-                    <button class="btn btn-secondary btn-lg" onclick="showInfoModal()">
-                        <span>ℹ️</span>
-                        <span>Информация</span>
-                    </button>
-                </div>
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
             </div>
         </header>
 
         <main class="app-main">
             <div class="container">
-<<<<<<< HEAD
                 <section class="hero-section" style="margin-bottom: var(--spacing-lg);">
                     <div class="hero-content">
                         <h2 class="hero-title">Управление персоналом</h2>
@@ -160,144 +121,6 @@
         <div id="toastContainer"></div>
     </div>
 
-=======
-                <div class="admin-panel admin-only" style="display: none;">
-                    <div class="admin-panel-header">👑 Управление ролями</div>
-                    <div class="admin-panel-content">
-                        <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
-                            <button class="btn btn-primary" onclick="showAddRoleModal()">➕ Добавить роль</button>
-                        </div>
-                    </div>
-                </div>
-
-                <section class="info-section" style="padding-top: 0;">
-                    <div class="info-card" style="border-left: 3px solid var(--color-secondary);">
-                        <p style="color: var(--color-text-secondary); line-height: 1.7;">
-                            Здесь управляются роли сотрудников сервера. Хост может создавать роли и назначать в них участников.
-                        </p>
-                    </div>
-                </section>
-
-                <div id="staffRolesContainer">
-                    <div class="loading-state" id="staffLoadingState">
-                        <div class="spinner"></div>
-                        <span class="loading-text">Загрузка...</span>
-                    </div>
-                </div>
-            </div>
-        </main>
-
-    </div>
-
-    <div id="infoModal" class="modal-overlay" onclick="closeInfoModal(event)">
-        <div class="modal" style="max-width: 480px;" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <div class="modal-title">📋 Информация</div>
-                <button class="modal-close" onclick="closeInfoModal()">✕</button>
-            </div>
-            <div class="modal-body">
-                <div style="display: flex; flex-direction: column; gap: var(--spacing-md);">
-                    <div style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
-                        <div style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">Discord Server</div>
-                        <a href="https://discord.gg/VK56W7ZzdA" target="_blank" style="color: var(--color-secondary); font-weight: 600;">discord.gg/VK56W7ZzdA</a>
-                    </div>
-                    <div style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
-                        <div style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">Admin</div>
-                        <div style="font-weight: 500;">Discord: <span style="color: var(--color-secondary);">@.samoletik</span></div>
-                        <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span style="color: var(--color-secondary);">@samoltik</span></div>
-                    </div>
-                    <div style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md); border-left: 3px solid var(--color-success);">
-                        <div style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">🔒 За безопасность отвечал</div>
-                        <div style="font-weight: 600; color: var(--color-secondary);">@rimix.98</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="hostModal" class="modal-overlay">
-        <div class="modal" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <div class="modal-title">🔐 Вход хоста</div>
-                <button class="modal-close" onclick="closeHostModal()">✕</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="hostPassword">Введите пароль:</label>
-                    <input type="password" id="hostPassword" class="form-input" placeholder="Пароль">
-                </div>
-                <button class="btn btn-primary" onclick="verifyHost(document.getElementById('hostPassword').value)">Войти</button>
-                <div id="hostError" class="error-message" style="display: none;">Неверный пароль!</div>
-            </div>
-        </div>
-    </div>
-
-    <div id="addRoleModal" class="modal-overlay">
-        <div class="modal" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <div class="modal-title">➕ Создать роль</div>
-                <button class="modal-close" onclick="closeAddRoleModal()">✕</button>
-            </div>
-            <div class="modal-body">
-                <form id="addRoleForm" onsubmit="event.preventDefault(); createRole();">
-                    <div class="form-group">
-                        <label for="roleName">Название роли:</label>
-                        <input type="text" id="roleName" class="form-input" placeholder="Модератор" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="roleColor">Цвет роли:</label>
-                        <div class="role-color-picker">
-                            <input type="color" id="roleColor" class="form-input color-input" value="#3b82f6">
-                        </div>
-                    </div>
-                    <div class="role-color-presets" id="roleColorPresets">
-                        <span class="color-preset" data-color="#3b82f6" style="background: #3b82f6;"></span>
-                        <span class="color-preset" data-color="#ef4444" style="background: #ef4444;"></span>
-                        <span class="color-preset" data-color="#22c55e" style="background: #22c55e;"></span>
-                        <span class="color-preset" data-color="#f59e0b" style="background: #f59e0b;"></span>
-                        <span class="color-preset" data-color="#a855f7" style="background: #a855f7;"></span>
-                        <span class="color-preset" data-color="#ec4899" style="background: #ec4899;"></span>
-                        <span class="color-preset" data-color="#06b6d4" style="background: #06b6d4;"></span>
-                        <span class="color-preset" data-color="#f97316" style="background: #f97316;"></span>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeAddRoleModal()">Отмена</button>
-                <button class="btn btn-primary" onclick="createRole()">Создать</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="addPlayerModal" class="modal-overlay">
-        <div class="modal" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <div class="modal-title" id="addPlayerModalTitle">➕ Добавить игрока</div>
-                <button class="modal-close" onclick="closeAddStaffPlayerModal()">✕</button>
-            </div>
-            <div class="modal-body">
-                <form id="addPlayerForm" onsubmit="event.preventDefault(); addPlayerToRole();">
-                    <input type="hidden" id="addPlayerRoleIndex" value="-1">
-                    <div class="form-group">
-                        <label for="playerNickname">Ник игрока <span style="color: var(--color-error);">*</span>:</label>
-                        <input type="text" id="playerNickname" class="form-input" placeholder="Введите ник" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="playerDiscord">Дискорд (необязательно):</label>
-                        <input type="text" id="playerDiscord" class="form-input" placeholder="@user">
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeAddStaffPlayerModal()">Отмена</button>
-                <button class="btn btn-primary" onclick="addPlayerToRole()">Добавить игрока</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="toastContainer"></div>
-
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
     <script src="app.js"></script>
 </body>
 
