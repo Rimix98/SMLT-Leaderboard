@@ -10,6 +10,7 @@ const API_BASE = 'https://api.demonlist.org';
 const BACKEND_URL = '/api';
 
 // [FIXED] Отмена предыдущих fetch при повторном клике / новом запросе
+<<<<<<< HEAD
 const pendingRequests = new Set();
 
 function fetchWithAbort(url, options = {}, key = null) {
@@ -26,6 +27,22 @@ function fetchWithAbort(url, options = {}, key = null) {
 
     return fetch(url, { ...options, headers, signal: controller.signal }).finally(() => {
         if (key && pendingRequests.get(key) === controller) {
+=======
+const pendingRequests = new Map();
+
+function fetchWithAbort(url, options = {}, key = null) {
+    if (!key) {
+        return fetch(url, options);
+    }
+    const prev = pendingRequests.get(key);
+    if (prev) {
+        prev.abort();
+    }
+    const controller = new AbortController();
+    pendingRequests.set(key, controller);
+    return fetch(url, { ...options, signal: controller.signal }).finally(() => {
+        if (pendingRequests.get(key) === controller) {
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
             pendingRequests.delete(key);
         }
     });
@@ -113,9 +130,13 @@ function h(tag, opts = {}, children = []) {
     if (opts.attrs) {
         for (const [k, v] of Object.entries(opts.attrs)) {
             if (v === false || v == null) continue;
+<<<<<<< HEAD
             if (!k.startsWith('on')) {
                 node.setAttribute(k, String(v));
             }
+=======
+            node.setAttribute(k, String(v));
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
         }
     }
     for (const child of children) {
@@ -144,8 +165,11 @@ const store = {
     },
     /** Кэш строк лидерборда для инкрементального обновления */
     _leaderboard: { body: null, lastSig: '' },
+<<<<<<< HEAD
     staffRoles: [],
     selectedRoleColor: '#3b82f6',
+=======
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
 };
 
 function encodeCountryToken(country) {
@@ -186,6 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function mountDelegatedClicks() {
     document.getElementById('leaderboardTable')?.addEventListener('click', (e) => {
         const row = e.target.closest('[data-profile-index]');
+<<<<<<< HEAD
         if (row) showProfile(Number(row.dataset.profileIndex));
     });
     document.getElementById('countryList')?.addEventListener('click', (e) => {
@@ -198,10 +223,28 @@ function mountDelegatedClicks() {
     document.getElementById('levelsTable')?.addEventListener('click', (e) => {
         const row = e.target.closest('[data-level-id]');
         if (row) showLevelVictors(row.dataset.levelId);
+=======
+        if (!row) return;
+        const idx = Number(row.dataset.profileIndex);
+        if (!Number.isFinite(idx)) return;
+        showProfile(idx);
+    });
+    document.getElementById('countryList')?.addEventListener('click', (e) => {
+        const item = e.target.closest('[data-country-token]');
+        if (!item) return;
+        const country = decodeCountryToken(item.dataset.countryToken);
+        if (country) showCountryTop(country);
+    });
+    document.getElementById('levelsTable')?.addEventListener('click', (e) => {
+        const row = e.target.closest('[data-level-id]');
+        if (!row) return;
+        showLevelVictors(row.dataset.levelId);
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
     });
     document.getElementById('projectsGrid')?.addEventListener('click', (e) => {
         const editBtn = e.target.closest('[data-action="edit-project"]');
         const delBtn = e.target.closest('[data-action="delete-project"]');
+<<<<<<< HEAD
         if (editBtn) editProject(Number(editBtn.dataset.projectIndex));
         else if (delBtn) deleteProject(Number(delBtn.dataset.projectIndex));
     });
@@ -255,6 +298,14 @@ function mountDelegatedClicks() {
 
         if (handlers[action]) {
             handlers[action]();
+=======
+        if (editBtn) {
+            const idx = Number(editBtn.dataset.projectIndex);
+            if (Number.isFinite(idx)) editProject(idx);
+        } else if (delBtn) {
+            const idx = Number(delBtn.dataset.projectIndex);
+            if (Number.isFinite(idx)) deleteProject(idx);
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
         }
     });
 }
@@ -655,6 +706,7 @@ function mapLeaderboardEntry(p) {
     const users = root.data?.users || [];
     const nl = (p.name || '').toLowerCase().trim();
     const pData = users.find(u => (u.username || '').toLowerCase().trim() === nl) || users[0] || {};
+<<<<<<< HEAD
 
     const recRoot = p.records || {};
     const pRecs = recRoot.data?.records || recRoot.records || [];
@@ -724,6 +776,72 @@ async function loadPlayersFromClientAPI() {
         return;
     }
 
+=======
+
+    const recRoot = p.records || {};
+    const pRecs = recRoot.data?.records || recRoot.records || [];
+
+    let hardest = null;
+    const acceptedRecs = pRecs.filter(r => r.status === 'accepted' && r.level);
+    if (acceptedRecs.length > 0) {
+        hardest = acceptedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
+    }
+
+    return {
+        id: pData.id,
+        name: pData.username || p.name,
+        rank: pData.placement || 0,
+        score: parseFloat(pData.points) || 0,
+        nationality: pData.country || null,
+        records: pRecs,
+        hardest
+    };
+}
+
+function hasLeaderboardData(entries) {
+    return Array.isArray(entries) && entries.some(e => {
+        const users = e.data?.data?.users;
+        return Array.isArray(users) && users.length > 0;
+    });
+}
+
+async function loadPlayersFromClientAPI() {
+    const table = document.getElementById('leaderboardTable');
+    const names = await getPlayerNames();
+    const loaded = [];
+
+    for (let i = 0; i < names.length; i++) {
+        updateProgress(i + 1, names.length);
+        const fp = await fetchPlayerData(names[i]);
+        if (!fp) continue;
+
+        const recs = await fetchRecords(fp.id);
+        let hardest = null;
+        const acceptedRecs = recs.filter(r => r.status === 'accepted' && r.level);
+        if (acceptedRecs.length > 0) {
+            hardest = acceptedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
+        }
+
+        loaded.push({
+            id: fp.id,
+            name: fp.username || names[i],
+            rank: fp.placement || 0,
+            score: parseFloat(fp.points) || 0,
+            nationality: fp.country || null,
+            records: recs,
+            hardest
+        });
+    }
+
+    if (loaded.length === 0) {
+        clearEl(table);
+        table.appendChild(
+            h('div', { className: 'empty-state' }, [h('p', {}, ['Не удалось загрузить данные игроков'])])
+        );
+        return;
+    }
+
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
     store.players = loaded.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
     store.allPlayers = [...store.players];
     renderPlayers();
@@ -1705,6 +1823,7 @@ async function saveProject() {
             store.projects.pop();
         } else {
             store.projects[idx] = oldProject;
+<<<<<<< HEAD
         }
         showToast(e.message, 'error');
     }
@@ -1721,6 +1840,8 @@ async function saveProject() {
             store.projects.pop();
         } else {
             store.projects[idx] = oldProject;
+=======
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
         }
         showToast(e.message, 'error');
     }
@@ -1778,6 +1899,7 @@ function closeInfoModal(e) {
     }
 }
 
+<<<<<<< HEAD
 // ============================================
 // СТАФФ (УПРАВЛЕНИЕ РОЛЯМИ)
 // ============================================
@@ -2069,3 +2191,28 @@ function escapeHtml(text) {
 }
 
 // HTML-шаблоны (demonlist.html, projects.html, index.html) вызывают эти имена в inline onclick
+=======
+// HTML-шаблоны (demonlist.html, projects.html, index.html) вызывают эти имена в inline onclick
+if (typeof window !== 'undefined') {
+    Object.assign(window, {
+        verifyHost,
+        logoutHost,
+        expandLevels,
+        showInfoModal,
+        closeInfoModal,
+        closeHostModal,
+        closeProfileModal,
+        closeCountryModal,
+        closeLevelModal,
+        showAddPlayerModal,
+        closeAddPlayerModal,
+        addPlayer,
+        removePlayer,
+        showAddProjectModal,
+        closeProjectModal,
+        saveProject,
+        editProject,
+        deleteProject,
+    });
+}
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
