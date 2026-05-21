@@ -1445,8 +1445,200 @@ a:hover {
     }
 }
 
+<<<<<<< HEAD
     .toast {
         right: 10px;
         left: 10px;
         text-align: center;
     }
+=======
+/* === Staff Page === */
+.staff-roles-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: var(--spacing-lg);
+    padding: var(--spacing-md) 0;
+}
+
+.staff-role-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-lg);
+    overflow: hidden;
+    transition: all var(--transition-normal);
+}
+
+.staff-role-card:hover {
+    border-color: var(--color-secondary);
+}
+
+.staff-role-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-border);
+    gap: var(--spacing-sm);
+}
+
+.staff-role-name {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.staff-role-indicator {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.staff-role-body {
+    padding: var(--spacing-md);
+}
+
+.staff-role-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.staff-players-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    margin-top: var(--spacing-sm);
+}
+
+.staff-player-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--color-surface-2);
+    border-radius: var(--border-radius-md);
+    gap: var(--spacing-sm);
+}
+
+.staff-player-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+.staff-player-nickname {
+    font-weight: 500;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.staff-player-discord {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.staff-player-remove {
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: 4px;
+    font-size: var(--font-size-sm);
+    border-radius: var(--border-radius-sm);
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.staff-player-remove:hover {
+    color: var(--color-error);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.staff-empty-players {
+    text-align: center;
+    padding: var(--spacing-lg);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.staff-role-footer {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    justify-content: flex-start;
+}
+
+.role-color-picker {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.color-input {
+    width: 60px;
+    height: 40px;
+    padding: 2px;
+    cursor: pointer;
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    background: var(--color-surface-2);
+}
+
+.color-input::-webkit-color-swatch-wrapper {
+    padding: 2px;
+}
+
+.color-input::-webkit-color-swatch {
+    border-radius: var(--border-radius-sm);
+    border: none;
+}
+
+.role-color-presets {
+    display: flex;
+    gap: var(--spacing-xs);
+    flex-wrap: wrap;
+    margin-top: var(--spacing-sm);
+}
+
+.color-preset {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all var(--transition-fast);
+    display: inline-block;
+}
+
+.color-preset:hover {
+    transform: scale(1.15);
+}
+
+.color-preset.active {
+    border-color: var(--color-text-primary);
+}
+
+.staff-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem;
+    color: var(--color-text-muted);
+    gap: var(--spacing-md);
+}
+
+@media (max-width: 768px) {
+    .staff-roles-grid {
+        grid-template-columns: 1fr;
+    }
+}
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95

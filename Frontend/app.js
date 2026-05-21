@@ -10,6 +10,10 @@ const API_BASE = 'https://api.demonlist.org';
 const BACKEND_URL = '/api';
 
 // [FIXED] Отмена предыдущих fetch при повторном клике / новом запросе
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
 const pendingRequests = new Set();
 
 function fetchWithAbort(url, options = {}, key = null) {
@@ -26,6 +30,25 @@ function fetchWithAbort(url, options = {}, key = null) {
 
     return fetch(url, { ...options, headers, signal: controller.signal }).finally(() => {
         if (key && pendingRequests.get(key) === controller) {
+<<<<<<< HEAD
+=======
+=======
+const pendingRequests = new Map();
+
+function fetchWithAbort(url, options = {}, key = null) {
+    if (!key) {
+        return fetch(url, options);
+    }
+    const prev = pendingRequests.get(key);
+    if (prev) {
+        prev.abort();
+    }
+    const controller = new AbortController();
+    pendingRequests.set(key, controller);
+    return fetch(url, { ...options, signal: controller.signal }).finally(() => {
+        if (pendingRequests.get(key) === controller) {
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
             pendingRequests.delete(key);
         }
     });
@@ -113,9 +136,19 @@ function h(tag, opts = {}, children = []) {
     if (opts.attrs) {
         for (const [k, v] of Object.entries(opts.attrs)) {
             if (v === false || v == null) continue;
+<<<<<<< HEAD
             if (!k.startsWith('on')) {
                 node.setAttribute(k, String(v));
             }
+=======
+<<<<<<< HEAD
+            if (!k.startsWith('on')) {
+                node.setAttribute(k, String(v));
+            }
+=======
+            node.setAttribute(k, String(v));
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         }
     }
     for (const child of children) {
@@ -144,6 +177,14 @@ const store = {
     },
     /** Кэш строк лидерборда для инкрементального обновления */
     _leaderboard: { body: null, lastSig: '' },
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+    staffRoles: [],
+    selectedRoleColor: '#3b82f6',
+=======
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
 };
 
 function encodeCountryToken(country) {
@@ -175,12 +216,22 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('projectsGrid')) {
         loadProjects();
     }
+<<<<<<< HEAD
+=======
+    if (document.getElementById('staffRolesContainer')) {
+        initStaffPage();
+    }
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
 });
 
 /** Делегирование вместо inline onclick в разметке из JS */
 function mountDelegatedClicks() {
     document.getElementById('leaderboardTable')?.addEventListener('click', (e) => {
         const row = e.target.closest('[data-profile-index]');
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         if (row) showProfile(Number(row.dataset.profileIndex));
     });
     document.getElementById('countryList')?.addEventListener('click', (e) => {
@@ -193,10 +244,34 @@ function mountDelegatedClicks() {
     document.getElementById('levelsTable')?.addEventListener('click', (e) => {
         const row = e.target.closest('[data-level-id]');
         if (row) showLevelVictors(row.dataset.levelId);
+<<<<<<< HEAD
+=======
+=======
+        if (!row) return;
+        const idx = Number(row.dataset.profileIndex);
+        if (!Number.isFinite(idx)) return;
+        showProfile(idx);
+    });
+    document.getElementById('countryList')?.addEventListener('click', (e) => {
+        const item = e.target.closest('[data-country-token]');
+        if (!item) return;
+        const country = decodeCountryToken(item.dataset.countryToken);
+        if (country) showCountryTop(country);
+    });
+    document.getElementById('levelsTable')?.addEventListener('click', (e) => {
+        const row = e.target.closest('[data-level-id]');
+        if (!row) return;
+        showLevelVictors(row.dataset.levelId);
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
     });
     document.getElementById('projectsGrid')?.addEventListener('click', (e) => {
         const editBtn = e.target.closest('[data-action="edit-project"]');
         const delBtn = e.target.closest('[data-action="delete-project"]');
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         if (editBtn) editProject(Number(editBtn.dataset.projectIndex));
         else if (delBtn) deleteProject(Number(delBtn.dataset.projectIndex));
     });
@@ -236,11 +311,34 @@ function mountDelegatedClicks() {
             'delete-project': () => {
                 const btn = e.target.closest('[data-delete-project]');
                 if (btn) deleteProject(Number(btn.dataset.projectIndex));
+<<<<<<< HEAD
+=======
+            },
+            'show-add-role-modal': showAddRoleModal,
+            'close-add-role-modal': closeAddRoleModal,
+            'create-role': createRole,
+            'close-add-player-modal-staff': closeAddStaffPlayerModal,
+            'add-player-to-role': addPlayerToRole,
+            'remove-staff-player': () => {
+                const btn = e.target.closest('[data-remove-staff-player]');
+                if (btn) removeStaffPlayer(Number(btn.dataset.roleIndex), Number(btn.dataset.playerIndex));
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
             }
         };
 
         if (handlers[action]) {
             handlers[action]();
+<<<<<<< HEAD
+=======
+=======
+        if (editBtn) {
+            const idx = Number(editBtn.dataset.projectIndex);
+            if (Number.isFinite(idx)) editProject(idx);
+        } else if (delBtn) {
+            const idx = Number(delBtn.dataset.projectIndex);
+            if (Number.isFinite(idx)) deleteProject(idx);
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         }
     });
 }
@@ -467,6 +565,14 @@ function updateAdminControls() {
     adminElements.forEach(el => {
         el.style.display = store.isHost ? '' : 'none';
     });
+<<<<<<< HEAD
+=======
+
+    // Если мы на странице стаффа — перерендерить роли (там conditional кнопки)
+    if (document.getElementById('staffRolesContainer')) {
+        renderStaffRoles();
+    }
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
 }
 
 // ============================================
@@ -636,6 +742,10 @@ function mapLeaderboardEntry(p) {
     const users = root.data?.users || [];
     const nl = (p.name || '').toLowerCase().trim();
     const pData = users.find(u => (u.username || '').toLowerCase().trim() === nl) || users[0] || {};
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
 
     const recRoot = p.records || {};
     const pRecs = recRoot.data?.records || recRoot.records || [];
@@ -705,6 +815,75 @@ async function loadPlayersFromClientAPI() {
         return;
     }
 
+<<<<<<< HEAD
+=======
+=======
+
+    const recRoot = p.records || {};
+    const pRecs = recRoot.data?.records || recRoot.records || [];
+
+    let hardest = null;
+    const acceptedRecs = pRecs.filter(r => r.status === 'accepted' && r.level);
+    if (acceptedRecs.length > 0) {
+        hardest = acceptedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
+    }
+
+    return {
+        id: pData.id,
+        name: pData.username || p.name,
+        rank: pData.placement || 0,
+        score: parseFloat(pData.points) || 0,
+        nationality: pData.country || null,
+        records: pRecs,
+        hardest
+    };
+}
+
+function hasLeaderboardData(entries) {
+    return Array.isArray(entries) && entries.some(e => {
+        const users = e.data?.data?.users;
+        return Array.isArray(users) && users.length > 0;
+    });
+}
+
+async function loadPlayersFromClientAPI() {
+    const table = document.getElementById('leaderboardTable');
+    const names = await getPlayerNames();
+    const loaded = [];
+
+    for (let i = 0; i < names.length; i++) {
+        updateProgress(i + 1, names.length);
+        const fp = await fetchPlayerData(names[i]);
+        if (!fp) continue;
+
+        const recs = await fetchRecords(fp.id);
+        let hardest = null;
+        const acceptedRecs = recs.filter(r => r.status === 'accepted' && r.level);
+        if (acceptedRecs.length > 0) {
+            hardest = acceptedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
+        }
+
+        loaded.push({
+            id: fp.id,
+            name: fp.username || names[i],
+            rank: fp.placement || 0,
+            score: parseFloat(fp.points) || 0,
+            nationality: fp.country || null,
+            records: recs,
+            hardest
+        });
+    }
+
+    if (loaded.length === 0) {
+        clearEl(table);
+        table.appendChild(
+            h('div', { className: 'empty-state' }, [h('p', {}, ['Не удалось загрузить данные игроков'])])
+        );
+        return;
+    }
+
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
     store.players = loaded.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
     store.allPlayers = [...store.players];
     renderPlayers();
@@ -1364,7 +1543,11 @@ async function addPlayer() {
     
     try {
         await savePlayerNames(playerNames);
+<<<<<<< HEAD
         closeAddPlayerModal();
+=======
+    closeAddStaffPlayerModal();
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         nameInput.value = '';
         await loadAllPlayers(); 
         showToast('Игрок успешно добавлен', 'success');
@@ -1686,6 +1869,10 @@ async function saveProject() {
             store.projects.pop();
         } else {
             store.projects[idx] = oldProject;
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         }
         showToast(e.message, 'error');
     }
@@ -1702,6 +1889,11 @@ async function saveProject() {
             store.projects.pop();
         } else {
             store.projects[idx] = oldProject;
+<<<<<<< HEAD
+=======
+=======
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         }
         showToast(e.message, 'error');
     }
@@ -1759,4 +1951,324 @@ function closeInfoModal(e) {
     }
 }
 
+<<<<<<< HEAD
 // HTML-шаблоны (demonlist.html, projects.html, index.html) вызывают эти имена в inline onclick
+=======
+<<<<<<< HEAD
+// ============================================
+// СТАФФ (УПРАВЛЕНИЕ РОЛЯМИ)
+// ============================================
+
+function initStaffPage() {
+    loadStaffRoles();
+    initStaffEventListeners();
+    renderStaffRoles();
+}
+
+function initStaffEventListeners() {
+    const colorPresets = document.querySelectorAll('.color-preset');
+    colorPresets.forEach(preset => {
+        preset.addEventListener('click', () => {
+            const color = preset.dataset.color;
+            store.selectedRoleColor = color;
+            document.getElementById('roleColor').value = color;
+            document.querySelectorAll('.color-preset').forEach(p => p.classList.remove('active'));
+            preset.classList.add('active');
+        });
+    });
+
+    const colorInput = document.getElementById('roleColor');
+    if (colorInput) {
+        colorInput.addEventListener('input', () => {
+            store.selectedRoleColor = colorInput.value;
+            document.querySelectorAll('.color-preset').forEach(p => p.classList.remove('active'));
+        });
+    }
+
+    const roleNameInput = document.getElementById('roleName');
+    if (roleNameInput) {
+        roleNameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                createRole();
+            }
+        });
+    }
+
+    const playerNickname = document.getElementById('playerNickname');
+    if (playerNickname) {
+        playerNickname.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addPlayerToRole();
+            }
+        });
+    }
+}
+
+function loadStaffRoles() {
+    try {
+        const saved = localStorage.getItem('smlt-staff-roles');
+        if (saved) {
+            store.staffRoles = JSON.parse(saved);
+        }
+    } catch (e) {
+        store.staffRoles = [];
+    }
+}
+
+function saveStaffRoles() {
+    try {
+        localStorage.setItem('smlt-staff-roles', JSON.stringify(store.staffRoles));
+    } catch (e) {
+        console.error('Ошибка сохранения staff ролей:', e);
+    }
+}
+
+function renderStaffRoles() {
+    const container = document.getElementById('staffRolesContainer');
+    const loadingState = document.getElementById('staffLoadingState');
+    if (!container) return;
+
+    if (loadingState) loadingState.style.display = 'none';
+
+    if (store.staffRoles.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><p>Роли пока не созданы</p></div>';
+        return;
+    }
+
+    let html = '<div class="staff-roles-grid">';
+    store.staffRoles.forEach((role, roleIndex) => {
+        const roleColor = role.color || '#3b82f6';
+        const players = role.players || [];
+
+        html += `<div class="staff-role-card">
+            <div class="staff-role-header">
+                <div class="staff-role-name">
+                    <span class="staff-role-indicator" style="background: ${escapeHtml(roleColor)};"></span>
+                    ${escapeHtml(role.name)}
+                </div>
+                ${store.isHost ? `<div class="staff-role-actions">
+                    <button class="btn btn-danger btn-sm" onclick="deleteRole(${roleIndex})">🗑️</button>
+                </div>` : ''}
+            </div>
+            <div class="staff-role-body">
+                <div class="staff-players-list">
+                    ${players.length === 0 ? '<div class="staff-empty-players">Нет игроков</div>' : ''}
+                    ${players.map((player, pIdx) => `
+                        <div class="staff-player-item">
+                            <div class="staff-player-info">
+                                <span class="staff-player-nickname">${escapeHtml(player.nickname)}</span>
+                                ${player.discord ? `<span class="staff-player-discord">${escapeHtml(player.discord)}</span>` : ''}
+                            </div>
+                            ${store.isHost ? `<button class="staff-player-remove" onclick="removeStaffPlayer(${roleIndex}, ${pIdx})" title="Удалить игрока">✕</button>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            ${store.isHost ? `<div class="staff-role-footer">
+                <button class="btn btn-secondary btn-sm" onclick="showAddStaffPlayerModal(${roleIndex})">➕ Добавить игрока</button>
+            </div>` : ''}
+        </div>`;
+    });
+    html += '</div>';
+
+    container.innerHTML = html;
+}
+
+function showAddRoleModal() {
+    if (!store.isHost) {
+        showToast('Только хост может создавать роли', 'error');
+        return;
+    }
+
+    const modal = document.getElementById('addRoleModal');
+    if (modal) {
+        document.getElementById('roleName').value = '';
+        document.getElementById('roleColor').value = store.selectedRoleColor || '#3b82f6';
+        document.querySelectorAll('.color-preset').forEach(p => {
+            p.classList.toggle('active', p.dataset.color === (store.selectedRoleColor || '#3b82f6'));
+        });
+        modal.classList.add('active');
+        setTimeout(() => document.getElementById('roleName').focus(), 100);
+    }
+}
+
+function closeAddRoleModal() {
+    const modal = document.getElementById('addRoleModal');
+    if (modal) modal.classList.remove('active');
+}
+
+function createRole() {
+    if (!store.isHost) {
+        showToast('Только хост может создавать роли', 'error');
+        return;
+    }
+
+    const nameInput = document.getElementById('roleName');
+    const name = nameInput.value.trim();
+    if (!name) {
+        showToast('Введите название роли', 'error');
+        return;
+    }
+
+    const color = document.getElementById('roleColor').value || '#3b82f6';
+
+    store.staffRoles.push({
+        name: name,
+        color: color,
+        players: []
+    });
+
+    saveStaffRoles();
+    renderStaffRoles();
+    closeAddRoleModal();
+    nameInput.value = '';
+    showToast(`Роль «${name}» создана`, 'success');
+}
+
+function deleteRole(index) {
+    if (!store.isHost) {
+        showToast('Только хост может удалять роли', 'error');
+        return;
+    }
+
+    const role = store.staffRoles[index];
+    if (!role) return;
+
+    if (!confirm(`Удалить роль «${role.name}»?`)) return;
+
+    store.staffRoles.splice(index, 1);
+    saveStaffRoles();
+    renderStaffRoles();
+    showToast('Роль удалена', 'success');
+}
+
+function showAddStaffPlayerModal(roleIndex) {
+    if (!store.isHost) {
+        showToast('Только хост может добавлять игроков', 'error');
+        return;
+    }
+
+    const modal = document.getElementById('addPlayerModal');
+    const title = document.getElementById('addPlayerModalTitle');
+    const roleIndexInput = document.getElementById('addPlayerRoleIndex');
+    const nicknameInput = document.getElementById('playerNickname');
+    const discordInput = document.getElementById('playerDiscord');
+
+    if (modal && title && roleIndexInput) {
+        const role = store.staffRoles[roleIndex];
+        if (!role) return;
+        title.textContent = `➕ Добавить игрока в «${role.name}»`;
+        roleIndexInput.value = roleIndex;
+        if (nicknameInput) nicknameInput.value = '';
+        if (discordInput) discordInput.value = '';
+        modal.classList.add('active');
+        setTimeout(() => { if (nicknameInput) nicknameInput.focus(); }, 100);
+    }
+}
+
+function closeAddStaffPlayerModal() {
+    const modal = document.getElementById('addPlayerModal');
+    if (modal) modal.classList.remove('active');
+}
+
+function addPlayerToRole() {
+    if (!store.isHost) {
+        showToast('Только хост может добавлять игроков', 'error');
+        return;
+    }
+
+    const roleIndexInput = document.getElementById('addPlayerRoleIndex');
+    const nicknameInput = document.getElementById('playerNickname');
+    const discordInput = document.getElementById('playerDiscord');
+
+    const roleIndex = parseInt(roleIndexInput?.value || '-1');
+    if (roleIndex < 0 || roleIndex >= store.staffRoles.length) {
+        showToast('Ошибка: роль не найдена', 'error');
+        return;
+    }
+
+    const nickname = nicknameInput?.value?.trim();
+    if (!nickname) {
+        showToast('Введите ник игрока', 'error');
+        return;
+    }
+
+    const discord = discordInput?.value?.trim() || '';
+
+    // Проверка на дубликат по нику
+    const role = store.staffRoles[roleIndex];
+    if (role.players.some(p => p.nickname.toLowerCase() === nickname.toLowerCase())) {
+        showToast('Такой игрок уже есть в этой роли', 'error');
+        return;
+    }
+
+    role.players.push({
+        nickname: nickname,
+        discord: discord
+    });
+
+    saveStaffRoles();
+    renderStaffRoles();
+    closeAddStaffPlayerModal();
+    showToast(`Игрок «${nickname}» добавлен в роль «${role.name}»`, 'success');
+}
+
+function removeStaffPlayer(roleIndex, playerIndex) {
+    if (!store.isHost) {
+        showToast('Только хост может удалять игроков', 'error');
+        return;
+    }
+
+    const role = store.staffRoles[roleIndex];
+    if (!role) return;
+
+    const player = role.players[playerIndex];
+    if (!player) return;
+
+    if (!confirm(`Удалить игрока «${player.nickname}» из роли «${role.name}»?`)) return;
+
+    role.players.splice(playerIndex, 1);
+    saveStaffRoles();
+    renderStaffRoles();
+    showToast(`Игрок «${player.nickname}» удалён из роли`, 'success');
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+// HTML-шаблоны (demonlist.html, projects.html, index.html) вызывают эти имена в inline onclick
+=======
+// HTML-шаблоны (demonlist.html, projects.html, index.html) вызывают эти имена в inline onclick
+if (typeof window !== 'undefined') {
+    Object.assign(window, {
+        verifyHost,
+        logoutHost,
+        expandLevels,
+        showInfoModal,
+        closeInfoModal,
+        closeHostModal,
+        closeProfileModal,
+        closeCountryModal,
+        closeLevelModal,
+        showAddPlayerModal,
+        closeAddPlayerModal,
+        addPlayer,
+        removePlayer,
+        showAddProjectModal,
+        closeProjectModal,
+        saveProject,
+        editProject,
+        deleteProject,
+    });
+}
+>>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
+>>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
