@@ -10,10 +10,6 @@ const API_BASE = 'https://api.demonlist.org';
 const BACKEND_URL = '/api';
 
 // [FIXED] Отмена предыдущих fetch при повторном клике / новом запросе
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
 const pendingRequests = new Set();
 
 function fetchWithAbort(url, options = {}, key = null) {
@@ -30,25 +26,6 @@ function fetchWithAbort(url, options = {}, key = null) {
 
     return fetch(url, { ...options, headers, signal: controller.signal }).finally(() => {
         if (key && pendingRequests.get(key) === controller) {
-<<<<<<< HEAD
-=======
-=======
-const pendingRequests = new Map();
-
-function fetchWithAbort(url, options = {}, key = null) {
-    if (!key) {
-        return fetch(url, options);
-    }
-    const prev = pendingRequests.get(key);
-    if (prev) {
-        prev.abort();
-    }
-    const controller = new AbortController();
-    pendingRequests.set(key, controller);
-    return fetch(url, { ...options, signal: controller.signal }).finally(() => {
-        if (pendingRequests.get(key) === controller) {
->>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
             pendingRequests.delete(key);
         }
     });
@@ -136,19 +113,9 @@ function h(tag, opts = {}, children = []) {
     if (opts.attrs) {
         for (const [k, v] of Object.entries(opts.attrs)) {
             if (v === false || v == null) continue;
-<<<<<<< HEAD
             if (!k.startsWith('on')) {
                 node.setAttribute(k, String(v));
             }
-=======
-<<<<<<< HEAD
-            if (!k.startsWith('on')) {
-                node.setAttribute(k, String(v));
-            }
-=======
-            node.setAttribute(k, String(v));
->>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         }
     }
     for (const child of children) {
@@ -177,14 +144,8 @@ const store = {
     },
     /** Кэш строк лидерборда для инкрементального обновления */
     _leaderboard: { body: null, lastSig: '' },
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
     staffRoles: [],
     selectedRoleColor: '#3b82f6',
-=======
->>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
 };
 
 function encodeCountryToken(country) {
@@ -216,22 +177,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('projectsGrid')) {
         loadProjects();
     }
-<<<<<<< HEAD
-=======
     if (document.getElementById('staffRolesContainer')) {
         initStaffPage();
     }
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
 });
 
 /** Делегирование вместо inline onclick в разметке из JS */
 function mountDelegatedClicks() {
     document.getElementById('leaderboardTable')?.addEventListener('click', (e) => {
         const row = e.target.closest('[data-profile-index]');
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         if (row) showProfile(Number(row.dataset.profileIndex));
     });
     document.getElementById('countryList')?.addEventListener('click', (e) => {
@@ -244,34 +198,10 @@ function mountDelegatedClicks() {
     document.getElementById('levelsTable')?.addEventListener('click', (e) => {
         const row = e.target.closest('[data-level-id]');
         if (row) showLevelVictors(row.dataset.levelId);
-<<<<<<< HEAD
-=======
-=======
-        if (!row) return;
-        const idx = Number(row.dataset.profileIndex);
-        if (!Number.isFinite(idx)) return;
-        showProfile(idx);
-    });
-    document.getElementById('countryList')?.addEventListener('click', (e) => {
-        const item = e.target.closest('[data-country-token]');
-        if (!item) return;
-        const country = decodeCountryToken(item.dataset.countryToken);
-        if (country) showCountryTop(country);
-    });
-    document.getElementById('levelsTable')?.addEventListener('click', (e) => {
-        const row = e.target.closest('[data-level-id]');
-        if (!row) return;
-        showLevelVictors(row.dataset.levelId);
->>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
     });
     document.getElementById('projectsGrid')?.addEventListener('click', (e) => {
         const editBtn = e.target.closest('[data-action="edit-project"]');
         const delBtn = e.target.closest('[data-action="delete-project"]');
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         if (editBtn) editProject(Number(editBtn.dataset.projectIndex));
         else if (delBtn) deleteProject(Number(delBtn.dataset.projectIndex));
     });
@@ -311,8 +241,6 @@ function mountDelegatedClicks() {
             'delete-project': () => {
                 const btn = e.target.closest('[data-delete-project]');
                 if (btn) deleteProject(Number(btn.dataset.projectIndex));
-<<<<<<< HEAD
-=======
             },
             'show-add-role-modal': showAddRoleModal,
             'close-add-role-modal': closeAddRoleModal,
@@ -322,23 +250,11 @@ function mountDelegatedClicks() {
             'remove-staff-player': () => {
                 const btn = e.target.closest('[data-remove-staff-player]');
                 if (btn) removeStaffPlayer(Number(btn.dataset.roleIndex), Number(btn.dataset.playerIndex));
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
             }
         };
 
         if (handlers[action]) {
             handlers[action]();
-<<<<<<< HEAD
-=======
-=======
-        if (editBtn) {
-            const idx = Number(editBtn.dataset.projectIndex);
-            if (Number.isFinite(idx)) editProject(idx);
-        } else if (delBtn) {
-            const idx = Number(delBtn.dataset.projectIndex);
-            if (Number.isFinite(idx)) deleteProject(idx);
->>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         }
     });
 }
@@ -565,14 +481,11 @@ function updateAdminControls() {
     adminElements.forEach(el => {
         el.style.display = store.isHost ? '' : 'none';
     });
-<<<<<<< HEAD
-=======
 
     // Если мы на странице стаффа — перерендерить роли (там conditional кнопки)
     if (document.getElementById('staffRolesContainer')) {
         renderStaffRoles();
     }
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
 }
 
 // ============================================
@@ -742,10 +655,6 @@ function mapLeaderboardEntry(p) {
     const users = root.data?.users || [];
     const nl = (p.name || '').toLowerCase().trim();
     const pData = users.find(u => (u.username || '').toLowerCase().trim() === nl) || users[0] || {};
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
 
     const recRoot = p.records || {};
     const pRecs = recRoot.data?.records || recRoot.records || [];
@@ -815,75 +724,6 @@ async function loadPlayersFromClientAPI() {
         return;
     }
 
-<<<<<<< HEAD
-=======
-=======
-
-    const recRoot = p.records || {};
-    const pRecs = recRoot.data?.records || recRoot.records || [];
-
-    let hardest = null;
-    const acceptedRecs = pRecs.filter(r => r.status === 'accepted' && r.level);
-    if (acceptedRecs.length > 0) {
-        hardest = acceptedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
-    }
-
-    return {
-        id: pData.id,
-        name: pData.username || p.name,
-        rank: pData.placement || 0,
-        score: parseFloat(pData.points) || 0,
-        nationality: pData.country || null,
-        records: pRecs,
-        hardest
-    };
-}
-
-function hasLeaderboardData(entries) {
-    return Array.isArray(entries) && entries.some(e => {
-        const users = e.data?.data?.users;
-        return Array.isArray(users) && users.length > 0;
-    });
-}
-
-async function loadPlayersFromClientAPI() {
-    const table = document.getElementById('leaderboardTable');
-    const names = await getPlayerNames();
-    const loaded = [];
-
-    for (let i = 0; i < names.length; i++) {
-        updateProgress(i + 1, names.length);
-        const fp = await fetchPlayerData(names[i]);
-        if (!fp) continue;
-
-        const recs = await fetchRecords(fp.id);
-        let hardest = null;
-        const acceptedRecs = recs.filter(r => r.status === 'accepted' && r.level);
-        if (acceptedRecs.length > 0) {
-            hardest = acceptedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
-        }
-
-        loaded.push({
-            id: fp.id,
-            name: fp.username || names[i],
-            rank: fp.placement || 0,
-            score: parseFloat(fp.points) || 0,
-            nationality: fp.country || null,
-            records: recs,
-            hardest
-        });
-    }
-
-    if (loaded.length === 0) {
-        clearEl(table);
-        table.appendChild(
-            h('div', { className: 'empty-state' }, [h('p', {}, ['Не удалось загрузить данные игроков'])])
-        );
-        return;
-    }
-
->>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
     store.players = loaded.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
     store.allPlayers = [...store.players];
     renderPlayers();
@@ -1543,11 +1383,7 @@ async function addPlayer() {
     
     try {
         await savePlayerNames(playerNames);
-<<<<<<< HEAD
-        closeAddPlayerModal();
-=======
     closeAddStaffPlayerModal();
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         nameInput.value = '';
         await loadAllPlayers(); 
         showToast('Игрок успешно добавлен', 'success');
@@ -1869,31 +1705,6 @@ async function saveProject() {
             store.projects.pop();
         } else {
             store.projects[idx] = oldProject;
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
-        }
-        showToast(e.message, 'error');
-    }
-}
-
-    try {
-        await saveProjects(store.projects);
-        showToast(idx === -1 ? 'Проект добавлен!' : 'Проект обновлён!', 'success');
-        closeProjectModal();
-        renderProjects();
-    } catch (e) {
-        if (isAbortError(e)) return;
-        if (idx === -1) {
-            store.projects.pop();
-        } else {
-            store.projects[idx] = oldProject;
-<<<<<<< HEAD
-=======
-=======
->>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
         }
         showToast(e.message, 'error');
     }
@@ -1951,10 +1762,6 @@ function closeInfoModal(e) {
     }
 }
 
-<<<<<<< HEAD
-// HTML-шаблоны (demonlist.html, projects.html, index.html) вызывают эти имена в inline onclick
-=======
-<<<<<<< HEAD
 // ============================================
 // СТАФФ (УПРАВЛЕНИЕ РОЛЯМИ)
 // ============================================
@@ -2246,29 +2053,3 @@ function escapeHtml(text) {
 }
 
 // HTML-шаблоны (demonlist.html, projects.html, index.html) вызывают эти имена в inline onclick
-=======
-// HTML-шаблоны (demonlist.html, projects.html, index.html) вызывают эти имена в inline onclick
-if (typeof window !== 'undefined') {
-    Object.assign(window, {
-        verifyHost,
-        logoutHost,
-        expandLevels,
-        showInfoModal,
-        closeInfoModal,
-        closeHostModal,
-        closeProfileModal,
-        closeCountryModal,
-        closeLevelModal,
-        showAddPlayerModal,
-        closeAddPlayerModal,
-        addPlayer,
-        removePlayer,
-        showAddProjectModal,
-        closeProjectModal,
-        saveProject,
-        editProject,
-        deleteProject,
-    });
-}
->>>>>>> b77e4b693774cf1176eb0ddd0023faf6adfc7d99
->>>>>>> 48e7937556c6f77103575a1f93fb75d6b3220b95
