@@ -10,7 +10,7 @@ const API_BASE = 'https://api.demonlist.org';
 const BACKEND_URL = '/api';
 
 // [FIXED] Отмена предыдущих fetch при повторном клике / новом запросе
-const pendingRequests = new Set();
+const pendingRequests = new Map();
 
 function fetchWithAbort(url, options = {}, key = null) {
     if (key && pendingRequests.has(key)) {
