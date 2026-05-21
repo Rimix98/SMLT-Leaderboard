@@ -11,9 +11,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
 </head>
 
-<body>
+<body class="home-page">
     <div id="app">
 
         <!-- Кнопка смены темы -->
@@ -38,6 +42,7 @@
                     <a href="index.html" class="nav-link active">Главная</a>
                     <a href="demonlist.html" class="nav-link">Демонлист</a>
                     <a href="projects.html" class="nav-link">Проекты</a>
+                    <a href="staff.html" class="nav-link">Стафф</a>
                 </nav>
             </div>
         </header>
@@ -91,7 +96,7 @@
                                 </div>
                             </div>
                             <div class="info-item security">
-                                <span class="info-label">🔒 За безопасность отвечал</span>
+                                <span class="info-label">🔒 За безопасность и бекенд отвечал</span>
                                 <span class="info-value highlight">@rimix.98</span>
                             </div>
                         </div>
@@ -105,17 +110,17 @@
 
     <!-- Модальное окно входа хоста -->
     <div id="hostModal" class="modal-overlay">
-        <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal">
             <div class="modal-header">
                 <div class="modal-title">🔐 Вход хоста</div>
-                <button class="modal-close" onclick="closeHostModal()">✕</button>
+                <button class="modal-close">✕</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
                     <label for="hostPassword">Введите пароль:</label>
                     <input type="password" id="hostPassword" class="form-input" placeholder="Пароль">
                 </div>
-                <button class="btn btn-primary" onclick="verifyHost(document.getElementById('hostPassword').value)">Войти</button>
+                <button id="hostSubmitBtn" class="btn btn-primary">Войти</button>
                 <div id="hostError" class="error-message" style="display: none;">Неверный пароль!</div>
             </div>
         </div>

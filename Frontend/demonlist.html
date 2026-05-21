@@ -24,6 +24,10 @@
 
     <link rel="stylesheet" href="styles.css">
 
+    <script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+    </script>
+   <script defer src="/_vercel/insights/script.js"></script>
 </head>
 
 
@@ -78,11 +82,13 @@
 
                     <a href="projects.html" class="nav-link">Проекты</a>
 
+                    <a href="staff.html" class="nav-link">Стафф</a>
+
                 </nav>
 
                 <div class="header-actions">
 
-                    <button class="btn btn-secondary btn-lg" onclick="showInfoModal()">
+                    <button class="btn btn-secondary btn-lg" id="infoBtn">
 
                         <span>ℹ️</span>
 
@@ -112,7 +118,7 @@
 
                         <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
 
-                            <button class="btn btn-primary" onclick="showAddPlayerModal()">➕ Добавить игрока</button>
+                            <button class="btn btn-primary" id="addPlayerBtn">➕ Добавить игрока</button>
 
                         </div>
 
@@ -191,7 +197,7 @@
                                 </div>
                             </div>
                             <div id="expandLevelsContainer" style="display: none; text-align: center; padding: var(--spacing-md);">
-                                <button class="btn btn-secondary" onclick="expandLevels()">Показать ещё</button>
+                                <button class="btn btn-secondary" id="expandLevelsBtn">Показать ещё</button>
                             </div>
                             </div>
 
@@ -267,15 +273,15 @@
 
     <!-- Модальное окно профиля -->
 
-    <div id="profileModal" class="modal-overlay" onclick="closeProfileModal(event)">
+    <div id="profileModal" class="modal-overlay">
 
-        <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal">
 
             <div class="modal-header">
 
                 <div class="modal-title" id="profileTitle">Профиль</div>
 
-                <button class="modal-close" onclick="closeProfileModal()">✕</button>
+                <button class="modal-close">✕</button>
 
             </div>
 
@@ -289,15 +295,15 @@
 
     <!-- Модальное окно топа страны -->
 
-    <div id="countryModal" class="modal-overlay" onclick="closeCountryModal()">
+    <div id="countryModal" class="modal-overlay">
 
-        <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal">
 
             <div class="modal-header">
 
                 <div class="modal-title" id="countryTitle">Топ страны</div>
 
-                <button class="modal-close" onclick="closeCountryModal()">✕</button>
+                <button class="modal-close">✕</button>
 
             </div>
 
@@ -311,15 +317,15 @@
 
     <!-- Модальное окно викторов уровня -->
 
-    <div id="levelModal" class="modal-overlay" onclick="closeLevelModal()">
+    <div id="levelModal" class="modal-overlay">
 
-        <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal">
 
             <div class="modal-header">
 
                 <div class="modal-title" id="levelTitle">Викторы уровня</div>
 
-                <button class="modal-close" onclick="closeLevelModal()">✕</button>
+                <button class="modal-close">✕</button>
 
             </div>
 
@@ -333,15 +339,15 @@
 
     <!-- Модальное окно информации -->
 
-    <div id="infoModal" class="modal-overlay" onclick="closeInfoModal(event)">
+    <div id="infoModal" class="modal-overlay">
 
-        <div class="modal" style="max-width: 480px;" onclick="event.stopPropagation()">
+        <div class="modal" style="max-width: 480px;">
 
             <div class="modal-header">
 
                 <div class="modal-title">📋 Информация</div>
 
-                <button class="modal-close" onclick="closeInfoModal()">✕</button>
+                <button class="modal-close">✕</button>
 
             </div>
 
@@ -393,7 +399,7 @@
 
                             style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">
 
-                            🔒 За безопасность отвечал</div>
+                            🔒 За безопасность и бекенд отвечал</div>
 
                         <div style="font-weight: 600; color: var(--color-secondary);">@rimix.98</div>
 
@@ -413,13 +419,13 @@
 
     <div id="hostModal" class="modal-overlay">
 
-        <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal">
 
             <div class="modal-header">
 
                 <div class="modal-title">🔐 Вход хоста</div>
 
-                <button class="modal-close" onclick="closeHostModal()">✕</button>
+                <button class="modal-close">✕</button>
 
             </div>
 
@@ -433,7 +439,7 @@
 
                 </div>
 
-                <button class="btn btn-primary" onclick="verifyHost(document.getElementById('hostPassword').value)">Войти</button>
+                <button id="hostSubmitBtn" class="btn btn-primary">Войти</button>
 
                 <div id="hostError" class="error-message" style="display: none;">Неверный пароль!</div>
 
@@ -449,13 +455,13 @@
 
     <div id="addPlayerModal" class="modal-overlay">
 
-        <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal">
 
             <div class="modal-header">
 
                 <div class="modal-title">➕ Добавить игрока</div>
 
-                <button class="modal-close" onclick="closeAddPlayerModal()">✕</button>
+                <button class="modal-close">✕</button>
 
             </div>
 
@@ -471,9 +477,9 @@
 
                 <div style="display: flex; gap: var(--spacing-sm);">
 
-                    <button class="btn btn-secondary" onclick="closeAddPlayerModal()">Отмена</button>
+                    <button class="btn btn-secondary modal-close">Отмена</button>
 
-                    <button class="btn btn-primary" onclick="addPlayer()">Добавить</button>
+                    <button class="btn btn-primary" id="addPlayerSubmitBtn">Добавить</button>
 
                 </div>
 

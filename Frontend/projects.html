@@ -11,6 +11,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+    </script>
+   <script defer src="/_vercel/insights/script.js"></script>
 </head>
 
 <body>
@@ -38,9 +42,10 @@
                     <a href="index.html" class="nav-link">Главная</a>
                     <a href="demonlist.html" class="nav-link">Демонлист</a>
                     <a href="projects.html" class="nav-link active">Проекты</a>
+                    <a href="staff.html" class="nav-link">Стафф</a>
                 </nav>
                 <div class="header-actions">
-                    <button class="btn btn-secondary btn-lg" onclick="showInfoModal()">
+                    <button class="btn btn-secondary btn-lg" id="infoBtn">
                         <span>ℹ️</span>
                         <span>Информация</span>
                     </button>
@@ -55,7 +60,7 @@
                     <div class="admin-panel-header">👑 Управление проектами</div>
                     <div class="admin-panel-content">
                         <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
-                            <button class="btn btn-primary" onclick="showAddProjectModal()">➕ Добавить проект</button>
+                            <button class="btn btn-primary" id="addProjectBtn">➕ Добавить проект</button>
                         </div>
                     </div>
                 </div>
@@ -95,11 +100,11 @@
     </div>
 
     <!-- Модальное окно информации -->
-    <div id="infoModal" class="modal-overlay" onclick="closeInfoModal(event)">
-        <div class="modal" style="max-width: 480px;" onclick="event.stopPropagation()">
+    <div id="infoModal" class="modal-overlay">
+        <div class="modal" style="max-width: 480px;">
             <div class="modal-header">
                 <div class="modal-title">📋 Информация</div>
-                <button class="modal-close" onclick="closeInfoModal()">✕</button>
+                <button class="modal-close">✕</button>
             </div>
             <div class="modal-body">
                 <div style="display: flex; flex-direction: column; gap: var(--spacing-md);">
@@ -125,7 +130,7 @@
                         style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md); border-left: 3px solid var(--color-success);">
                         <div
                             style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">
-                            🔒 За безопасность отвечал</div>
+                            🔒 За безопасность и бекенд отвечал</div>
                         <div style="font-weight: 600; color: var(--color-secondary);">@rimix.98</div>
                     </div>
                 </div>
@@ -135,92 +140,19 @@
 
     <!-- Модальное окно входа хоста -->
     <div id="hostModal" class="modal-overlay">
-        <div class="modal" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <div class="modal-title">🔐 Вход хоста</div>
-                <button class="modal-close" onclick="closeHostModal()">✕</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="hostPassword">Введите пароль:</label>
-                    <input type="password" id="hostPassword" class="form-input" placeholder="Пароль">
-                </div>
-                <button class="btn btn-primary" onclick="verifyHost(document.getElementById('hostPassword').value)">Войти</button>
-                <div id="hostError" class="error-message" style="display: none;">Неверный пароль!</div>
-            </div>
-        </div>
-    </div>
+        <div class="modal" data-action="stop-propagation">
 
-    <!-- Модальное окно добавления/редактирования проекта -->
-    <div id="projectModal" class="modal-overlay">
-        <div class="modal modal-lg" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <div class="modal-title" id="projectModalTitle">Добавить проект</div>
-                <button class="modal-close" onclick="closeProjectModal()">✕</button>
-            </div>
-            <div class="modal-body">
-                <form id="projectForm">
-                    <input type="hidden" id="projectIndex" value="-1">
+        <button class="modal-close" data-action="close-host-modal">✕</button>
 
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="projectName">Название проекта:</label>
-                            <input type="text" id="projectName" class="form-input"
-                                placeholder="Название уровня/коллаба">
-                        </div>
-                        <div class="form-group">
-                            <label for="projectId">ID уровня:</label>
-                            <input type="text" id="projectId" class="form-input" placeholder="ID в GD">
-                        </div>
-                    </div>
+                <button class="btn btn-primary" data-action="verify-host">Войти</button>
 
-                    <div class="form-group">
-                        <label for="projectVideo">Ссылка на видео (YouTube):</label>
-                        <input type="text" id="projectVideo" class="form-input"
-                            placeholder="https://youtube.com/watch?v=...">
-                    </div>
+        <div class="modal modal-lg" data-action="stop-propagation">
 
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="projectStatus">Статус:</label>
-                            <select id="projectStatus" class="form-select">
-                                <option value="планируется">Планируется</option>
-                                <option value="в процессе постройки">В процессе постройки</option>
-                                <option value="в процессе верифа">В процессе верифа</option>
-                                <option value="готов">Готов</option>
-                                <option value="заморожен">Заморожен</option>
-                                <option value="мёртв">Мёртв</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="projectVerifier">Кем верифнут:</label>
-                            <input type="text" id="projectVerifier" class="form-input" placeholder="Ник верифера">
-                        </div>
-                    </div>
+                <button class="modal-close" data-action="close-project-modal">✕</button>
 
-                    <div class="form-group">
-                        <label for="projectComment">Комментарий:</label>
-                        <textarea id="projectComment" class="form-textarea"
-                            placeholder="Дополнительная информация..."></textarea>
-                    </div>
+                <button class="btn btn-secondary" data-action="close-project-modal">Отмена</button>
+                <button class="btn btn-primary" data-action="save-project">Сохранить</button>
 
-                    <div class="form-group">
-                        <label for="projectParticipants">Участники (формат: Ник (Роль), через запятую):</label>
-                        <input type="text" id="projectParticipants" class="form-input"
-                            placeholder="Player1 (HOST), Player2 (DECO), Player3 (GP)">
-                        <div
-                            style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin-top: var(--spacing-xs);">
-                            Роли: <span style="color: #ef4444;">HOST</span>, <span style="color: #06b6d4;">DECO</span>,
-                            <span style="color: #d4a574;">GP</span>, <span style="color: #eab308;">PLAYTEST</span>,
-                            <span style="color: #991b1b;">VERIFER</span>, <span style="color: #a855f7;">MERGER</span>,
-                            <span style="color: #f97316;">TRANSITION</span>
-                        </div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeProjectModal()">Отмена</button>
-                <button class="btn btn-primary" onclick="saveProject()">Сохранить</button>
             </div>
         </div>
     </div>

@@ -2,10 +2,18 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,14 +22,22 @@ import (
 	firebase "firebase.google.com/go"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
-	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
 
-type Player struct {
-	Name string `json:"name" firestore:"name"`
-}
+// === КОНФИГ И ГЛОБАЛКИ ===
+var (
+	fsClient *firestore.Client
+	fsOnce   sync.Once
+	fsErr    error
 
+	httpClient = &http.Client{Timeout: 10 * time.Second}
+
+	trustProxy     bool
+	maxRequestBody = int64(1024 * 1024)
+)
+
+// === ТИПЫ ДАННЫХ ===
 type Project struct {
 	Name         string   `json:"name" firestore:"name"`
 	VideoID      string   `json:"videoId" firestore:"videoId"`
@@ -32,50 +48,81 @@ type Project struct {
 	Participants []string `json:"participants" firestore:"participants"`
 }
 
-type LoginRequest struct {
-	Password string `json:"password"`
+type Player struct {
+	Name string `json:"name" firestore:"name"`
 }
 
-type ipLimit struct {
-	requests  int
-	resetTime time.Time
+type FullPlayerData struct {
+	Name    string      `json:"name"`
+	Data    interface{} `json:"data"`
+	Records interface{} `json:"records"`
 }
 
-var (
-	limiterMu sync.Mutex
-	ipMap     = make(map[string]*ipLimit)
-)
+// Список по умолчанию (если Firestore пуст)
+var defaultPlayerNames = []string{
+	"samoletik", "paradoxiz", "clokman", "itzslxnq", "H30n41k_GmD",
+	"Filkoty", "DarBeast", "Florned", "Marzyiiik", "euphoriak8",
+	"npoctou_gamer", "NopanicGD", "CandyCloud22", "Vakum", "Daggit",
+	"Loran", "tapxyhh", "SerGio", "Fanim59", "prostoymofficial",
+	"toxik blaze", "NatrixGMD", "toxatort", "SpaceRS", "yeahme",
+	"Спини", "Linqwq", "RossceorpGD", "69liqu69",
+}
 
-// Бессмертный рейтлимитер: если боты забивают мапу, она сбрасывается без утечки памяти и нагрузки на CPU
-func isRateLimited(ip string) bool {
-	limiterMu.Lock()
-	defer limiterMu.Unlock()
+// === ИНИЦИАЛИЗАЦИЯ ===
+func init() {
+	trustProxy = os.Getenv("TRUST_PROXY") == "true" || os.Getenv("VERCEL") == "1"
+	initFirestore()
+}
 
-	now := time.Now()
-
-	// Защита от утечки памяти: если мапа разрослась, сносим её целиком,
-	// а не блокируем честных пользователей!
-	if len(ipMap) > 2000 {
-		ipMap = make(map[string]*ipLimit)
-	}
-
-	lim, exists := ipMap[ip]
-	if !exists || now.After(lim.resetTime) {
-		ipMap[ip] = &ipLimit{
-			requests:  1,
-			resetTime: now.Add(1 * time.Minute),
+func initFirestore() {
+	fsOnce.Do(func() {
+		ctx := context.Background()
+		creds := os.Getenv("FIREBASE_CREDENTIALS")
+		if creds == "" {
+			fsErr = errors.New("FIREBASE_CREDENTIALS не задан")
+			log.Printf("[firestore] %v", fsErr)
+			return
 		}
+
+		app, err := firebase.NewApp(ctx, nil, option.WithCredentialsJSON([]byte(creds)))
+		if err != nil {
+			fsErr = err
+			log.Printf("[firestore] init app: %v", err)
+			return
+		}
+
+		fsClient, err = app.Firestore(ctx)
+		if err != nil {
+			fsErr = err
+			log.Printf("[firestore] connect: %v", err)
+		}
+	})
+}
+
+func requireFirestore(w http.ResponseWriter) bool {
+	if fsErr != nil || fsClient == nil {
+		sendError(w, http.StatusServiceUnavailable, "База данных недоступна")
 		return false
 	}
-
-	lim.requests++
-	return lim.requests > 60
+	return true
 }
 
-func getClientIP(r *http.Request) string {
-	if ip := r.Header.Get("X-Real-IP"); ip != "" {
-		return ip
-	}
+func jwtSecretKey() []byte {
+	return []byte(os.Getenv("JWT_SECRET"))
+}
+
+// === УТИЛИТЫ ===
+func sendError(w http.ResponseWriter, status int, msg string) {
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+func methodNotAllowed(w http.ResponseWriter, allowed string) {
+	w.Header().Set("Allow", allowed)
+	sendError(w, http.StatusMethodNotAllowed, "Метод не разрешен")
+}
+
+func remoteAddrIP(r *http.Request) string {
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
@@ -83,338 +130,795 @@ func getClientIP(r *http.Request) string {
 	return ip
 }
 
-func getFirestore(ctx context.Context) (*firestore.Client, error) {
-	credsJSON := os.Getenv("FIREBASE_CREDENTIALS")
-	if credsJSON != "" {
-		app, err := firebase.NewApp(ctx, nil, option.WithCredentialsJSON([]byte(credsJSON)))
-		if err != nil {
-			return nil, err
+// [FIXED] Без прокси — только RemoteAddr; за доверенным прокси — заголовки от LB
+func getRealIP(r *http.Request) string {
+	remoteIP := remoteAddrIP(r)
+	if !trustProxy {
+		return remoteIP
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		candidate := strings.TrimSpace(strings.Split(xff, ",")[0])
+		if parsed := net.ParseIP(candidate); parsed != nil {
+			return candidate
 		}
-		return app.Firestore(ctx)
 	}
-
-	opt := option.WithCredentialsFile("serviceAccountKey.json")
-	app, err := firebase.NewApp(ctx, nil, opt)
-	if err != nil {
-		return nil, err
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		candidate := strings.TrimSpace(xri)
+		if parsed := net.ParseIP(candidate); parsed != nil {
+			return candidate
+		}
 	}
-	return app.Firestore(ctx)
+	return remoteIP
 }
 
-// Умная защита от CSRF (пропускает localhost для тестов) + жесткая проверка подписи JWT
-func checkAdminAuth(r *http.Request) bool {
-	if r.Method != "GET" && r.Method != "OPTIONS" {
-		origin := r.Header.Get("Origin")
-		isLocal := strings.HasPrefix(origin, "http://localhost:") || origin == "http://127.0.0.1:5500"
+// [FIXED] Ограничение размера тела + запрет неизвестных полей JSON
+func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{}) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	return dec.Decode(dest)
+}
 
-		if origin != "https://smltdemonlist.vercel.app" && !isLocal {
-			println("Блокировка CSRF: подозрительный запрос с ориджина:", origin)
-			return false
+// === MIDDLEWARES ===
+
+func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("auth_token")
+		if err != nil {
+			sendError(w, http.StatusUnauthorized, "Нет доступа")
+			return
 		}
+
+		token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (interface{}, error) {
+			return jwtSecretKey(), nil
+		})
+
+		if err != nil || !token.Valid {
+			sendError(w, http.StatusUnauthorized, "Невалидный токен")
+			return
+		}
+		next.ServeHTTP(w, r)
+	}
+}
+
+// === ХЭНДЛЕРЫ ===
+
+func handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	var req struct {
+		Password     string `json:"password"`
+		CaptchaToken string `json:"captchaToken"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Кривой запрос")
+		return
+	}
+
+	if os.Getenv("JWT_SECRET") == "" {
+		sendError(w, http.StatusInternalServerError, "Сервер не настроен: JWT_SECRET")
+		return
+	}
+	adminHash := os.Getenv("ADMIN_HASH")
+	if adminHash == "" {
+		sendError(w, http.StatusInternalServerError, "Сервер не настроен: ADMIN_HASH")
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(adminHash), []byte(req.Password)); err != nil {
+		sendError(w, http.StatusUnauthorized, "Неверный пароль")
+		return
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"admin": true,
+		"exp":   time.Now().Add(24 * time.Hour).Unix(),
+	})
+	tokenString, err := token.SignedString(jwtSecretKey())
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка выдачи токена")
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "auth_token",
+		Value:    tokenString,
+		Expires:  time.Now().Add(24 * time.Hour),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		Path:     "/",
+	})
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "auth_token",
+		Value:    "",
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		Path:     "/",
+		MaxAge:   -1,
+	})
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+// [SECURITY FIX] Проверка JWT из HttpOnly-куки для синхронизации с фронтендом
+func handleAuthVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
 	}
 
 	cookie, err := r.Cookie("auth_token")
 	if err != nil {
-		return false
-	}
-
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		println("КРИТИЧЕСКАЯ ОШИБКА: JWT_SECRET не задан!")
-		return false
-	}
-
-	token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			println("Внимание: попытка подменить алгоритм подписи токена!")
-			return nil, jwt.ErrSignatureInvalid
-		}
-		return []byte(jwtSecret), nil
-	})
-
-	if err != nil || !token.Valid {
-		return false
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	return ok && claims["role"] == "admin"
-}
-
-func Handler(w http.ResponseWriter, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	allowedOrigin := "https://smltdemonlist.vercel.app"
-
-	if origin == "http://localhost:3000" || origin == "http://127.0.0.1:5500" || strings.HasPrefix(origin, "http://localhost:") {
-		allowedOrigin = origin
-	}
-
-	if origin != "" && (origin == allowedOrigin) {
-		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-	}
-	w.Header().Set("Access-Control-Allow-Credentials", "true")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
+		sendError(w, http.StatusUnauthorized, "Нет токена")
 		return
 	}
 
-	sendError := func(code int, msg string) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(code)
-		json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (interface{}, error) {
+		return jwtSecretKey(), nil
+	})
+
+	if err != nil || !token.Valid {
+		sendError(w, http.StatusUnauthorized, "Невалидный токен")
+		return
 	}
 
-	if isRateLimited(getClientIP(r)) {
-		sendError(http.StatusTooManyRequests, "Too many requests. Slow down!")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func handleGetProjects(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !requireFirestore(w) {
 		return
 	}
 
 	ctx := context.Background()
-	client, err := getFirestore(ctx)
-	if err != nil {
-		sendError(http.StatusInternalServerError, "Ошибка подключения к Firestore")
+	iter := fsClient.Collection("projects").Documents(ctx)
+	projects := make([]Project, 0)
+
+	for {
+		doc, err := iter.Next()
+		if err != nil {
+			break
+		}
+		var p Project
+		if err := doc.DataTo(&p); err != nil {
+			continue
+		}
+		projects = append(projects, p)
+	}
+
+	json.NewEncoder(w).Encode(projects)
+}
+
+func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
 		return
 	}
-	defer client.Close()
+	if !requireFirestore(w) {
+		return
+	}
 
-	// РОУТЫ
-	switch r.URL.Path {
-	case "/auth/login":
-		if r.Method != "POST" {
-			sendError(http.StatusMethodNotAllowed, "Method not allowed")
+	var projectList []Project
+	if err := decodeRequestJSON(w, r, &projectList); err != nil {
+		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
+		return
+	}
+
+	if len(projectList) > 500 {
+		sendError(w, http.StatusBadRequest, "Слишком много проектов")
+		return
+	}
+
+	for _, p := range projectList {
+		if len(p.Name) == 0 || len(p.Name) > 100 {
+			sendError(w, http.StatusBadRequest, "Недопустимая длина имени")
 			return
 		}
-
-	case "/auth/verify":
-		if r.Method != "GET" {
-			sendError(http.StatusMethodNotAllowed, "Method not allowed")
+		if len(p.Comment) > 1000 {
+			sendError(w, http.StatusBadRequest, "Слишком длинный комментарий")
 			return
 		}
+		if len(p.VideoID) > 50 {
+			sendError(w, http.StatusBadRequest, "Слишком длинный VideoID")
+			return
+		}
+		if p.ID == "" {
+			sendError(w, http.StatusBadRequest, "ID проекта обязателен")
+			return
+		}
+	}
 
-	case "/players":
+	ctx := context.Background()
+	batch := fsClient.Batch()
+	for _, p := range projectList {
+		ref := fsClient.Collection("projects").Doc(p.ID)
+		batch.Set(ref, p)
+	}
+	if _, err := batch.Commit(ctx); err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		return
+	}
 
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func formatUserID(id interface{}) string {
+	switch v := id.(type) {
+	case float64:
+		return strconv.FormatInt(int64(v), 10)
+	case json.Number:
+		return v.String()
+	case string:
+		return v
+	case int:
+		return strconv.Itoa(v)
+	case int64:
+		return strconv.FormatInt(v, 10)
 	default:
-		sendError(http.StatusNotFound, "Маршрут не найден")
+		return ""
+	}
+}
+
+func extractUserID(data interface{}, playerName string) string {
+	m, ok := data.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	d, ok := m["data"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	users, ok := d["users"].([]interface{})
+	if !ok || len(users) == 0 {
+		return ""
 	}
 
-	if strings.HasSuffix(r.URL.Path, "/auth/login") && r.Method == "POST" {
-		var req LoginRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			sendError(http.StatusBadRequest, "Некорректный запрос")
-			return
+	nl := strings.ToLower(strings.TrimSpace(playerName))
+	for _, u := range users {
+		user, ok := u.(map[string]interface{})
+		if !ok {
+			continue
 		}
+		username, _ := user["username"].(string)
+		if strings.ToLower(strings.TrimSpace(username)) == nl {
+			return formatUserID(user["id"])
+		}
+	}
+	return ""
+}
 
-		adminDoc, err := client.Collection("config").Doc("admin").Get(ctx)
+func fetchAPIWithRetry(url string, maxRetries int) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		resp, err := httpClient.Get(url)
 		if err != nil {
-			sendError(http.StatusInternalServerError, "Ошибка БД: не найден конфиг админа")
-			return
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue
 		}
-		var adminData struct {
-			PasswordHash string `firestore:"password_hash"`
-		}
-		adminDoc.DataTo(&adminData)
+		defer resp.Body.Close()
 
-		if adminData.PasswordHash == "" {
-			sendError(http.StatusInternalServerError, "Ошибка конфигурации: пароль админа пуст")
-			return
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			lastErr = fmt.Errorf("http %d", resp.StatusCode)
+			if attempt < maxRetries-1 {
+				time.Sleep(time.Second * time.Duration(attempt+1))
+			}
+			continue
 		}
 
-		err = bcrypt.CompareHashAndPassword([]byte(adminData.PasswordHash), []byte(req.Password))
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 		if err != nil {
-			sendError(http.StatusUnauthorized, "Неверный пароль")
-			return
+			lastErr = fmt.Errorf("read body: %w", err)
+			continue
 		}
 
-		jwtSecret := os.Getenv("JWT_SECRET")
-		if jwtSecret == "" {
-			sendError(http.StatusInternalServerError, "Ошибка сервера: JWT_SECRET не настроен")
-			return
+		if len(body) == 0 {
+			lastErr = errors.New("empty response")
+			continue
 		}
 
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-			"role": "admin",
-			"exp":  time.Now().Add(24 * time.Hour).Unix(),
+		return body, nil
+	}
+	return nil, lastErr
+}
+
+func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	ctx := context.Background()
+	players := playersForLeaderboard(ctx)
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	result := make([]FullPlayerData, 0, len(players))
+	sem := make(chan struct{}, 8)
+
+	for _, p := range players {
+		wg.Add(1)
+		sem <- struct{}{}
+
+		go func(playerName string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			entry := FullPlayerData{Name: playerName}
+			search := url.QueryEscape(playerName)
+
+			body1, err := fetchAPIWithRetry("https://api.demonlist.org/leaderboard/user/list?search="+search+"&limit=50", 3)
+			if err != nil {
+				log.Printf("[leaderboard] fetch user list for %s: %v", playerName, err)
+				mu.Lock()
+				result = append(result, entry)
+				mu.Unlock()
+				return
+			}
+
+			var data interface{}
+			if err := json.Unmarshal(body1, &data); err != nil {
+				log.Printf("[leaderboard] parse user list for %s: %v", playerName, err)
+				mu.Lock()
+				result = append(result, entry)
+				mu.Unlock()
+				return
+			}
+
+			entry.Data = data
+			userID := extractUserID(data, playerName)
+			if userID == "" {
+				log.Printf("[leaderboard] no user id found for %s", playerName)
+				mu.Lock()
+				result = append(result, entry)
+				mu.Unlock()
+				return
+			}
+
+			body2, err := fetchAPIWithRetry("https://api.demonlist.org/user/record/list?user_id="+url.QueryEscape(userID)+"&limit=50", 3)
+			if err != nil {
+				log.Printf("[leaderboard] fetch records for %s (id=%s): %v", playerName, userID, err)
+				mu.Lock()
+				result = append(result, entry)
+				mu.Unlock()
+				return
+			}
+
+			var recs interface{}
+			if err := json.Unmarshal(body2, &recs); err != nil {
+				log.Printf("[leaderboard] parse records for %s: %v", playerName, err)
+				mu.Lock()
+				result = append(result, entry)
+				mu.Unlock()
+				return
+			}
+
+			entry.Records = recs
+			mu.Lock()
+			result = append(result, entry)
+			mu.Unlock()
+		}(p.Name)
+	}
+
+	wg.Wait()
+	json.NewEncoder(w).Encode(result)
+}
+
+func loadPlayersFromFirestore(ctx context.Context) ([]Player, error) {
+	doc, err := fsClient.Collection("config").Doc("players").Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var players []Player
+	if err := doc.DataTo(&players); err == nil && len(players) > 0 {
+		return players, nil
+	}
+
+	if raw, ok := doc.Data()["players"]; ok {
+		b, err := json.Marshal(raw)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(b, &players); err != nil {
+			return nil, err
+		}
+		if len(players) > 0 {
+			return players, nil
+		}
+	}
+
+	return players, nil
+}
+
+func defaultPlayersList() []Player {
+	out := make([]Player, len(defaultPlayerNames))
+	for i, name := range defaultPlayerNames {
+		out[i] = Player{Name: name}
+	}
+	return out
+}
+
+func playersForLeaderboard(ctx context.Context) []Player {
+	initFirestore()
+	if fsClient != nil {
+		players, err := loadPlayersFromFirestore(ctx)
+		if err == nil && len(players) > 0 {
+			return players
+		}
+	}
+	return defaultPlayersList()
+}
+
+func savePlayersToFirestore(ctx context.Context, players []Player) error {
+	_, err := fsClient.Collection("config").Doc("players").Set(ctx, map[string]interface{}{
+		"players": players,
+	})
+	return err
+}
+
+func handleGetPlayers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	ctx := context.Background()
+	players := playersForLeaderboard(ctx)
+	names := make([]string, len(players))
+	for i, p := range players {
+		names[i] = p.Name
+	}
+	json.NewEncoder(w).Encode(names)
+}
+
+func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+
+	var playerList []Player
+	if err := decodeRequestJSON(w, r, &playerList); err != nil {
+		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
+		return
+	}
+
+	if len(playerList) > 1000 {
+		sendError(w, http.StatusBadRequest, "Слишком много игроков (макс 1000)")
+		return
+	}
+
+	for _, p := range playerList {
+		if len(p.Name) == 0 || len(p.Name) > 100 {
+			sendError(w, http.StatusBadRequest, "Недопустимая длина имени игрока")
+			return
+		}
+	}
+
+	ctx := context.Background()
+	if err := savePlayersToFirestore(ctx, playerList); err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+// [CONCURRENCY FIX] Использование транзакций Firestore вместо read-modify-write
+func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		methodNotAllowed(w, http.MethodDelete)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
+		return
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		sendError(w, http.StatusBadRequest, "Имя игрока обязательно")
+		return
+	}
+
+	ctx := context.Background()
+	lowerName := strings.ToLower(name)
+
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		doc, err := tx.Get(fsClient.Collection("config").Doc("players"))
+		if err != nil {
+			return err
+		}
+
+		var players []Player
+		if err := doc.DataTo(&players); err != nil {
+			if raw, ok := doc.Data()["players"]; ok {
+				b, _ := json.Marshal(raw)
+				json.Unmarshal(b, &players)
+			}
+		}
+
+		filtered := make([]Player, 0, len(players))
+		removed := false
+		for _, p := range players {
+			if strings.ToLower(strings.TrimSpace(p.Name)) == lowerName {
+				removed = true
+				continue
+			}
+			filtered = append(filtered, p)
+		}
+
+		if !removed {
+			return errors.New("player_not_found")
+		}
+
+		return tx.Set(fsClient.Collection("config").Doc("players"), map[string]interface{}{
+			"players": filtered,
 		})
+	})
 
-		tokenString, err := token.SignedString([]byte(jwtSecret))
-		if err != nil {
-			sendError(http.StatusInternalServerError, "Ошибка создания токена")
-			return
+	if err != nil {
+		if err.Error() == "player_not_found" {
+			sendError(w, http.StatusNotFound, "Игрок не найден")
+		} else {
+			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		}
-
-		http.SetCookie(w, &http.Cookie{
-			Name:     "auth_token",
-			Value:    tokenString,
-			Expires:  time.Now().Add(24 * time.Hour),
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteStrictMode, // Меняем Lax на Strict для максимальной защиты
-			Path:     "/",
-		})
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 		return
 	}
 
-	if strings.HasSuffix(r.URL.Path, "/auth/logout") {
-		http.SetCookie(w, &http.Cookie{
-			Name:     "auth_token",
-			Value:    "",
-			Expires:  time.Now().Add(-1 * time.Hour), // или time.Unix(0, 0)
-			MaxAge:   -1,
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteStrictMode, // Меняем на Strict здесь
-			Path:     "/",
-		})
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-		return
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+// [FIXED] Vercel rewrite /api/* → /api оставляет Path=/api; берём путь из RequestURI
+func requestPath(r *http.Request) string {
+	path := r.URL.Path
+	if path != "/api" && path != "/api/" {
+		return path
+	}
+	uri := r.RequestURI
+	if i := strings.Index(uri, "?"); i >= 0 {
+		uri = uri[:i]
+	}
+	if uri != "" && uri != path {
+		return uri
+	}
+	return path
+}
+
+// Handler — точка входа Vercel Go (api/index.go)
+func Handler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+
+	switch requestPath(r) {
+	case "/api/login":
+		rateLimitLoginMiddleware(handleLogin)(w, r)
+	case "/api/logout":
+		rateLimitMiddleware(handleLogout)(w, r)
+	case "/api/auth/verify":
+		rateLimitMiddleware(handleAuthVerify)(w, r)
+	case "/api/leaderboard":
+		rateLimitMiddleware(handleLeaderboard)(w, r)
+	case "/api/players":
+		switch r.Method {
+		case http.MethodGet:
+			rateLimitMiddleware(handleGetPlayers)(w, r)
+		case http.MethodPost:
+			rateLimitMiddleware(authMiddleware(handleSavePlayers))(w, r)
+		case http.MethodDelete:
+			rateLimitMiddleware(authMiddleware(handleDeletePlayer))(w, r)
+		default:
+			methodNotAllowed(w, "GET, POST, DELETE")
+		}
+	case "/api/projects":
+		switch r.Method {
+		case http.MethodGet:
+			rateLimitMiddleware(handleGetProjects)(w, r)
+		case http.MethodPost:
+			rateLimitMiddleware(authMiddleware(handleSaveProjects))(w, r)
+		default:
+			methodNotAllowed(w, "GET, POST")
+		}
+	default:
+		sendError(w, http.StatusNotFound, "Роут не найден")
+	}
+}
+
+const (
+	rateLimitWindow     = time.Minute
+	rateLimitDefaultMax = 60
+	rateLimitLoginMax   = 10
+)
+
+// rateLimiter — единый контракт; в serverless нужен внешний store (Upstash), не RAM.
+type rateLimiter interface {
+	allow(ctx context.Context, key string, max int, window time.Duration) (bool, error)
+}
+
+var (
+	globalRateLimiter rateLimiter
+	rlOnce            sync.Once
+)
+
+func initRateLimiter() {
+	rlOnce.Do(func() {
+		globalRateLimiter = newUpstashLimiter()
+		if globalRateLimiter == nil {
+			globalRateLimiter = newMemoryLimiter()
+		}
+	})
+}
+
+// --- Upstash (REST), работает между инстансами Vercel ---
+
+type upstashLimiter struct {
+	restURL string
+	token   string
+}
+
+func newUpstashLimiter() rateLimiter {
+	base := strings.TrimSuffix(strings.TrimSpace(os.Getenv("UPSTASH_REDIS_REST_URL")), "/")
+	token := strings.TrimSpace(os.Getenv("UPSTASH_REDIS_REST_TOKEN"))
+	if base == "" || token == "" {
+		return nil
+	}
+	return &upstashLimiter{restURL: base, token: token}
+}
+
+func (u *upstashLimiter) allow(ctx context.Context, key string, max int, window time.Duration) (bool, error) {
+	bucket := time.Now().Unix() / int64(window.Seconds())
+	redisKey := fmt.Sprintf("rl:%s:%d", hashRateKey(key), bucket)
+	sec := int(window.Seconds())
+
+	payload := fmt.Sprintf(
+		`[["INCR","%s"],["EXPIRE","%s",%d]]`,
+		escapeRedisKey(redisKey),
+		escapeRedisKey(redisKey),
+		sec,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.restURL+"/pipeline", strings.NewReader(payload))
+	if err != nil {
+		return true, err
+	}
+	req.Header.Set("Authorization", "Bearer "+u.token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return true, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return true, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return true, fmt.Errorf("upstash status %d: %s", resp.StatusCode, string(body))
 	}
 
-	if strings.HasSuffix(r.URL.Path, "/stats/countries") && r.Method == "GET" {
-		// В идеале этот кусок оптимизировать, но для начала сойдет чтение коллекции
-		iter := client.Collection("players").Documents(ctx)
-		stats := make(map[string]int)
-
-		for {
-			doc, err := iter.Next()
-			if err == iterator.Done {
-				break
-			}
-			if err != nil {
-				sendError(http.StatusInternalServerError, "Ошибка базы данных")
-				return
-			}
-
-			var p struct {
-				Country string `firestore:"country"`
-			}
-			doc.DataTo(&p)
-
-			if p.Country != "" {
-				stats[p.Country]++
-			}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(stats)
-		return
+	var results []struct {
+		Result json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(body, &results); err != nil || len(results) == 0 {
+		return true, fmt.Errorf("upstash decode: %w", err)
 	}
 
-	if strings.HasSuffix(r.URL.Path, "/players") {
-		docRef := client.Collection("list_data").Doc("players")
-
-		if r.Method == "GET" {
-			doc, err := docRef.Get(ctx)
-			if err != nil {
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode([]Player{})
-				return
-			}
-			var data struct {
-				List []Player `firestore:"list"`
-			}
-			doc.DataTo(&data)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(data.List)
-			return
-		}
-
-		if r.Method == "POST" {
-			if !checkAdminAuth(r) {
-				sendError(http.StatusUnauthorized, "Unauthorized")
-				return
-			}
-			var list []Player
-			if err := json.NewDecoder(r.Body).Decode(&list); err != nil {
-				sendError(http.StatusBadRequest, "Некорректный JSON")
-				return
-			}
-
-			// ВАЛИДАЦИЯ: Защита от дурака и хакера
-			if len(list) == 0 {
-				sendError(http.StatusBadRequest, "Список игроков не может быть пустым")
-				return
-			}
-			for _, p := range list {
-				trimmed := strings.TrimSpace(p.Name)
-				if trimmed == "" || len(trimmed) > 50 {
-					sendError(http.StatusBadRequest, "Некорректное или слишком длинное имя игрока")
-					return
-				}
-			}
-
-			_, err = docRef.Set(ctx, map[string]interface{}{"list": list})
-			if err != nil {
-				sendError(http.StatusInternalServerError, "Ошибка сохранения игроков")
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-			return
-		}
+	var count int64
+	if err := json.Unmarshal(results[0].Result, &count); err != nil {
+		return true, err
 	}
+	return count <= int64(max), nil
+}
 
-	if strings.HasSuffix(r.URL.Path, "/projects") {
-		docRef := client.Collection("list_data").Doc("projects")
+func escapeRedisKey(k string) string {
+	return strings.ReplaceAll(k, `"`, `\"`)
+}
 
-		if r.Method == "GET" {
-			doc, err := docRef.Get(ctx)
-			if err != nil {
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode([]Project{})
-				return
-			}
-			var data struct {
-				List []Project `firestore:"list"`
-			}
-			doc.DataTo(&data)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(data.List)
-			return
-		}
+func hashRateKey(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:8])
+}
 
-		if r.Method == "POST" {
-			if !checkAdminAuth(r) {
-				sendError(http.StatusUnauthorized, "Unauthorized")
-				return
-			}
-			var list []Project
-			if err := json.NewDecoder(r.Body).Decode(&list); err != nil {
-				sendError(http.StatusBadRequest, "Некорректный JSON")
-				return
-			}
-			_, err = docRef.Set(ctx, map[string]interface{}{"list": list})
-			if err != nil {
-				sendError(http.StatusInternalServerError, "Ошибка сохранения проектов")
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-			return
-		}
+// --- In-memory: только best-effort в рамках одного warm-контейнера ---
+
+type memoryLimiter struct {
+	mu   sync.Mutex
+	keys map[string]*memBucket
+}
+
+type memBucket struct {
+	count   int
+	resetAt time.Time
+}
+
+func newMemoryLimiter() rateLimiter {
+	return &memoryLimiter{keys: make(map[string]*memBucket)}
+}
+
+func (m *memoryLimiter) allow(_ context.Context, key string, max int, window time.Duration) (bool, error) {
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	b, ok := m.keys[key]
+	if !ok || now.After(b.resetAt) {
+		m.keys[key] = &memBucket{count: 1, resetAt: now.Add(window)}
+		return true, nil
 	}
+	if b.count >= max {
+		return false, nil
+	}
+	b.count++
+	return true, nil
+}
 
-	if strings.HasSuffix(r.URL.Path, "/demons") && r.Method == "GET" {
-		// Добавляем жесткий лимит .Limit(100), чтобы сервер не лег при росте базы
-		iter := client.Collection("demons").Limit(100).Documents(ctx)
-		docs, err := iter.GetAll()
-		if err != nil {
-			sendError(http.StatusInternalServerError, "Ошибка получения демонов")
+func checkRateLimit(w http.ResponseWriter, r *http.Request, max int) bool {
+	initRateLimiter()
+	key := requestPath(r) + "|" + getRealIP(r)
+	ok, err := globalRateLimiter.allow(r.Context(), key, max, rateLimitWindow)
+	if err != nil {
+		log.Printf("[ratelimit] %v", err)
+		return true
+	}
+	if !ok {
+		sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
+		return false
+	}
+	return true
+}
+
+func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !checkRateLimit(w, r, rateLimitDefaultMax) {
 			return
 		}
-		var list []interface{}
-		for _, d := range docs {
-			list = append(list, d.Data())
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(list)
-		return
+		next(w, r)
 	}
+}
 
-	sendError(http.StatusNotFound, "Маршрут не найден")
+func rateLimitLoginMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !checkRateLimit(w, r, rateLimitLoginMax) {
+			return
+		}
+		next(w, r)
+	}
 }
