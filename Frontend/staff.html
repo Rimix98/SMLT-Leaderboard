@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ru">
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="SMLT - Staff Page">
+    <meta name="theme-color" content="#0a0a0a">
+    <title>Стафф — SMLT</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script>
+      window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+    </script>
+    <script defer src="/_vercel/insights/script.js"></script>
+</head>
+
+<body class="home-page">
+    <div id="app">
+
+        <!-- Кнопка смены темы -->
+        <button class="theme-toggle" id="themeToggle" title="Сменить тему">
+            <span class="theme-icon">🌙</span>
+        </button>
+
+        <!-- Кнопка хоста -->
+        <button class="host-btn host-btn-left" id="hostBtn" title="Войти как хост">
+            <span>Хост</span>
+        </button>
+
+        <header class="app-header">
+            <div class="header-content">
+                <div class="header-brand">
+                    <div class="header-title">
+                        <h1>SMLT</h1>
+                        <span class="header-subtitle">Discord Community</span>
+                    </div>
+                </div>
+                <nav class="header-nav">
+                    <a href="index.html" class="nav-link">Главная</a>
+                    <a href="demonlist.html" class="nav-link">Демонлист</a>
+                    <a href="projects.html" class="nav-link">Проекты</a>
+                    <a href="staff.html" class="nav-link">Стафф</a>
+                </nav>
+            </div>
+        </header>
+
+        <main class="app-main">
+            <div class="container">
+                <section class="hero-section" style="margin-bottom: var(--spacing-lg);">
+                    <div class="hero-content">
+                        <h2 class="hero-title">Управление персоналом</h2>
+                        <p class="hero-description">Здесь можно настраивать роли и список состава.</p>
+                    </div>
+                </section>
+
+                <section class="staff-section">
+                    <div class="staff-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-md);">
+                        <h2>Роли</h2>
+                        <button class="btn btn-primary admin-only" id="addRoleBtn" style="display: none;">➕ Создать роль</button>
+                    </div>
+                    
+                    <div id="rolesContainer" class="roles-container">
+                        <!-- Роли будут добавлены сюда через JS -->
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <!-- Модальное окно создания роли -->
+        <div id="roleModal" class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <div class="modal-title">🆕 Новая роль</div>
+                    <button class="modal-close">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="roleName">Название роли:</label>
+                        <input type="text" id="roleName" class="form-input" placeholder="Например: Администрация">
+                    </div>
+                    <div class="form-group">
+                        <label for="roleColor">Цвет роли:</label>
+                        <input type="color" id="roleColor" class="form-input" style="height: 50px; padding: 5px;">
+                    </div>
+                    <div style="display: flex; gap: var(--spacing-sm); margin-top: var(--spacing-md);">
+                        <button class="btn btn-secondary modal-close">Отмена</button>
+                        <button id="saveRoleBtn" class="btn btn-primary">Создать</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Модальное окно добавления игрока -->
+        <div id="addPlayerModal" class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <div class="modal-title">👤 Добавить игрока</div>
+                    <button class="modal-close">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="playerName">Ник игрока:</label>
+                        <input type="text" id="playerName" class="form-input" placeholder="Nickname">
+                    </div>
+                    <div class="form-group">
+                        <label for="playerDiscord">Discord (необязательно):</label>
+                        <input type="text" id="playerDiscord" class="form-input" placeholder="Username#0000 or username">
+                    </div>
+                    <div style="display: flex; gap: var(--spacing-sm); margin-top: var(--spacing-md);">
+                        <button class="btn btn-secondary modal-close">Отмена</button>
+                        <button id="savePlayerBtn" class="btn btn-primary">Добавить игрока</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="toastContainer"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
