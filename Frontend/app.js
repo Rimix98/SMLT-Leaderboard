@@ -247,8 +247,16 @@ function mountDelegatedClicks() {
             'create-role': createRole,
             'close-add-player-modal-staff': closeAddStaffPlayerModal,
             'add-player-to-role': addPlayerToRole,
+            'show-add-staff-player-modal': () => {
+                const btn = e.target.closest('[data-action="show-add-staff-player-modal"]');
+                if (btn) showAddStaffPlayerModal(Number(btn.dataset.roleIndex));
+            },
+            'delete-role': () => {
+                const btn = e.target.closest('[data-action="delete-role"]');
+                if (btn) deleteRole(Number(btn.dataset.roleIndex));
+            },
             'remove-staff-player': () => {
-                const btn = e.target.closest('[data-remove-staff-player]');
+                const btn = e.target.closest('[data-action="remove-staff-player"]');
                 if (btn) removeStaffPlayer(Number(btn.dataset.roleIndex), Number(btn.dataset.playerIndex));
             }
         };
@@ -1837,6 +1845,8 @@ async function loadStaffRoles() {
 }
 
 async function saveStaffRoles() {
+    // Deprecated: используй точечные запросы (addPlayerToRole, removeStaffPlayer, createRole, deleteRole)
+    // Оставлена для обратной совместимости
     try {
         const res = await fetchWithAbort(`${BACKEND_URL}/staff`, {
             method: 'POST',
@@ -1847,13 +1857,13 @@ async function saveStaffRoles() {
         
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            throw new Error(err.error || 'Ошибка сохранения ролей (возможно, сессия истекла)');
+            throw new Error(err.error || 'Ошибка сохранения ролей');
         }
     } catch (e) {
         if (!isAbortError(e)) {
             console.error('Ошибка сохранения staff ролей:', e);
             showToast(e.message, 'error');
-            if (e.message.includes('сессия') || e.message.includes('401')) {
+            if (e.message.includes('401')) {
                 logoutHost();
             }
         }
@@ -1864,56 +1874,89 @@ function renderStaffRoles() {
     const container = document.getElementById('staffRolesContainer');
     if (!container) return;
 
+    clearEl(container);
+
     if (store.staffRoles.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><p>Роли пока не созданы</p></div>';
+        const emptyState = h('div', { className: 'empty-state' }, [
+            h('div', { className: 'empty-state-icon' }, ['👥']),
+            h('p', {}, ['Роли пока не созданы'])
+        ]);
+        container.appendChild(emptyState);
         return;
     }
 
-    let html = '<div class="staff-roles-grid">';
+    const grid = h('div', { className: 'staff-roles-grid' });
+
     store.staffRoles.forEach((role, roleIndex) => {
         const roleColor = role.color || '#3b82f6';
         const players = role.players || [];
 
-        html += `<div class="staff-role-card">
-            <div class="staff-role-header">
-                <div class="staff-role-name">
-                    <span class="staff-role-indicator" style="background: ${escapeHtml(roleColor)};"></span>
-                    ${escapeHtml(role.name)}
-                </div>
-                ${store.isHost ? `<div class="staff-role-actions">
-                    <button class="btn btn-danger btn-sm" onclick="deleteRole(${roleIndex})">🗑️</button>
-                </div>` : ''}
-            </div>
-            <div class="staff-role-body">
-                <div class="staff-players-list">
-                    ${players.length === 0 ? '<div class="staff-empty-players">Нет игроков</div>' : ''}
-                    ${players.map((player, pIdx) => `
-                        <div class="staff-player-item">
-                            <div class="staff-player-info">
-                                <span class="staff-player-nickname">${escapeHtml(player.nickname)}</span>
-                                ${player.discord ? `<span class="staff-player-discord">${escapeHtml(player.discord)}</span>` : ''}
-                            </div>
-                            ${store.isHost ? `<button class="staff-player-remove" onclick="removeStaffPlayer(${roleIndex}, ${pIdx})" title="Удалить игрока">✕</button>` : ''}
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-            ${store.isHost ? `<div class="staff-role-footer">
-                <button class="btn btn-secondary btn-sm" onclick="showAddStaffPlayerModal(${roleIndex})">➕ Добавить игрока</button>
-            </div>` : ''}
-        </div>`;
-    });
-    html += '</div>';
+        // Заголовок роли
+        const header = h('div', { className: 'staff-role-header' }, [
+            h('div', { className: 'staff-role-name' }, [
+                h('span', { className: 'staff-role-indicator', style: { background: roleColor } }, []),
+                h('span', {}, [escapeHtml(role.name)])
+            ])
+        ]);
 
-    container.innerHTML = html;
+        // Кнопка удаления роли (видна только хосту)
+        if (store.isHost) {
+            const deleteBtn = h('button', {
+                className: 'btn btn-danger btn-sm',
+                attrs: { 'data-action': 'delete-role', 'data-role-index': String(roleIndex) }
+            }, ['🗑️']);
+            header.appendChild(h('div', { className: 'staff-role-actions' }, [deleteBtn]));
+        }
+
+        // Список игроков
+        const playersList = h('div', { className: 'staff-players-list' });
+        
+        if (players.length === 0) {
+            playersList.appendChild(h('div', { className: 'staff-empty-players' }, ['Нет игроков']));
+        } else {
+            players.forEach((player, pIdx) => {
+                const playerItem = h('div', { className: 'staff-player-item' }, [
+                    h('div', { className: 'staff-player-info' }, [
+                        h('span', { className: 'staff-player-nickname' }, [escapeHtml(player.nickname)]),
+                        ...(player.discord ? [h('span', { className: 'staff-player-discord' }, [escapeHtml(player.discord)])] : [])
+                    ])
+                ]);
+
+                // Кнопка удаления игрока (видна только хосту)
+                if (store.isHost) {
+                    const removeBtn = h('button', {
+                        className: 'staff-player-remove',
+                        attrs: { 'data-action': 'remove-staff-player', 'data-role-index': String(roleIndex), 'data-player-index': String(pIdx), 'title': 'Удалить игрока' }
+                    }, ['✕']);
+                    playerItem.appendChild(removeBtn);
+                }
+
+                playersList.appendChild(playerItem);
+            });
+        }
+
+        const body = h('div', { className: 'staff-role-body' }, [playersList]);
+
+        // Карточка роли
+        const card = h('div', { className: 'staff-role-card' }, [header, body]);
+
+        // Кнопка добавления игрока (видна только хосту)
+        if (store.isHost) {
+            const addBtn = h('button', {
+                className: 'btn btn-secondary btn-sm',
+                attrs: { 'data-action': 'show-add-staff-player-modal', 'data-role-index': String(roleIndex) }
+            }, ['➕ Добавить игрока']);
+            const footer = h('div', { className: 'staff-role-footer' }, [addBtn]);
+            card.appendChild(footer);
+        }
+
+        grid.appendChild(card);
+    });
+
+    container.appendChild(grid);
 }
 
 function showAddRoleModal() {
-    if (!store.isHost) {
-        showToast('Только хост может создавать роли', 'error');
-        return;
-    }
-
     const modal = document.getElementById('addRoleModal');
     if (modal) {
         document.getElementById('roleName').value = '';
@@ -1932,11 +1975,6 @@ function closeAddRoleModal() {
 }
 
 async function createRole() {
-    if (!store.isHost) {
-        showToast('Только хост может создавать роли', 'error');
-        return;
-    }
-
     const nameInput = document.getElementById('roleName');
     const name = nameInput.value.trim();
     if (!name) {
@@ -1946,42 +1984,70 @@ async function createRole() {
 
     const color = document.getElementById('roleColor').value || '#3b82f6';
 
-    store.staffRoles.push({
-        name: name,
-        color: color,
-        players: []
-    });
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ name, color })
+        }, 'create-role');
+        
+        if (!res.ok) {
+            const err = await parseJsonResponse(res);
+            throw new Error(err.error || 'Ошибка создания роли');
+        }
 
-    await saveStaffRoles();
-    renderStaffRoles();
-    closeAddRoleModal();
-    nameInput.value = '';
-    showToast(`Роль «${name}» создана`, 'success');
+        const newRole = await res.json();
+        store.staffRoles.push(newRole);
+        renderStaffRoles();
+        closeAddRoleModal();
+        nameInput.value = '';
+        showToast(`Роль «${name}» создана`, 'success');
+    } catch (e) {
+        if (!isAbortError(e)) {
+            console.error('Ошибка создания роли:', e);
+            showToast(e.message, 'error');
+            if (e.message.includes('401')) {
+                logoutHost();
+            }
+        }
+    }
 }
 
 async function deleteRole(index) {
-    if (!store.isHost) {
-        showToast('Только хост может удалять роли', 'error');
-        return;
-    }
-
     const role = store.staffRoles[index];
     if (!role) return;
 
-    if (!confirm(`Удалить роль «${role.name}»?`)) return;
+    if (!confirm(`Удалить роль «${escapeHtml(role.name)}»?`)) return;
 
-    store.staffRoles.splice(index, 1);
-    await saveStaffRoles();
-    renderStaffRoles();
-    showToast('Роль удалена', 'success');
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ roleIndex: index })
+        }, 'delete-role');
+        
+        if (!res.ok) {
+            const err = await parseJsonResponse(res);
+            throw new Error(err.error || 'Ошибка удаления роли');
+        }
+
+        store.staffRoles.splice(index, 1);
+        renderStaffRoles();
+        showToast('Роль удалена', 'success');
+    } catch (e) {
+        if (!isAbortError(e)) {
+            console.error('Ошибка удаления роли:', e);
+            showToast(e.message, 'error');
+            if (e.message.includes('401')) {
+                logoutHost();
+            }
+        }
+    }
 }
 
 function showAddStaffPlayerModal(roleIndex) {
-    if (!store.isHost) {
-        showToast('Только хост может добавлять игроков', 'error');
-        return;
-    }
-
     const modal = document.getElementById('addPlayerModal');
     const title = document.getElementById('addPlayerModalTitle');
     const roleIndexInput = document.getElementById('addPlayerRoleIndex');
@@ -1991,7 +2057,7 @@ function showAddStaffPlayerModal(roleIndex) {
     if (modal && title && roleIndexInput) {
         const role = store.staffRoles[roleIndex];
         if (!role) return;
-        title.textContent = `➕ Добавить игрока в «${role.name}»`;
+        title.textContent = `➕ Добавить игрока в «${escapeHtml(role.name)}»`;
         roleIndexInput.value = roleIndex;
         if (nicknameInput) nicknameInput.value = '';
         if (discordInput) discordInput.value = '';
@@ -2006,11 +2072,6 @@ function closeAddStaffPlayerModal() {
 }
 
 async function addPlayerToRole() {
-    if (!store.isHost) {
-        showToast('Только хост может добавлять игроков', 'error');
-        return;
-    }
-
     const roleIndexInput = document.getElementById('addPlayerRoleIndex');
     const nicknameInput = document.getElementById('playerNickname');
     const discordInput = document.getElementById('playerDiscord');
@@ -2028,43 +2089,71 @@ async function addPlayerToRole() {
     }
 
     const discord = discordInput?.value?.trim() || '';
-
-    // Проверка на дубликат по нику
     const role = store.staffRoles[roleIndex];
-    if (role.players.some(p => p.nickname.toLowerCase() === nickname.toLowerCase())) {
-        showToast('Такой игрок уже есть в этой роли', 'error');
-        return;
+
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff/add`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ roleIndex, nickname, discord })
+        }, 'add-player');
+        
+        if (!res.ok) {
+            const err = await parseJsonResponse(res);
+            throw new Error(err.error || 'Ошибка добавления игрока');
+        }
+
+        const newPlayer = await res.json();
+        role.players.push(newPlayer);
+        renderStaffRoles();
+        closeAddStaffPlayerModal();
+        showToast(`Игрок «${escapeHtml(nickname)}» добавлен в роль «${escapeHtml(role.name)}»`, 'success');
+    } catch (e) {
+        if (!isAbortError(e)) {
+            console.error('Ошибка добавления игрока:', e);
+            showToast(e.message, 'error');
+            if (e.message.includes('401')) {
+                logoutHost();
+            }
+        }
     }
-
-    role.players.push({
-        nickname: nickname,
-        discord: discord
-    });
-
-    await saveStaffRoles();
-    renderStaffRoles();
-    closeAddStaffPlayerModal();
-    showToast(`Игрок «${nickname}» добавлен в роль «${role.name}»`, 'success');
 }
 
 async function removeStaffPlayer(roleIndex, playerIndex) {
-    if (!store.isHost) {
-        showToast('Только хост может удалять игроков', 'error');
-        return;
-    }
-
     const role = store.staffRoles[roleIndex];
     if (!role) return;
 
     const player = role.players[playerIndex];
     if (!player) return;
 
-    if (!confirm(`Удалить игрока «${player.nickname}» из роли «${role.name}»?`)) return;
+    if (!confirm(`Удалить игрока «${escapeHtml(player.nickname)}» из роли «${escapeHtml(role.name)}»?`)) return;
 
-    role.players.splice(playerIndex, 1);
-    await saveStaffRoles();
-    renderStaffRoles();
-    showToast(`Игрок «${player.nickname}» удалён из роли`, 'success');
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff/remove`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ roleIndex, nickname: player.nickname })
+        }, 'remove-player');
+        
+        if (!res.ok) {
+            const err = await parseJsonResponse(res);
+            throw new Error(err.error || 'Ошибка удаления игрока');
+        }
+
+        role.players.splice(playerIndex, 1);
+        renderStaffRoles();
+        showToast(`Игрок «${escapeHtml(player.nickname)}» удалён из роли`, 'success');
+    } catch (e) {
+        if (!isAbortError(e)) {
+            console.error('Ошибка удаления игрока:', e);
+            showToast(e.message, 'error');
+            if (e.message.includes('401')) {
+                logoutHost();
+            }
+        }
+    }
 }
 
 function escapeHtml(text) {
