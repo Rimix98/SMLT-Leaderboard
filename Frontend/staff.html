@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="ru">
-<html lang="ru">
 
 <head>
     <meta charset="UTF-8">
@@ -13,7 +12,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <script>
-      window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
     </script>
     <script defer src="/_vercel/insights/script.js"></script>
 </head>
@@ -34,44 +33,48 @@
         <header class="app-header">
             <div class="header-content">
                 <div class="header-brand">
+                    <span class="header-logo">👥</span>
                     <div class="header-title">
-                        <h1>SMLT</h1>
-                        <span class="header-subtitle">Discord Community</span>
+                        <h1>Персонал SMLT</h1>
+                        <span class="header-subtitle">Состав команды</span>
                     </div>
                 </div>
                 <nav class="header-nav">
                     <a href="index.html" class="nav-link">Главная</a>
                     <a href="demonlist.html" class="nav-link">Демонлист</a>
                     <a href="projects.html" class="nav-link">Проекты</a>
-                    <a href="staff.html" class="nav-link">Стафф</a>
+                    <a href="staff.html" class="nav-link active">Стафф</a>
                 </nav>
             </div>
         </header>
 
         <main class="app-main">
             <div class="container">
-                <section class="hero-section" style="margin-bottom: var(--spacing-lg);">
-                    <div class="hero-content">
-                        <h2 class="hero-title">Управление персоналом</h2>
-                        <p class="hero-description">Здесь можно настраивать роли и список состава.</p>
+                <div class="admin-panel admin-only" style="display: none;">
+                    <div class="admin-panel-header">👑 Управление ролями</div>
+                    <div class="admin-panel-content">
+                        <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
+                            <button class="btn btn-primary" data-action="show-add-role-modal">➕ Создать роль</button>
+                        </div>
+                    </div>
+                </div>
+
+                <section class="info-section" style="padding-top: 0;">
+                    <div class="info-card" style="border-left: 3px solid var(--color-secondary);">
+                        <p style="color: var(--color-text-secondary); line-height: 1.7;">
+                            Здесь отображаются роли и состав персонала SMLT — администрация, модераторы и другие участники команды.
+                        </p>
                     </div>
                 </section>
 
-                <section class="staff-section">
-                    <div class="staff-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-md);">
-                        <h2>Роли</h2>
-                        <button class="btn btn-primary admin-only" data-action="show-add-role-modal" style="display: none;">➕ Создать роль</button>
-                    </div>
-                    
-                    <div id="staffLoadingState" class="loading-state">
-                        <div class="spinner"></div>
-                        <div class="loading-text">Загрузка состава...</div>
-                    </div>
+                <div id="staffLoadingState" class="loading-state">
+                    <div class="spinner"></div>
+                    <div class="loading-text">Загрузка состава...</div>
+                </div>
 
-                    <div id="staffRolesContainer" class="roles-container">
-                        <!-- Роли будут добавлены сюда через JS -->
-                    </div>
-                </section>
+                <div id="staffRolesContainer" class="projects-grid">
+                    <!-- Роли будут добавлены сюда через JS -->
+                </div>
             </div>
         </main>
 

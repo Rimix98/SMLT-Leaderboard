@@ -1540,7 +1540,7 @@ async function getProjects() {
 }
 
 async function saveProjects(data) {
-    const res = await fetchWithAbort(`${BACKEND_URL}/projects`, {
+    const res = await fetchWithAbort(`${BACKEND_URL}/projects/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -1865,10 +1865,9 @@ function closeInfoModal(e) {
 // СТАФФ (УПРАВЛЕНИЕ РОЛЯМИ)
 // ============================================
 
-function initStaffPage() {
-    loadStaffRoles();
+async function initStaffPage() {
+    await loadStaffRoles();
     initStaffEventListeners();
-    renderStaffRoles();
 }
 
 function initStaffEventListeners() {
@@ -1968,83 +1967,98 @@ function renderStaffRoles() {
     clearEl(container);
 
     if (store.staffRoles.length === 0) {
-        const emptyState = h('div', { className: 'empty-state' }, [
-            h('div', { className: 'empty-state-icon' }, ['👥']),
-            h('p', {}, ['Роли пока не созданы'])
-        ]);
-        container.appendChild(emptyState);
+        container.appendChild(
+            h('div', { className: 'empty-state', style: { gridColumn: '1 / -1' } }, [
+                h('div', { className: 'empty-state-icon' }, ['👥']),
+                h('p', {}, ['Роли пока не созданы'])
+            ])
+        );
         return;
     }
-
-    const grid = h('div', { className: 'staff-roles-grid' });
 
     store.staffRoles.forEach((role, roleIndex) => {
         const roleColor = role.color || '#3b82f6';
         const players = role.players || [];
 
-        // Заголовок роли
-        const header = h('div', { className: 'staff-role-header' }, [
-            h('div', { className: 'staff-role-name' }, [
-                h('span', { className: 'staff-role-indicator', style: { background: roleColor } }, []),
-                h('span', {}, [escapeHtml(role.name)])
-            ])
+        const cardParts = [];
+
+        const visual = h('div', { className: 'staff-role-visual', style: { background: roleColor } }, [
+            h('span', { className: 'staff-role-visual-name' }, [escapeHtml(role.name)])
         ]);
+        cardParts.push(visual);
 
-        // Кнопка удаления роли (видна только хосту)
-        if (store.isHost) {
-            const deleteBtn = h('button', {
-                className: 'btn btn-danger btn-sm',
-                attrs: { 'data-action': 'delete-role', 'data-role-index': String(roleIndex) }
-            }, ['🗑️']);
-            header.appendChild(h('div', { className: 'staff-role-actions' }, [deleteBtn]));
-        }
+        const infoItems = [
+            h('div', { className: 'project-info-item' }, [
+                h('span', { className: 'project-info-label' }, ['Роль:']),
+                h('span', { className: 'project-info-value', style: { color: roleColor, fontWeight: 700 } }, [escapeHtml(role.name)]),
+            ]),
+            h('div', { className: 'project-info-item' }, [
+                h('span', { className: 'project-info-label' }, ['Участников:']),
+                h('span', { className: 'project-info-value' }, [String(players.length)]),
+            ]),
+        ];
 
-        // Список игроков
-        const playersList = h('div', { className: 'staff-players-list' });
-        
+        const participantsList = h('div', { className: 'project-participants-list' }, []);
+
         if (players.length === 0) {
-            playersList.appendChild(h('div', { className: 'staff-empty-players' }, ['Нет игроков']));
+            participantsList.appendChild(
+                h('span', { style: { color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)' } }, ['Нет игроков'])
+            );
         } else {
             players.forEach((player, pIdx) => {
-                const playerItem = h('div', { className: 'staff-player-item' }, [
-                    h('div', { className: 'staff-player-info' }, [
-                        h('span', { className: 'staff-player-nickname' }, [escapeHtml(player.nickname)]),
-                        ...(player.discord ? [h('span', { className: 'staff-player-discord' }, [escapeHtml(player.discord)])] : [])
-                    ])
-                ]);
+                const tagParts = [
+                    h('span', {}, [escapeHtml(player.nickname)]),
+                    ...(player.discord ? [h('span', { className: 'staff-player-discord-inline' }, [escapeHtml(player.discord)])] : []),
+                ];
 
-                // Кнопка удаления игрока (видна только хосту)
                 if (store.isHost) {
-                    const removeBtn = h('button', {
-                        className: 'staff-player-remove',
-                        attrs: { 'data-action': 'remove-staff-player', 'data-role-index': String(roleIndex), 'data-player-index': String(pIdx), 'title': 'Удалить игрока' }
-                    }, ['✕']);
-                    playerItem.appendChild(removeBtn);
+                    tagParts.push(
+                        h('button', {
+                            className: 'staff-player-remove-tag',
+                            attrs: {
+                                'data-action': 'remove-staff-player',
+                                'data-role-index': String(roleIndex),
+                                'data-player-index': String(pIdx),
+                                'title': 'Удалить игрока'
+                            }
+                        }, ['✕'])
+                    );
                 }
 
-                playersList.appendChild(playerItem);
+                participantsList.appendChild(
+                    h('span', { className: 'participant-tag staff-player-tag' }, tagParts)
+                );
             });
         }
 
-        const body = h('div', { className: 'staff-role-body' }, [playersList]);
+        const contentChildren = [
+            h('div', { className: 'project-info' }, infoItems),
+            h('div', { className: 'project-participants' }, [
+                h('div', { className: 'project-participants-title' }, ['Участники:']),
+                participantsList,
+            ]),
+        ];
 
-        // Карточка роли
-        const card = h('div', { className: 'staff-role-card' }, [header, body]);
-
-        // Кнопка добавления игрока (видна только хосту)
         if (store.isHost) {
-            const addBtn = h('button', {
-                className: 'btn btn-secondary btn-sm',
-                attrs: { 'data-action': 'show-add-staff-player-modal', 'data-role-index': String(roleIndex) }
-            }, ['➕ Добавить игрока']);
-            const footer = h('div', { className: 'staff-role-footer' }, [addBtn]);
-            card.appendChild(footer);
+            contentChildren.push(
+                h('div', { className: 'project-actions' }, [
+                    h('button', {
+                        className: 'btn btn-secondary btn-sm',
+                        attrs: { type: 'button' },
+                        dataset: { action: 'show-add-staff-player-modal', roleIndex: String(roleIndex) }
+                    }, ['➕ Добавить игрока']),
+                    h('button', {
+                        className: 'btn btn-danger btn-sm',
+                        attrs: { type: 'button' },
+                        dataset: { action: 'delete-role', roleIndex: String(roleIndex) }
+                    }, ['🗑️ Удалить роль']),
+                ])
+            );
         }
 
-        grid.appendChild(card);
+        cardParts.push(h('div', { className: 'project-content' }, contentChildren));
+        container.appendChild(h('div', { className: 'project-card' }, cardParts));
     });
-
-    container.appendChild(grid);
 }
 
 function showAddRoleModal() {

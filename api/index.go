@@ -651,13 +651,22 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetStaff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
 	if !requireFirestore(w) {
 		return
 	}
 	ctx := r.Context()
 	doc, err := fsClient.Collection("config").Doc("staff").Get(ctx)
 	if err != nil {
-		json.NewEncoder(w).Encode([]StaffRole{})
+		if status.Code(err) == codes.NotFound {
+			json.NewEncoder(w).Encode([]StaffRole{})
+			return
+		}
+		log.Printf("[staff] Get staff doc: %v", err)
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
 	var data struct {
@@ -946,7 +955,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/verify":        rateLimitMiddleware(handleVerify),
 		"/api/csrf-token":    rateLimitMiddleware(handleGetCSRFToken),
 		"/api/leaderboard":   rateLimitMiddleware(handleLeaderboard),
-		"/api/staff":         rateLimitMiddleware(authMiddleware(handleGetStaff)),
+		"/api/staff":         rateLimitMiddleware(handleGetStaff),
 		"/api/staff/add":     rateLimitMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd))),
 		"/api/staff/role":    rateLimitMiddleware(authMiddleware(csrfMiddleware(handleStaffRole))),
 		"/api/staff/remove":  rateLimitMiddleware(authMiddleware(csrfMiddleware(handleStaffRemove))),
