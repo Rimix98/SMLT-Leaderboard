@@ -58,6 +58,11 @@ function fetchWithAbort(url, options = {}, key = null) {
         'X-Requested-With': 'XMLHttpRequest'
     };
 
+    // [SECURITY FIX] Добавление CSRF токена для мутирующих запросов
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase()) && csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken;
+    }
+
     return fetch(url, { ...options, headers, signal: controller.signal }).finally(() => {
         if (key && pendingRequests.get(key) === controller) {
             pendingRequests.delete(key);
@@ -183,14 +188,34 @@ const store = {
 };
 
 function encodeCountryToken(country) {
-    return btoa(unescape(encodeURIComponent(country)));
+    // [SECURITY FIX] Замена unescape на encodeURIComponent
+    return btoa(encodeURIComponent(country));
 }
 
 function decodeCountryToken(token) {
     try {
-        return decodeURIComponent(escape(atob(token)));
+        // [SECURITY FIX] Замена escape на decodeURIComponent
+        return decodeURIComponent(atob(token));
     } catch {
         return '';
+    }
+}
+
+// ============================================
+// CSRF ЗАЩИТА
+// ============================================
+
+let csrfToken = '';
+
+async function refreshCsrfToken() {
+    try {
+        const res = await fetch(`${BACKEND_URL}/csrf-token`, { credentials: 'include' });
+        const data = await res.json();
+        if (data.token) {
+            csrfToken = data.token;
+        }
+    } catch (e) {
+        console.error('Не удалось получить CSRF токен:', e);
     }
 }
 
@@ -198,11 +223,14 @@ function decodeCountryToken(token) {
 // ИНИЦИАЛИЗАЦИЯ
 // ============================================
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     initTheme();
     initHostStatus();
     initEventListeners();
     mountDelegatedClicks();
+    
+    // Получаем CSRF токен при загрузке
+    await refreshCsrfToken();
 
     // Загружаем данные в зависимости от страницы
     if (document.getElementById('leaderboardTable')) {
@@ -492,12 +520,14 @@ async function logoutHost() {
     sessionStorage.removeItem('adminToken'); 
     
     try {
-        await fetch(`${BACKEND_URL}/logout`, { 
+        await fetchWithAbort(`${BACKEND_URL}/logout`, { 
             method: 'POST',
             credentials: 'include'
-        });
+        }, 'host-logout');
     } catch (e) {
-        console.error("Не удалось разлогиниться на сервере", e);
+        if (!isAbortError(e)) {
+            console.error("Не удалось разлогиниться на сервере", e);
+        }
     }
 
     updateHostButton();

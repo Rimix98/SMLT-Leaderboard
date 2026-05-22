@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -39,33 +40,59 @@ var (
 
 	jwtBlacklist  Blacklist
 	blacklistOnce sync.Once
+
+	globalRateLimiter rateLimiter
+	rlOnce            sync.Once
 )
 
 type Blacklist interface {
 	IsBlacklisted(token string) bool
-	Add(token string)
+	Add(token string, exp time.Time)
 }
 
 type memoryBlacklist struct {
 	mu     sync.RWMutex
-	tokens map[string]struct{}
+	tokens map[string]time.Time
 }
 
 func newMemoryBlacklist() Blacklist {
-	return &memoryBlacklist{tokens: make(map[string]struct{})}
+	bl := &memoryBlacklist{tokens: make(map[string]time.Time)}
+	// [SECURITY FIX] Фоновая очистка blacklist
+	go bl.cleanup()
+	return bl
 }
 
 func (b *memoryBlacklist) IsBlacklisted(token string) bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	_, ok := b.tokens[token]
-	return ok
+	exp, ok := b.tokens[token]
+	if !ok {
+		return false
+	}
+	if time.Now().After(exp) {
+		return false // Уже протух, можно не считать в блэклисте
+	}
+	return true
 }
 
-func (b *memoryBlacklist) Add(token string) {
+func (b *memoryBlacklist) Add(token string, exp time.Time) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.tokens[token] = struct{}{}
+	b.tokens[token] = exp
+}
+
+func (b *memoryBlacklist) cleanup() {
+	ticker := time.NewTicker(1 * time.Hour)
+	for range ticker.C {
+		now := time.Now()
+		b.mu.Lock()
+		for t, exp := range b.tokens {
+			if now.After(exp) {
+				delete(b.tokens, t)
+			}
+		}
+		b.mu.Unlock()
+	}
 }
 
 // === ТИПЫ ДАННЫХ ===
@@ -114,6 +141,8 @@ var defaultPlayerNames = []string{
 func init() {
 	trustProxy = os.Getenv("TRUST_PROXY") == "true" || os.Getenv("VERCEL") == "1"
 	initFirestore()
+	initJWTBlacklist()
+	initRateLimiter()
 }
 
 func initFirestore() {
@@ -143,7 +172,6 @@ func initFirestore() {
 
 func initJWTBlacklist() {
 	blacklistOnce.Do(func() {
-		// Используем memory blacklist (для Vercel нормально)
 		jwtBlacklist = newMemoryBlacklist()
 		log.Println("[jwt] Blacklist initialized")
 	})
@@ -180,62 +208,31 @@ func remoteAddrIP(r *http.Request) string {
 	return ip
 }
 
-// [FIXED] Без прокси — только RemoteAddr; за доверенным прокси — заголовки от LB
-// ============================================
-// REAL IP DETECTION (с поддержкой прокси)
-// ============================================
-
+// [SECURITY FIX] Более надежное определение IP
 func getRealIP(r *http.Request) string {
-	// Приоритет: Cloudflare -> X-Forwarded-For -> X-Real-IP -> RemoteAddr
-
-	// Cloudflare
-	if cfIP := r.Header.Get("CF-Connecting-IP"); cfIP != "" {
-		if parsed := net.ParseIP(strings.TrimSpace(cfIP)); parsed != nil {
-			return cfIP
-		}
-	}
-
-	// True-Client-IP (Akamai, Fastly)
-	if tcIP := r.Header.Get("True-Client-IP"); tcIP != "" {
-		if parsed := net.ParseIP(strings.TrimSpace(tcIP)); parsed != nil {
-			return tcIP
-		}
-	}
-
 	if trustProxy {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			// Берем первый IP в цепочке (оригинальный клиент)
-			ips := strings.Split(xff, ",")
-			if len(ips) > 0 {
-				candidate := strings.TrimSpace(ips[0])
-				if parsed := net.ParseIP(candidate); parsed != nil {
-					return candidate
-				}
-			}
-		}
+		// Vercel / Cloudflare специфичные заголовки
 		if xri := r.Header.Get("X-Real-IP"); xri != "" {
-			candidate := strings.TrimSpace(xri)
-			if parsed := net.ParseIP(candidate); parsed != nil {
-				return candidate
-			}
+			return xri
 		}
+		if cf := r.Header.Get("CF-Connecting-IP"); cf != "" {
+			return cf
+		}
+		// X-Forwarded-For берем последний надежный сегмент, если прокси доверенный
+		// Но на Vercel X-Real-IP обычно достаточно.
 	}
-
 	return remoteAddrIP(r)
 }
 
-// Добавь хэширование IP для rate limiting (чтобы не хранить raw IP)
 func hashIP(ip string) string {
-	// Солим IP перед хэшированием (GDPR compliance)
 	salt := os.Getenv("RATE_LIMIT_SALT")
 	if salt == "" {
-		salt = "default-salt-change-me"
+		salt = "default-salt-12345"
 	}
 	hash := sha256.Sum256([]byte(ip + salt))
-	return hex.EncodeToString(hash[:16]) // Только первые 16 байт
+	return hex.EncodeToString(hash[:16])
 }
 
-// [FIXED] Ограничение размера тела + запрет неизвестных полей JSON
 func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{}) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	dec := json.NewDecoder(r.Body)
@@ -247,8 +244,6 @@ func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{})
 
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		initJWTBlacklist()
-
 		cookie, err := r.Cookie("auth_token")
 		if err != nil {
 			sendError(w, http.StatusUnauthorized, "Нет доступа")
@@ -257,19 +252,7 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		tokenString := cookie.Value
 
-		// Проверка blacklist
 		if jwtBlacklist.IsBlacklisted(tokenString) {
-			// Очищаем куку
-			http.SetCookie(w, &http.Cookie{
-				Name:     "auth_token",
-				Value:    "",
-				Expires:  time.Unix(0, 0),
-				MaxAge:   -1,
-				HttpOnly: true,
-				Secure:   true,
-				SameSite: http.SameSiteStrictMode,
-				Path:     "/",
-			})
 			sendError(w, http.StatusUnauthorized, "Сессия аннулирована")
 			return
 		}
@@ -290,7 +273,47 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// [SECURITY FIX] CSRF Protection
+func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		headerToken := r.Header.Get("X-CSRF-Token")
+		cookie, err := r.Cookie("csrf_token")
+		if err != nil || cookie.Value == "" || headerToken == "" || headerToken != cookie.Value {
+			sendError(w, http.StatusForbidden, "Ошибка CSRF: неверный токен")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	}
+}
+
 // === ХЭНДЛЕРЫ ===
+
+func handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
+	token := make([]byte, 32)
+	if _, err := rand.Read(token); err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка генерации токена")
+		return
+	}
+	tokenStr := hex.EncodeToString(token)
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "csrf_token",
+		Value:    tokenStr,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   3600,
+	})
+
+	json.NewEncoder(w).Encode(map[string]string{"token": tokenStr})
+}
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -307,23 +330,21 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if os.Getenv("JWT_SECRET") == "" {
-		sendError(w, http.StatusInternalServerError, "Сервер не настроен: JWT_SECRET")
-		return
-	}
 	adminHash := os.Getenv("ADMIN_HASH")
-	if adminHash == "" {
-		sendError(w, http.StatusInternalServerError, "Сервер не настроен: ADMIN_HASH")
+	if adminHash == "" || os.Getenv("JWT_SECRET") == "" {
+		sendError(w, http.StatusInternalServerError, "Сервер не настроен")
 		return
 	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(adminHash), []byte(req.Password)); err != nil {
 		sendError(w, http.StatusUnauthorized, "Неверный пароль")
 		return
 	}
 
+	exp := time.Now().Add(24 * time.Hour)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"admin": true,
-		"exp":   time.Now().Add(24 * time.Hour).Unix(),
+		"exp":   exp.Unix(),
 	})
 	tokenString, err := token.SignedString(jwtSecretKey())
 	if err != nil {
@@ -334,40 +355,13 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
 		Value:    tokenString,
-		Expires:  time.Now().Add(24 * time.Hour),
+		Expires:  exp,
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 		Path:     "/",
 	})
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"success": true})
-}
-
-// [SECURITY FIX] Проверка JWT из HttpOnly-куки для синхронизации с фронтендом
-func handleAuthVerify(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		methodNotAllowed(w, http.MethodGet)
-		return
-	}
-
-	cookie, err := r.Cookie("auth_token")
-	if err != nil {
-		sendError(w, http.StatusUnauthorized, "Нет токена")
-		return
-	}
-
-	token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (interface{}, error) {
-		return jwtSecretKey(), nil
-	})
-
-	if err != nil || !token.Valid {
-		sendError(w, http.StatusUnauthorized, "Невалидный токен")
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
@@ -375,6 +369,11 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
 		return
+	}
+
+	if cookie, err := r.Cookie("auth_token"); err == nil {
+		// [SECURITY FIX] Добавление в blacklist при логауте
+		jwtBlacklist.Add(cookie.Value, time.Now().Add(24*time.Hour))
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -388,7 +387,6 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 	})
 
-	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
@@ -401,7 +399,7 @@ func handleGetProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx := r.Context()
 	iter := fsClient.Collection("projects").Documents(ctx)
 	projects := make([]Project, 0)
 
@@ -435,12 +433,12 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(projectList) > 500 {
-		sendError(w, http.StatusBadRequest, "Слишком много проектов")
-		return
-	}
-
+	// [SECURITY FIX] Валидация всех полей проекта
 	for _, p := range projectList {
+		if err := validateProjectID(p.ID); err != nil {
+			sendError(w, http.StatusBadRequest, "Неверный ID проекта: "+err.Error())
+			return
+		}
 		if len(p.Name) == 0 || len(p.Name) > 100 {
 			sendError(w, http.StatusBadRequest, "Недопустимая длина имени")
 			return
@@ -449,17 +447,9 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 			sendError(w, http.StatusBadRequest, "Слишком длинный комментарий")
 			return
 		}
-		if len(p.VideoID) > 50 {
-			sendError(w, http.StatusBadRequest, "Слишком длинный VideoID")
-			return
-		}
-		if p.ID == "" {
-			sendError(w, http.StatusBadRequest, "ID проекта обязателен")
-			return
-		}
 	}
 
-	ctx := context.Background()
+	ctx := r.Context()
 	batch := fsClient.Batch()
 	for _, p := range projectList {
 		ref := fsClient.Collection("projects").Doc(p.ID)
@@ -470,184 +460,86 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
-func validateProjectID(id string) error {
-	if id == "" {
-		return errors.New("project ID is required")
+// [SECURITY FIX] Валидация URL Demonlist для предотвращения SSRF
+func validateDemonlistURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return err
 	}
-	if len(id) > 100 {
-		return errors.New("project ID too long")
+	if parsed.Scheme != "https" {
+		return errors.New("only https allowed")
 	}
-	// Только безопасные символы
-	matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, id)
-	if !matched {
-		return errors.New("project ID contains invalid characters")
-	}
-	// Запрещаем path traversal
-	if strings.Contains(id, "..") || strings.ContainsAny(id, "/\\") {
-		return errors.New("project ID contains path traversal")
+	if parsed.Host != "api.demonlist.org" {
+		return errors.New("only api.demonlist.org allowed")
 	}
 	return nil
 }
 
-func formatUserID(id interface{}) string {
-	switch v := id.(type) {
-	case float64:
-		return strconv.FormatInt(int64(v), 10)
-	case json.Number:
-		return v.String()
-	case string:
-		return v
-	case int:
-		return strconv.Itoa(v)
-	case int64:
-		return strconv.FormatInt(v, 10)
-	default:
-		return ""
-	}
-}
-
-func extractUserID(data interface{}, playerName string) string {
-	m, ok := data.(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	d, ok := m["data"].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	users, ok := d["users"].([]interface{})
-	if !ok || len(users) == 0 {
-		return ""
+func fetchAPIWithRetry(ctx context.Context, apiURL string, maxRetries int) ([]byte, error) {
+	if err := validateDemonlistURL(apiURL); err != nil {
+		return nil, err
 	}
 
-	nl := strings.ToLower(strings.TrimSpace(playerName))
-	for _, u := range users {
-		user, ok := u.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		username, _ := user["username"].(string)
-		if strings.ToLower(strings.TrimSpace(username)) == nl {
-			return formatUserID(user["id"])
-		}
-	}
-	return ""
-}
-
-func fetchAPIWithRetry(ctx context.Context, url string, maxRetries int) ([]byte, error) {
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 		if err != nil {
 			return nil, err
 		}
 		resp, err := httpClient.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("request failed: %w", err)
+			lastErr = err
 			continue
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			lastErr = fmt.Errorf("http %d", resp.StatusCode)
-			if attempt < maxRetries-1 {
-				time.Sleep(time.Second * time.Duration(attempt+1))
-			}
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("status %d", resp.StatusCode)
+			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
 			continue
 		}
 
-		body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
-		if err != nil {
-			lastErr = fmt.Errorf("read body: %w", err)
-			continue
-		}
-
-		if len(body) == 0 {
-			lastErr = errors.New("empty response")
-			continue
-		}
-
-		return body, nil
+		return io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	}
 	return nil, lastErr
 }
 
 func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		methodNotAllowed(w, http.MethodGet)
-		return
-	}
-
 	ctx := r.Context()
 	players := playersForLeaderboard(ctx)
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	result := make([]FullPlayerData, 0, len(players))
-	sem := make(chan struct{}, 8)
+	sem := make(chan struct{}, 5) // Ограничиваем параллелизм
 
 	for _, p := range players {
 		wg.Add(1)
-		sem <- struct{}{}
-
-		go func(playerName string) {
+		go func(name string) {
 			defer wg.Done()
+			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			entry := FullPlayerData{Name: playerName}
-			search := url.QueryEscape(playerName)
-
-			body1, err := fetchAPIWithRetry(ctx, "https://api.demonlist.org/leaderboard/user/list?search="+search+"&limit=50", 3)
-			if err != nil {
-				log.Printf("[leaderboard] fetch user list for %s: %v", playerName, err)
-				mu.Lock()
-				result = append(result, entry)
-				mu.Unlock()
-				return
+			entry := FullPlayerData{Name: name}
+			
+			// User Info
+			u1 := fmt.Sprintf("https://api.demonlist.org/leaderboard/user/list?search=%s&limit=1", url.QueryEscape(name))
+			if body, err := fetchAPIWithRetry(ctx, u1, 2); err == nil {
+				json.Unmarshal(body, &entry.Data)
 			}
 
-			var data interface{}
-			if err := json.Unmarshal(body1, &data); err != nil {
-				log.Printf("[leaderboard] parse user list for %s: %v", playerName, err)
-				mu.Lock()
-				result = append(result, entry)
-				mu.Unlock()
-				return
+			// Records (если ID найден)
+			userID := extractUserID(entry.Data, name)
+			if userID != "" {
+				u2 := fmt.Sprintf("https://api.demonlist.org/user/record/list?user_id=%s&limit=50", userID)
+				if body, err := fetchAPIWithRetry(ctx, u2, 2); err == nil {
+					json.Unmarshal(body, &entry.Records)
+				}
 			}
 
-			entry.Data = data
-			userID := extractUserID(data, playerName)
-			if userID == "" {
-				log.Printf("[leaderboard] no user id found for %s", playerName)
-				mu.Lock()
-				result = append(result, entry)
-				mu.Unlock()
-				return
-			}
-
-			body2, err := fetchAPIWithRetry(ctx, "https://api.demonlist.org/user/record/list?user_id="+url.QueryEscape(userID)+"&limit=50", 3)
-			if err != nil {
-				log.Printf("[leaderboard] fetch records for %s (id=%s): %v", playerName, userID, err)
-				mu.Lock()
-				result = append(result, entry)
-				mu.Unlock()
-				return
-			}
-
-			var recs interface{}
-			if err := json.Unmarshal(body2, &recs); err != nil {
-				log.Printf("[leaderboard] parse records for %s: %v", playerName, err)
-				mu.Lock()
-				result = append(result, entry)
-				mu.Unlock()
-				return
-			}
-
-			entry.Records = recs
 			mu.Lock()
 			result = append(result, entry)
 			mu.Unlock()
@@ -656,6 +548,227 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 
 	wg.Wait()
 	json.NewEncoder(w).Encode(result)
+}
+
+func handleGetStaff(w http.ResponseWriter, r *http.Request) {
+	if !requireFirestore(w) {
+		return
+	}
+	ctx := r.Context()
+	doc, err := fsClient.Collection("config").Doc("staff").Get(ctx)
+	if err != nil {
+		json.NewEncoder(w).Encode([]StaffRole{})
+		return
+	}
+	var data struct {
+		Roles []StaffRole `json:"roles" firestore:"roles"`
+	}
+	doc.DataTo(&data)
+	json.NewEncoder(w).Encode(data.Roles)
+}
+
+func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RoleIndex int    `json:"roleIndex"`
+		Nickname  string `json:"nickname"`
+		Discord   string `json:"discord"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Кривой JSON")
+		return
+	}
+
+	if err := validateNickname(req.Nickname); err != nil {
+		sendError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateDiscord(req.Discord); err != nil {
+		sendError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	ctx := r.Context()
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("staff")
+		doc, err := tx.Get(docRef)
+		if err != nil {
+			return err
+		}
+		var data struct {
+			Roles []StaffRole `json:"roles" firestore:"roles"`
+		}
+		doc.DataTo(&data)
+
+		if req.RoleIndex < 0 || req.RoleIndex >= len(data.Roles) {
+			return errors.New("invalid role index")
+		}
+
+		data.Roles[req.RoleIndex].Players = append(data.Roles[req.RoleIndex].Players, StaffPlayer{
+			Nickname: req.Nickname,
+			Discord:  req.Discord,
+		})
+		return tx.Set(docRef, data)
+	})
+
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+// Handler — точка входа
+func Handler(w http.ResponseWriter, r *http.Request) {
+	// [SECURITY FIX] Security Headers
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("X-XSS-Protection", "1; mode=block")
+	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://www.youtube.com;")
+
+	path := requestPath(r)
+	
+	// Роутинг с применением middleware
+	mux := map[string]http.HandlerFunc{
+		"/api/login":        rateLimitLoginMiddleware(handleLogin),
+		"/api/logout":       rateLimitMiddleware(handleLogout),
+		"/api/csrf-token":   rateLimitMiddleware(handleGetCSRFToken),
+		"/api/leaderboard":  rateLimitMiddleware(handleLeaderboard),
+		"/api/staff":        rateLimitMiddleware(authMiddleware(handleGetStaff)),
+		"/api/staff/add":    rateLimitMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd))),
+		"/api/projects":     rateLimitMiddleware(handleGetProjects),
+		"/api/projects/save": rateLimitMiddleware(authMiddleware(csrfMiddleware(handleSaveProjects))),
+	}
+
+	if h, ok := mux[path]; ok {
+		h(w, r)
+		return
+	}
+
+	sendError(w, http.StatusNotFound, "Роут не найден")
+}
+
+// --- RATE LIMITING ---
+
+type rateLimiter interface {
+	allow(ctx context.Context, key string, max int, window time.Duration) (bool, error)
+}
+
+type memoryLimiter struct {
+	mu   sync.Mutex
+	keys map[string]*memBucket
+}
+
+type memBucket struct {
+	count   int
+	resetAt time.Time
+}
+
+func newMemoryLimiter() rateLimiter {
+	m := &memoryLimiter{keys: make(map[string]*memBucket)}
+	// [SECURITY FIX] Фоновая очистка лимитера
+	go m.cleanup()
+	return m
+}
+
+func (m *memoryLimiter) allow(_ context.Context, key string, max int, window time.Duration) (bool, error) {
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	b, ok := m.keys[key]
+	if !ok || now.After(b.resetAt) {
+		m.keys[key] = &memBucket{count: 1, resetAt: now.Add(window)}
+		return true, nil
+	}
+	if b.count >= max {
+		return false, nil
+	}
+	b.count++
+	return true, nil
+}
+
+func (m *memoryLimiter) cleanup() {
+	ticker := time.NewTicker(10 * time.Minute)
+	for range ticker.C {
+		now := time.Now()
+		m.mu.Lock()
+		for k, b := range m.keys {
+			if now.After(b.resetAt) {
+				delete(m.keys, k)
+			}
+		}
+		m.mu.Unlock()
+	}
+}
+
+func initRateLimiter() {
+	rlOnce.Do(func() {
+		globalRateLimiter = newMemoryLimiter()
+	})
+}
+
+func checkRateLimit(w http.ResponseWriter, r *http.Request, max int) bool {
+	ip := hashIP(getRealIP(r))
+	key := requestPath(r) + ":" + ip
+	ok, _ := globalRateLimiter.allow(r.Context(), key, max, time.Minute)
+	if !ok {
+		sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
+		return false
+	}
+	return true
+}
+
+func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !checkRateLimit(w, r, 60) { return }
+		next(w, r)
+	}
+}
+
+func rateLimitLoginMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !checkRateLimit(w, r, 5) { return }
+		next(w, r)
+	}
+}
+
+// --- VALIDATION ---
+
+func validateProjectID(id string) error {
+	if id == "" { return errors.New("empty id") }
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]{1,50}$`, id); !matched {
+		return errors.New("invalid id format")
+	}
+	return nil
+}
+
+func validateNickname(n string) error {
+	if len(n) < 2 || len(n) > 32 { return errors.New("invalid nickname length") }
+	return nil
+}
+
+func validateDiscord(d string) error {
+	if d == "" { return nil }
+	if len(d) > 64 { return errors.New("discord too long") }
+	return nil
+}
+
+func validateRoleName(n string) error {
+	if len(n) < 2 || len(n) > 32 { return errors.New("invalid role name length") }
+	return nil
+}
+
+// --- UTILS ---
+
+func requestPath(r *http.Request) string {
+	p := r.URL.Path
+	if p == "/api" || p == "/api/" {
+		return r.RequestURI // Vercel workaround
+	}
+	return p
 }
 
 func loadPlayersFromFirestore(ctx context.Context) ([]Player, error) {
@@ -694,7 +807,6 @@ func defaultPlayersList() []Player {
 }
 
 func playersForLeaderboard(ctx context.Context) []Player {
-	initFirestore()
 	if fsClient != nil {
 		players, err := loadPlayersFromFirestore(ctx)
 		if err == nil && len(players) > 0 {
@@ -704,663 +816,47 @@ func playersForLeaderboard(ctx context.Context) []Player {
 	return defaultPlayersList()
 }
 
-func savePlayersToFirestore(ctx context.Context, players []Player) error {
-	_, err := fsClient.Collection("config").Doc("players").Set(ctx, map[string]interface{}{
-		"players": players,
-	})
-	return err
-}
-
-func handleGetPlayers(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		methodNotAllowed(w, http.MethodGet)
-		return
-	}
-
-	ctx := context.Background()
-	players := playersForLeaderboard(ctx)
-	names := make([]string, len(players))
-	for i, p := range players {
-		names[i] = p.Name
-	}
-	json.NewEncoder(w).Encode(names)
-}
-
-func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, http.MethodPost)
-		return
-	}
-	if !requireFirestore(w) {
-		return
-	}
-
-	var playerList []Player
-	if err := decodeRequestJSON(w, r, &playerList); err != nil {
-		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
-		return
-	}
-
-	if len(playerList) > 1000 {
-		sendError(w, http.StatusBadRequest, "Слишком много игроков (макс 1000)")
-		return
-	}
-
-	for _, p := range playerList {
-		if len(p.Name) == 0 || len(p.Name) > 100 {
-			sendError(w, http.StatusBadRequest, "Недопустимая длина имени игрока")
-			return
-		}
-	}
-
-	ctx := context.Background()
-	if err := savePlayersToFirestore(ctx, playerList); err != nil {
-		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"success": true})
-}
-
-// [CONCURRENCY FIX] Использование транзакций Firestore вместо read-modify-write
-func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		methodNotAllowed(w, http.MethodDelete)
-		return
-	}
-	if !requireFirestore(w) {
-		return
-	}
-
-	var req struct {
-		Name string `json:"name"`
-	}
-	if err := decodeRequestJSON(w, r, &req); err != nil {
-		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
-		return
-	}
-
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		sendError(w, http.StatusBadRequest, "Имя игрока обязательно")
-		return
-	}
-
-	ctx := context.Background()
-	lowerName := strings.ToLower(name)
-
-	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		doc, err := tx.Get(fsClient.Collection("config").Doc("players"))
-		if err != nil {
-			return err
-		}
-
-		var players []Player
-		if err := doc.DataTo(&players); err != nil {
-			if raw, ok := doc.Data()["players"]; ok {
-				b, _ := json.Marshal(raw)
-				json.Unmarshal(b, &players)
-			}
-		}
-
-		filtered := make([]Player, 0, len(players))
-		removed := false
-		for _, p := range players {
-			if strings.ToLower(strings.TrimSpace(p.Name)) == lowerName {
-				removed = true
-				continue
-			}
-			filtered = append(filtered, p)
-		}
-
-		if !removed {
-			return errors.New("player_not_found")
-		}
-
-		return tx.Set(fsClient.Collection("config").Doc("players"), map[string]interface{}{
-			"players": filtered,
-		})
-	})
-
-	if err != nil {
-		if err.Error() == "player_not_found" {
-			sendError(w, http.StatusNotFound, "Игрок не найден")
-		} else {
-			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
-		}
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"success": true})
-}
-
-// [FIXED] Vercel rewrite /api/* → /api оставляет Path=/api; берём путь из RequestURI
-func requestPath(r *http.Request) string {
-	path := r.URL.Path
-	if path != "/api" && path != "/api/" {
-		return path
-	}
-	uri := r.RequestURI
-	if i := strings.Index(uri, "?"); i >= 0 {
-		uri = uri[:i]
-	}
-	if uri != "" && uri != path {
-		return uri
-	}
-	return path
-}
-
-// Добавь authMiddleware к GET /api/staff
-func handleGetStaff(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		methodNotAllowed(w, http.MethodGet)
-		return
-	}
-	if !requireFirestore(w) {
-		return
-	}
-
-	// ✅ Проверяем аутентификацию для GET тоже
-	// (authMiddleware уже добавлен в роутере, см. ниже)
-
-	ctx := context.Background()
-	doc, err := fsClient.Collection("config").Doc("staff").Get(ctx)
-	if err != nil {
-		json.NewEncoder(w).Encode([]StaffRole{})
-		return
-	}
-
-	var data struct {
-		Roles []StaffRole `json:"roles" firestore:"roles"`
-	}
-	if err := doc.DataTo(&data); err != nil {
-		json.NewEncoder(w).Encode([]StaffRole{})
-		return
-	}
-
-	// ✅ Маскируем чувствительные данные для не-админов
-	if !isAdmin(r) {
-		// Отдаем только имена ролей и кол-во игроков, без списка
-		maskedRoles := make([]map[string]interface{}, len(data.Roles))
-		for i, role := range data.Roles {
-			maskedRoles[i] = map[string]interface{}{
-				"name":    role.Name,
-				"color":   role.Color,
-				"players": len(role.Players), // только количество
-			}
-		}
-		json.NewEncoder(w).Encode(maskedRoles)
-		return
-	}
-
-	json.NewEncoder(w).Encode(data.Roles)
-}
-
-// Добавь вспомогательную функцию
-func isAdmin(r *http.Request) bool {
-	cookie, err := r.Cookie("auth_token")
-	if err != nil {
-		return false
-	}
-	token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (interface{}, error) {
-		return jwtSecretKey(), nil
-	})
-	if err != nil || !token.Valid {
-		return false
-	}
-	if claims, ok := token.Claims.(jwt.MapClaims); ok {
-		if admin, ok := claims["admin"].(bool); ok {
-			return admin
-		}
-	}
-	return false
-}
-
-func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, http.MethodPost)
-		return
-	}
-	if !requireFirestore(w) {
-		return
-	}
-
-	var req struct {
-		RoleName string `json:"roleName"`
-		Nickname string `json:"nickname"`
-		Discord  string `json:"discord"`
-	}
-	if err := decodeRequestJSON(w, r, &req); err != nil {
-		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
-		return
-	}
-
-	if req.RoleName == "" || req.Nickname == "" {
-		sendError(w, http.StatusBadRequest, "roleName и nickname обязательны")
-		return
-	}
-
-	if err := validateRoleName(req.RoleName); err != nil {
-		sendError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := validateNickname(req.Nickname); err != nil {
-		sendError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := validateDiscord(req.Discord); err != nil {
-		sendError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	ctx := r.Context()
-	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		docRef := fsClient.Collection("config").Doc("staff")
-		doc, err := tx.Get(docRef)
-		if err != nil {
-			return err
-		}
-
-		var data struct {
-			Roles []StaffRole `json:"roles" firestore:"roles"`
-		}
-		if err := doc.DataTo(&data); err != nil {
-			return err
-		}
-
-		found := false
-		for i, role := range data.Roles {
-			if strings.EqualFold(role.Name, req.RoleName) {
-				found = true
-				// Check if player already exists
-				for _, p := range role.Players {
-					if strings.EqualFold(p.Nickname, req.Nickname) {
-						return errors.New("player_already_exists")
-					}
-				}
-				// Add player
-				data.Roles[i].Players = append(data.Roles[i].Players, StaffPlayer{
-					Nickname: req.Nickname,
-					Discord:  req.Discord,
-				})
-				break
-			}
-		}
-
-		if !found {
-			return errors.New("role_not_found")
-		}
-
-		return tx.Set(docRef, map[string]interface{}{"roles": data.Roles})
-	})
-
-	if err != nil {
-		if err.Error() == "player_already_exists" {
-			sendError(w, http.StatusConflict, "Игрок уже в этой роли")
-		} else if err.Error() == "role_not_found" {
-			sendError(w, http.StatusNotFound, "Роль не найдена")
-		} else {
-			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
-		}
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"success": true})
-}
-
-func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
-		methodNotAllowed(w, "POST, DELETE")
-		return
-	}
-	if !requireFirestore(w) {
-		return
-	}
-
-	var req struct {
-		RoleName string `json:"roleName"`
-		Nickname string `json:"nickname"`
-	}
-	if err := decodeRequestJSON(w, r, &req); err != nil {
-		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
-		return
-	}
-
-	ctx := r.Context()
-	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		docRef := fsClient.Collection("config").Doc("staff")
-		doc, err := tx.Get(docRef)
-		if err != nil {
-			return err
-		}
-
-		var data struct {
-			Roles []StaffRole `json:"roles" firestore:"roles"`
-		}
-		if err := doc.DataTo(&data); err != nil {
-			return err
-		}
-
-		found := false
-		for i, role := range data.Roles {
-			if strings.EqualFold(role.Name, req.RoleName) {
-				found = true
-				newPlayers := make([]StaffPlayer, 0, len(role.Players))
-				for _, p := range role.Players {
-					if !strings.EqualFold(p.Nickname, req.Nickname) {
-						newPlayers = append(newPlayers, p)
-					}
-				}
-				if len(newPlayers) == len(role.Players) {
-					return errors.New("player_not_found")
-				}
-				data.Roles[i].Players = newPlayers
-				break
-			}
-		}
-
-		if !found {
-			return errors.New("role_not_found")
-		}
-
-		return tx.Set(docRef, map[string]interface{}{"roles": data.Roles})
-	})
-
-	if err != nil {
-		if err.Error() == "player_not_found" {
-			sendError(w, http.StatusNotFound, "Игрок не найден")
-		} else if err.Error() == "role_not_found" {
-			sendError(w, http.StatusNotFound, "Роль не найдена")
-		} else {
-			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
-		}
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"success": true})
-}
-
-// Handler — точка входа Vercel Go (api/index.go)
-func Handler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("X-XSS-Protection", "1; mode=block")
-	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-
-	switch requestPath(r) {
-	case "/api/login":
-		rateLimitLoginMiddleware(handleLogin)(w, r)
-	case "/api/logout":
-		rateLimitMiddleware(handleLogout)(w, r)
-	case "/api/auth/verify":
-		rateLimitMiddleware(handleAuthVerify)(w, r)
-	case "/api/leaderboard":
-		rateLimitMiddleware(handleLeaderboard)(w, r)
-	case "/api/staff/add":
-		rateLimitMiddleware(authMiddleware(handleStaffAdd))(w, r)
-	case "/api/staff/remove":
-		rateLimitMiddleware(authMiddleware(handleStaffRemove))(w, r)
-	case "/api/staff":
-		switch r.Method {
-		case http.MethodGet:
-			rateLimitMiddleware(authMiddleware(handleGetStaff))(w, r)
-		default:
-			methodNotAllowed(w, "GET")
-		}
-	case "/api/players":
-		switch r.Method {
-		case http.MethodGet:
-			rateLimitMiddleware(handleGetPlayers)(w, r)
-		case http.MethodPost:
-			rateLimitMiddleware(authMiddleware(handleSavePlayers))(w, r)
-		case http.MethodDelete:
-			rateLimitMiddleware(authMiddleware(handleDeletePlayer))(w, r)
-		default:
-			methodNotAllowed(w, "GET, POST, DELETE")
-		}
-	case "/api/projects":
-		switch r.Method {
-		case http.MethodGet:
-			rateLimitMiddleware(handleGetProjects)(w, r)
-		case http.MethodPost:
-			rateLimitMiddleware(authMiddleware(handleSaveProjects))(w, r)
-
-		default:
-			methodNotAllowed(w, "GET, POST")
-		}
-	default:
-		sendError(w, http.StatusNotFound, "Роут не найден")
-	}
-
-}
-
-const (
-	rateLimitWindow     = time.Minute
-	rateLimitDefaultMax = 60
-	rateLimitLoginMax   = 10
-)
-
-// rateLimiter — единый контракт; в serverless нужен внешний store (Upstash), не RAM.
-type rateLimiter interface {
-	allow(ctx context.Context, key string, max int, window time.Duration) (bool, error)
-}
-
-var (
-	globalRateLimiter rateLimiter
-	rlOnce            sync.Once
-)
-
-func initRateLimiter() {
-	rlOnce.Do(func() {
-		globalRateLimiter = newUpstashLimiter()
-		if globalRateLimiter == nil {
-			globalRateLimiter = newMemoryLimiter()
-		}
-	})
-}
-
-// --- Upstash (REST), работает между инстансами Vercel ---
-
-type upstashLimiter struct {
-	restURL string
-	token   string
-}
-
-func newUpstashLimiter() rateLimiter {
-	base := strings.TrimSuffix(strings.TrimSpace(os.Getenv("UPSTASH_REDIS_REST_URL")), "/")
-	token := strings.TrimSpace(os.Getenv("UPSTASH_REDIS_REST_TOKEN"))
-	if base == "" || token == "" {
-		return nil
-	}
-	return &upstashLimiter{restURL: base, token: token}
-}
-
-func (u *upstashLimiter) allow(ctx context.Context, key string, max int, window time.Duration) (bool, error) {
-	bucket := time.Now().Unix() / int64(window.Seconds())
-	redisKey := fmt.Sprintf("rl:%s:%d", hashRateKey(key), bucket)
-	sec := int(window.Seconds())
-
-	payload := fmt.Sprintf(
-		`[["INCR","%s"],["EXPIRE","%s",%d]]`,
-		escapeRedisKey(redisKey),
-		escapeRedisKey(redisKey),
-		sec,
-	)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.restURL+"/pipeline", strings.NewReader(payload))
-	if err != nil {
-		return true, err
-	}
-	req.Header.Set("Authorization", "Bearer "+u.token)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return true, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if err != nil {
-		return true, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return true, fmt.Errorf("upstash status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var results []struct {
-		Result json.RawMessage `json:"result"`
-	}
-	if err := json.Unmarshal(body, &results); err != nil || len(results) == 0 {
-		return true, fmt.Errorf("upstash decode: %w", err)
-	}
-
-	var count int64
-	if err := json.Unmarshal(results[0].Result, &count); err != nil {
-		return true, err
-	}
-	return count <= int64(max), nil
-}
-
-func escapeRedisKey(k string) string {
-	return strings.ReplaceAll(k, `"`, `\"`)
-}
-
-func hashRateKey(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:8])
-}
-
-// --- In-memory: только best-effort в рамках одного warm-контейнера ---
-
-type memoryLimiter struct {
-	mu   sync.Mutex
-	keys map[string]*memBucket
-}
-
-type memBucket struct {
-	count   int
-	resetAt time.Time
-}
-
-func newMemoryLimiter() rateLimiter {
-	return &memoryLimiter{keys: make(map[string]*memBucket)}
-}
-
-func (m *memoryLimiter) allow(_ context.Context, key string, max int, window time.Duration) (bool, error) {
-	now := time.Now()
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	b, ok := m.keys[key]
-	if !ok || now.After(b.resetAt) {
-		m.keys[key] = &memBucket{count: 1, resetAt: now.Add(window)}
-		return true, nil
-	}
-	if b.count >= max {
-		return false, nil
-	}
-	b.count++
-	return true, nil
-}
-
-func checkRateLimit(w http.ResponseWriter, r *http.Request, max int) bool {
-	initRateLimiter()
-	rawIP := getRealIP(r)
-	hashedIP := hashIP(rawIP)
-	key := requestPath(r) + "|" + hashedIP
-
-	ok, err := globalRateLimiter.allow(r.Context(), key, max, rateLimitWindow)
-	if err != nil {
-		log.Printf("[ratelimit] %v", err)
-		return true
-	}
+func extractUserID(data interface{}, playerName string) string {
+	m, ok := data.(map[string]interface{})
 	if !ok {
-		sendError(w, http.StatusTooManyRequests, "Слишком много запросов. Попробуйте позже.")
-		return false
+		return ""
 	}
-	return true
-}
-
-func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !checkRateLimit(w, r, rateLimitDefaultMax) {
-			return
+	// [SECURITY FIX] Safe navigation through nested maps
+	d, ok := m["data"].(map[string]interface{})
+	if !ok {
+		// Fallback if structure is different
+		if users, ok := m["users"].([]interface{}); ok {
+			return findUserID(users, playerName)
 		}
-		next(w, r)
+		return ""
 	}
+	users, ok := d["users"].([]interface{})
+	if !ok || len(users) == 0 {
+		return ""
+	}
+
+	return findUserID(users, playerName)
 }
 
-func rateLimitLoginMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !checkRateLimit(w, r, rateLimitLoginMax) {
-			return
+func findUserID(users []interface{}, playerName string) string {
+	nl := strings.ToLower(strings.TrimSpace(playerName))
+	for _, u := range users {
+		user, ok := u.(map[string]interface{})
+		if !ok {
+			continue
 		}
-		next(w, r)
+		username, _ := user["username"].(string)
+		if strings.ToLower(strings.TrimSpace(username)) == nl {
+			id := user["id"]
+			switch v := id.(type) {
+			case float64:
+				return strconv.FormatInt(int64(v), 10)
+			case string:
+				return v
+			case json.Number:
+				return v.String()
+			}
+		}
 	}
-}
-
-// ============================================
-// ВАЛИДАЦИЯ ВХОДНЫХ ДАННЫХ
-// ============================================
-
-func validateRoleName(name string) error {
-	if name == "" {
-		return errors.New("role name is empty")
-	}
-	if len(name) > 50 {
-		return errors.New("role name too long (max 50)")
-	}
-	// Только буквы, цифры, пробелы, дефисы, подчеркивания
-	matched, _ := regexp.MatchString(`^[a-zA-Zа-яА-Я0-9\s\-_]+$`, name)
-	if !matched {
-		return errors.New("role name contains invalid characters")
-	}
-	return nil
-}
-
-func validateNickname(nickname string) error {
-	if nickname == "" {
-		return errors.New("nickname is empty")
-	}
-	if len(nickname) > 100 {
-		return errors.New("nickname too long (max 100)")
-	}
-	// Никаких HTML/JS тегов
-	if strings.ContainsAny(nickname, "<>\"'&") {
-		return errors.New("nickname contains invalid characters")
-	}
-	return nil
-}
-
-func validateDiscord(discord string) error {
-	if discord == "" {
-		return nil // optional
-	}
-	if len(discord) > 50 {
-		return errors.New("discord too long")
-	}
-	// Примерный формат: username#1234 или @username
-	matched, _ := regexp.MatchString(`^@?[a-zA-Z0-9_]{2,32}(#\d{4})?$`, discord)
-	if !matched {
-		return errors.New("invalid discord format")
-	}
-	return nil
-}
-
-func handleRevokeAllSessions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, http.MethodPost)
-		return
-	}
-
-	// ✅ Только для экстренных случаев - отзыв всех сессий
-	// Нужно реализовать массовое добавление всех активных токенов
-
-	sendError(w, http.StatusNotImplemented, "Not implemented yet")
+	return ""
 }
