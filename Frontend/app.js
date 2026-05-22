@@ -426,7 +426,7 @@ function updateThemeIcon(theme) {
 async function initHostStatus() {
     if (localStorage.getItem('smlt-host') === 'true') {
         try {
-            const res = await fetchWithAbort(`${BACKEND_URL}/auth/verify`, {
+            const res = await fetchWithAbort(`${BACKEND_URL}/verify`, {
                 credentials: 'include'
             }, 'auth-verify');
             const data = await parseJsonResponse(res);

@@ -29,7 +29,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// === КОНФИГ И ГЛОБАЛКИ ===
 var (
 	fsClient *firestore.Client
 	fsOnce   sync.Once
@@ -42,9 +41,15 @@ var (
 
 	globalRateLimiter rateLimiter
 	rlOnce            sync.Once
+
+	rateLimitSalt string
+	saltOnce      sync.Once
+
+	jwtSecrets      []jwtKey
+	jwtSecretsMu    sync.RWMutex
+	jwtSecretsOnce  sync.Once
 )
 
-// === ТИПЫ ДАННЫХ ===
 type StaffPlayer struct {
 	Nickname string `json:"nickname" firestore:"nickname"`
 	Discord  string `json:"discord" firestore:"discord"`
@@ -76,7 +81,18 @@ type FullPlayerData struct {
 	Records interface{} `json:"records"`
 }
 
-// Список по умолчанию (если Firestore пуст)
+type AuditEntry struct {
+	Action    string      `json:"action" firestore:"action"`
+	AdminIP   string      `json:"adminIp" firestore:"adminIp"`
+	Details   interface{} `json:"details" firestore:"details"`
+	CreatedAt time.Time   `json:"createdAt" firestore:"createdAt"`
+}
+
+type jwtKey struct {
+	Secret []byte
+	ID     string
+}
+
 var defaultPlayerNames = []string{
 	"samoletik", "paradoxiz", "clokman", "itzslxnq", "H30n41k_GmD",
 	"Filkoty", "DarBeast", "Florned", "Marzyiiik", "euphoriak8",
@@ -86,11 +102,41 @@ var defaultPlayerNames = []string{
 	"Спини", "Linqwq", "RossceorpGD", "69liqu69",
 }
 
-// === ИНИЦИАЛИЗАЦИЯ ===
 func init() {
 	trustProxy = os.Getenv("TRUST_PROXY") == "true" || os.Getenv("VERCEL") == "1"
 	initFirestore()
 	initRateLimiter()
+	initRateLimitSalt()
+	initJWTSecrets()
+}
+
+func initRateLimitSalt() {
+	saltOnce.Do(func() {
+		buf := make([]byte, 32)
+		if _, err := rand.Read(buf); err != nil {
+			rateLimitSalt = fmt.Sprintf("%x", time.Now().UnixNano())
+			return
+		}
+		rateLimitSalt = hex.EncodeToString(buf)
+	})
+}
+
+func initJWTSecrets() {
+	jwtSecretsOnce.Do(func() {
+		primary := os.Getenv("JWT_SECRET")
+		if primary == "" {
+			log.Println("[jwt] JWT_SECRET not set, auth will fail")
+			return
+		}
+		jwtSecrets = append(jwtSecrets, jwtKey{Secret: []byte(primary), ID: "1"})
+		for i := 2; ; i++ {
+			key := os.Getenv(fmt.Sprintf("JWT_SECRET_%d", i))
+			if key == "" {
+				break
+			}
+			jwtSecrets = append(jwtSecrets, jwtKey{Secret: []byte(key), ID: strconv.Itoa(i)})
+		}
+	})
 }
 
 func initFirestore() {
@@ -120,17 +166,12 @@ func initFirestore() {
 
 func requireFirestore(w http.ResponseWriter) bool {
 	if fsErr != nil || fsClient == nil {
-		sendError(w, http.StatusServiceUnavailable, "База данных недоступна")
+		http.Error(w, `{"error":"База данных недоступна"}`, http.StatusServiceUnavailable)
 		return false
 	}
 	return true
 }
 
-func jwtSecretKey() []byte {
-	return []byte(os.Getenv("JWT_SECRET"))
-}
-
-// === УТИЛИТЫ ===
 func sendError(w http.ResponseWriter, status int, msg string) {
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
@@ -149,28 +190,23 @@ func remoteAddrIP(r *http.Request) string {
 	return ip
 }
 
-// [SECURITY FIX] Более надежное определение IP
 func getRealIP(r *http.Request) string {
 	if trustProxy {
-		// Vercel / Cloudflare специфичные заголовки
 		if xri := r.Header.Get("X-Real-IP"); xri != "" {
 			return xri
 		}
 		if cf := r.Header.Get("CF-Connecting-IP"); cf != "" {
 			return cf
 		}
-		// X-Forwarded-For берем последний надежный сегмент, если прокси доверенный
-		// Но на Vercel X-Real-IP обычно достаточно.
 	}
 	return remoteAddrIP(r)
 }
 
 func hashIP(ip string) string {
-	salt := os.Getenv("RATE_LIMIT_SALT")
-	if salt == "" {
-		salt = "default-salt-12345"
+	if rateLimitSalt == "" {
+		initRateLimitSalt()
 	}
-	hash := sha256.Sum256([]byte(ip + salt))
+	hash := sha256.Sum256([]byte(ip + rateLimitSalt))
 	return hex.EncodeToString(hash[:16])
 }
 
@@ -180,8 +216,6 @@ func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{})
 	dec.DisallowUnknownFields()
 	return dec.Decode(dest)
 }
-
-// === MIDDLEWARES ===
 
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -193,11 +227,13 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		tokenString := cookie.Value
 
-		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+		claims := &jwt.MapClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 			}
-			return jwtSecretKey(), nil
+			kid, _ := t.Header["kid"].(string)
+			return lookupJWTSecret(kid)
 		})
 
 		if err != nil || !token.Valid {
@@ -205,11 +241,60 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		if err := verifyTokenVersion(r.Context(), claims); err != nil {
+			sendError(w, http.StatusUnauthorized, "Сессия устарела, войдите заново")
+			return
+		}
+
 		next.ServeHTTP(w, r)
 	}
 }
 
-// [SECURITY FIX] CSRF Protection
+func lookupJWTSecret(kid string) ([]byte, error) {
+	jwtSecretsMu.RLock()
+	defer jwtSecretsMu.RUnlock()
+
+	if kid == "" && len(jwtSecrets) > 0 {
+		return jwtSecrets[0].Secret, nil
+	}
+	for _, k := range jwtSecrets {
+		if k.ID == kid {
+			return k.Secret, nil
+		}
+	}
+	return nil, errors.New("jwt secret not found")
+}
+
+func verifyTokenVersion(ctx context.Context, claims *jwt.MapClaims) error {
+	if fsClient == nil {
+		return nil
+	}
+
+	v, ok := (*claims)["ver"].(float64)
+	if !ok {
+		return errors.New("no token version")
+	}
+	requiredVer := int64(v)
+
+	doc, err := fsClient.Collection("config").Doc("auth").Get(ctx)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil
+		}
+		return err
+	}
+
+	var cfg struct {
+		TokenVersion int64 `json:"tokenVersion" firestore:"tokenVersion"`
+	}
+	doc.DataTo(&cfg)
+
+	if cfg.TokenVersion > requiredVer {
+		return errors.New("token version too old")
+	}
+	return nil
+}
+
 func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
@@ -227,8 +312,6 @@ func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		next.ServeHTTP(w, r)
 	}
 }
-
-// === ХЭНДЛЕРЫ ===
 
 func handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
 	token := make([]byte, 32)
@@ -251,9 +334,42 @@ func handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"token": tokenStr})
 }
 
+func handleVerify(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("auth_token")
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]bool{"success": false})
+		return
+	}
+
+	claims := &jwt.MapClaims{}
+	token, err := jwt.ParseWithClaims(cookie.Value, claims, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		kid, _ := t.Header["kid"].(string)
+		return lookupJWTSecret(kid)
+	})
+
+	if err != nil || !token.Valid {
+		json.NewEncoder(w).Encode(map[string]bool{"success": false})
+		return
+	}
+
+	if err := verifyTokenVersion(r.Context(), claims); err != nil {
+		json.NewEncoder(w).Encode(map[string]bool{"success": false})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
 func handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	if !checkLoginRateLimit(w, r) {
 		return
 	}
 
@@ -267,7 +383,8 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	adminHash := os.Getenv("ADMIN_HASH")
-	if adminHash == "" || os.Getenv("JWT_SECRET") == "" {
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if adminHash == "" || jwtSecret == "" {
 		sendError(w, http.StatusInternalServerError, "Сервер не настроен")
 		return
 	}
@@ -277,11 +394,23 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tokenVersion := getCurrentTokenVersion(r.Context())
+
 	exp := time.Now().Add(24 * time.Hour)
+	now := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"admin": true,
 		"exp":   exp.Unix(),
+		"iat":   now.Unix(),
+		"ver":   tokenVersion,
 	})
+
+	jwtSecretsMu.RLock()
+	if len(jwtSecrets) > 0 {
+		token.Header["kid"] = jwtSecrets[0].ID
+	}
+	jwtSecretsMu.RUnlock()
+
 	tokenString, err := token.SignedString(jwtSecretKey())
 	if err != nil {
 		sendError(w, http.StatusInternalServerError, "Ошибка выдачи токена")
@@ -301,6 +430,33 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
+func jwtSecretKey() []byte {
+	jwtSecretsMu.RLock()
+	defer jwtSecretsMu.RUnlock()
+	if len(jwtSecrets) > 0 {
+		return jwtSecrets[0].Secret
+	}
+	return []byte(os.Getenv("JWT_SECRET"))
+}
+
+func getCurrentTokenVersion(ctx context.Context) int64 {
+	if fsClient == nil {
+		return 1
+	}
+	doc, err := fsClient.Collection("config").Doc("auth").Get(ctx)
+	if err != nil {
+		return 1
+	}
+	var cfg struct {
+		TokenVersion int64 `json:"tokenVersion" firestore:"tokenVersion"`
+	}
+	doc.DataTo(&cfg)
+	if cfg.TokenVersion < 1 {
+		return 1
+	}
+	return cfg.TokenVersion
+}
+
 func handleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
@@ -309,6 +465,17 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
+		Value:    "",
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		Path:     "/",
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "csrf_token",
 		Value:    "",
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
@@ -364,18 +531,17 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// [SECURITY FIX] Валидация всех полей проекта
 	for _, p := range projectList {
 		if err := validateProjectID(p.ID); err != nil {
-			sendError(w, http.StatusBadRequest, "Неверный ID проекта: "+err.Error())
+			sendError(w, http.StatusBadRequest, "Некорректные данные проекта")
 			return
 		}
 		if len(p.Name) == 0 || len(p.Name) > 100 {
-			sendError(w, http.StatusBadRequest, "Недопустимая длина имени")
+			sendError(w, http.StatusBadRequest, "Некорректные данные проекта")
 			return
 		}
 		if len(p.Comment) > 1000 {
-			sendError(w, http.StatusBadRequest, "Слишком длинный комментарий")
+			sendError(w, http.StatusBadRequest, "Некорректные данные проекта")
 			return
 		}
 	}
@@ -391,10 +557,15 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	auditLog(r.Context(), AuditEntry{
+		Action:  "projects.save",
+		AdminIP: getRealIP(r),
+		Details: map[string]int{"count": len(projectList)},
+	})
+
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
-// [SECURITY FIX] Валидация URL Demonlist для предотвращения SSRF
 func validateDemonlistURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -445,7 +616,7 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	result := make([]FullPlayerData, 0, len(players))
-	sem := make(chan struct{}, 5) // Ограничиваем параллелизм
+	sem := make(chan struct{}, 5)
 
 	for _, p := range players {
 		wg.Add(1)
@@ -456,13 +627,11 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 
 			entry := FullPlayerData{Name: name}
 
-			// User Info
 			u1 := fmt.Sprintf("https://api.demonlist.org/leaderboard/user/list?search=%s&limit=1", url.QueryEscape(name))
 			if body, err := fetchAPIWithRetry(ctx, u1, 2); err == nil {
 				json.Unmarshal(body, &entry.Data)
 			}
 
-			// Records (если ID найден)
 			userID := extractUserID(entry.Data, name)
 			if userID != "" {
 				u2 := fmt.Sprintf("https://api.demonlist.org/user/record/list?user_id=%s&limit=50", userID)
@@ -510,11 +679,11 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := validateNickname(req.Nickname); err != nil {
-		sendError(w, http.StatusBadRequest, err.Error())
+		sendError(w, http.StatusBadRequest, "Некорректные данные")
 		return
 	}
 	if err := validateDiscord(req.Discord); err != nil {
-		sendError(w, http.StatusBadRequest, err.Error())
+		sendError(w, http.StatusBadRequest, "Некорректные данные")
 		return
 	}
 
@@ -542,9 +711,19 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		sendError(w, http.StatusInternalServerError, err.Error())
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
+
+	auditLog(r.Context(), AuditEntry{
+		Action:  "staff.add",
+		AdminIP: getRealIP(r),
+		Details: map[string]interface{}{
+			"roleIndex": req.RoleIndex,
+			"nickname":  req.Nickname,
+		},
+	})
+
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
@@ -565,7 +744,7 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 
 	req.Name = strings.TrimSpace(req.Name)
 	if err := validateRoleName(req.Name); err != nil {
-		sendError(w, http.StatusBadRequest, err.Error())
+		sendError(w, http.StatusBadRequest, "Некорректные данные")
 		return
 	}
 	if req.Color == "" {
@@ -594,9 +773,15 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		sendError(w, http.StatusInternalServerError, err.Error())
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
+
+	auditLog(r.Context(), AuditEntry{
+		Action:  "staff.createRole",
+		AdminIP: getRealIP(r),
+		Details: map[string]string{"name": req.Name, "color": req.Color},
+	})
 
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "name": req.Name, "color": req.Color, "players": []StaffPlayer{}})
 }
@@ -636,9 +821,15 @@ func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		sendError(w, http.StatusInternalServerError, err.Error())
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
+
+	auditLog(r.Context(), AuditEntry{
+		Action:  "staff.deleteRole",
+		AdminIP: getRealIP(r),
+		Details: map[string]int{"roleIndex": req.RoleIndex},
+	})
 
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
@@ -654,28 +845,111 @@ func handleStaffRole(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Handler — точка входа
+func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	var req struct {
+		RoleIndex int    `json:"roleIndex"`
+		Nickname  string `json:"nickname"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Кривой JSON")
+		return
+	}
+
+	ctx := r.Context()
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("staff")
+		doc, err := tx.Get(docRef)
+		if err != nil {
+			return err
+		}
+		var data struct {
+			Roles []StaffRole `json:"roles" firestore:"roles"`
+		}
+		doc.DataTo(&data)
+
+		if req.RoleIndex < 0 || req.RoleIndex >= len(data.Roles) {
+			return errors.New("invalid role index")
+		}
+
+		players := data.Roles[req.RoleIndex].Players
+		found := false
+		for i, p := range players {
+			if p.Nickname == req.Nickname {
+				data.Roles[req.RoleIndex].Players = append(players[:i], players[i+1:]...)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return errors.New("player not found")
+		}
+		return tx.Set(docRef, data)
+	})
+
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		return
+	}
+
+	auditLog(r.Context(), AuditEntry{
+		Action:  "staff.removePlayer",
+		AdminIP: getRealIP(r),
+		Details: map[string]interface{}{
+			"roleIndex": req.RoleIndex,
+			"nickname":  req.Nickname,
+		},
+	})
+
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
 func Handler(w http.ResponseWriter, r *http.Request) {
-	// [SECURITY FIX] Security Headers
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-XSS-Protection", "1; mode=block")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://www.youtube.com;")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://www.youtube.com; object-src 'none'; base-uri 'none'; form-action 'self'")
+
+	origin := r.Header.Get("Origin")
+	if origin != "" {
+		allowedOrigins := map[string]bool{
+			"https://smlt-demonlist.vercel.app": true,
+			"https://smlt-demonlist.ru":         true,
+			"https://www.smlt-demonlist.ru":     true,
+		}
+		if allowedOrigins[origin] {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token, X-Requested-With")
+			w.Header().Set("Access-Control-Max-Age", "86400")
+		}
+	}
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
 	path := requestPath(r)
 
-	// Роутинг с применением middleware
 	mux := map[string]http.HandlerFunc{
 		"/api/login":         rateLimitLoginMiddleware(handleLogin),
-		"/api/logout":        rateLimitMiddleware(handleLogout),
+		"/api/logout":        rateLimitLoginMiddleware(handleLogout),
+		"/api/verify":        rateLimitMiddleware(handleVerify),
 		"/api/csrf-token":    rateLimitMiddleware(handleGetCSRFToken),
 		"/api/leaderboard":   rateLimitMiddleware(handleLeaderboard),
 		"/api/staff":         rateLimitMiddleware(authMiddleware(handleGetStaff)),
 		"/api/staff/add":     rateLimitMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd))),
 		"/api/staff/role":    rateLimitMiddleware(authMiddleware(csrfMiddleware(handleStaffRole))),
+		"/api/staff/remove":  rateLimitMiddleware(authMiddleware(csrfMiddleware(handleStaffRemove))),
 		"/api/projects":      rateLimitMiddleware(handleGetProjects),
 		"/api/projects/save": rateLimitMiddleware(authMiddleware(csrfMiddleware(handleSaveProjects))),
 	}
@@ -685,10 +959,14 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	path = strings.TrimSuffix(path, "/")
+	if h, ok := mux[path]; ok {
+		h(w, r)
+		return
+	}
+
 	sendError(w, http.StatusNotFound, "Роут не найден")
 }
-
-// --- RATE LIMITING ---
 
 type rateLimiter interface {
 	allow(ctx context.Context, key string, max int, window time.Duration) (bool, error)
@@ -706,7 +984,6 @@ type memBucket struct {
 
 func newMemoryLimiter() rateLimiter {
 	m := &memoryLimiter{keys: make(map[string]*memBucket)}
-	// [SECURITY FIX] Фоновая очистка лимитера
 	go m.cleanup()
 	return m
 }
@@ -770,14 +1047,91 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 func rateLimitLoginMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !checkRateLimit(w, r, 5) {
+		if !checkLoginRateLimit(w, r) {
 			return
 		}
 		next(w, r)
 	}
 }
 
-// --- VALIDATION ---
+func checkLoginRateLimit(w http.ResponseWriter, r *http.Request) bool {
+	ip := hashIP(getRealIP(r))
+	key := "login:" + ip
+
+	if fsClient != nil {
+		return checkFirestoreLoginLimit(w, r, key)
+	}
+
+	ok, _ := globalRateLimiter.allow(r.Context(), key, 5, time.Minute)
+	if !ok {
+		sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
+		return false
+	}
+	return true
+}
+
+func checkFirestoreLoginLimit(w http.ResponseWriter, r *http.Request, key string) bool {
+	ctx := r.Context()
+	docRef := fsClient.Collection("rate_limits").Doc(key)
+
+	maxAttempts := 5
+	window := 1 * time.Minute
+
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		doc, err := tx.Get(docRef)
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				return tx.Set(docRef, map[string]interface{}{
+					"count":   1,
+					"resetAt": time.Now().Add(window),
+				})
+			}
+			return err
+		}
+
+		var data struct {
+			Count   int       `firestore:"count"`
+			ResetAt time.Time `firestore:"resetAt"`
+		}
+		doc.DataTo(&data)
+
+		if time.Now().After(data.ResetAt) {
+			return tx.Set(docRef, map[string]interface{}{
+				"count":   1,
+				"resetAt": time.Now().Add(window),
+			})
+		}
+
+		if data.Count >= maxAttempts {
+			return errors.New("rate limit exceeded")
+		}
+
+		return tx.Set(docRef, map[string]interface{}{
+			"count":   data.Count + 1,
+			"resetAt": data.ResetAt,
+		})
+	})
+
+	if err != nil {
+		if err.Error() == "rate limit exceeded" {
+			sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
+			return false
+		}
+	}
+
+	return true
+}
+
+func auditLog(ctx context.Context, entry AuditEntry) {
+	if fsClient == nil {
+		return
+	}
+	entry.CreatedAt = time.Now()
+	_, err := fsClient.Collection("audit_log").NewDoc().Set(ctx, entry)
+	if err != nil {
+		log.Printf("[audit] failed to write log: %v", err)
+	}
+}
 
 func validateProjectID(id string) error {
 	if id == "" {
@@ -813,12 +1167,10 @@ func validateRoleName(n string) error {
 	return nil
 }
 
-// --- UTILS ---
-
 func requestPath(r *http.Request) string {
 	p := r.URL.Path
 	if p == "/api" || p == "/api/" {
-		return r.RequestURI // Vercel workaround
+		return r.RequestURI
 	}
 	return p
 }
@@ -873,10 +1225,8 @@ func extractUserID(data interface{}, playerName string) string {
 	if !ok {
 		return ""
 	}
-	// [SECURITY FIX] Safe navigation through nested maps
 	d, ok := m["data"].(map[string]interface{})
 	if !ok {
-		// Fallback if structure is different
 		if users, ok := m["users"].([]interface{}); ok {
 			return findUserID(users, playerName)
 		}

@@ -140,19 +140,70 @@
 
     <!-- Модальное окно входа хоста -->
     <div id="hostModal" class="modal-overlay">
-        <div class="modal" data-action="stop-propagation">
-
-        <button class="modal-close" data-action="close-host-modal">✕</button>
-
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">🔐 Вход хоста</div>
+                <button class="modal-close" data-action="close-host-modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="hostPassword">Введите пароль:</label>
+                    <input type="password" id="hostPassword" class="form-input" placeholder="Пароль">
+                </div>
                 <button class="btn btn-primary" data-action="verify-host">Войти</button>
+                <div id="hostError" class="error-message" style="display: none;">Неверный пароль!</div>
+            </div>
+        </div>
+    </div>
 
-        <div class="modal modal-lg" data-action="stop-propagation">
-
+    <!-- Модальное окно редактирования проекта -->
+    <div id="projectModal" class="modal-overlay">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <div class="modal-title" id="projectModalTitle">Редактировать проект</div>
                 <button class="modal-close" data-action="close-project-modal">✕</button>
-
-                <button class="btn btn-secondary" data-action="close-project-modal">Отмена</button>
-                <button class="btn btn-primary" data-action="save-project">Сохранить</button>
-
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="projectIndex" value="-1">
+                <div class="form-group">
+                    <label for="projectName">Название:</label>
+                    <input type="text" id="projectName" class="form-input" placeholder="Название проекта">
+                </div>
+                <div class="form-group">
+                    <label for="projectVideo">Ссылка на видео:</label>
+                    <input type="text" id="projectVideo" class="form-input" placeholder="YouTube URL">
+                </div>
+                <div class="form-group">
+                    <label for="projectId">ID:</label>
+                    <input type="text" id="projectId" class="form-input" placeholder="ID проекта">
+                </div>
+                <div class="form-group">
+                    <label for="projectComment">Комментарий:</label>
+                    <textarea id="projectComment" class="form-input" rows="3" placeholder="Комментарий"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="projectStatus">Статус:</label>
+                    <select id="projectStatus" class="form-input">
+                        <option value="готов">Готов</option>
+                        <option value="в процессе верифа">В процессе верифа</option>
+                        <option value="в процессе постройки">В процессе постройки</option>
+                        <option value="планируется">Планируется</option>
+                        <option value="заморожен">Заморожен</option>
+                        <option value="мёртв">Мёртв</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="projectVerifier">Верифнул:</label>
+                    <input type="text" id="projectVerifier" class="form-input" placeholder="Кто верифнул">
+                </div>
+                <div class="form-group">
+                    <label for="projectParticipants">Участники:</label>
+                    <textarea id="projectParticipants" class="form-input" rows="3" placeholder="Участники через запятую"></textarea>
+                </div>
+                <div style="display: flex; gap: var(--spacing-sm); margin-top: var(--spacing-md);">
+                    <button class="btn btn-secondary" data-action="close-project-modal">Отмена</button>
+                    <button class="btn btn-primary" data-action="save-project">Сохранить</button>
+                </div>
             </div>
         </div>
     </div>
