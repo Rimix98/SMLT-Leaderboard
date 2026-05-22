@@ -25,6 +25,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // === КОНФИГ И ГЛОБАЛКИ ===
@@ -546,6 +548,112 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
+func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	var req struct {
+		Name  string `json:"name"`
+		Color string `json:"color"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Кривой JSON")
+		return
+	}
+
+	req.Name = strings.TrimSpace(req.Name)
+	if err := validateRoleName(req.Name); err != nil {
+		sendError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.Color == "" {
+		req.Color = "#3b82f6"
+	}
+
+	ctx := r.Context()
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("staff")
+		doc, err := tx.Get(docRef)
+		var data struct {
+			Roles []StaffRole `json:"roles" firestore:"roles"`
+		}
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				data.Roles = []StaffRole{}
+			} else {
+				return err
+			}
+		} else {
+			doc.DataTo(&data)
+		}
+
+		data.Roles = append(data.Roles, StaffRole{Name: req.Name, Color: req.Color, Players: []StaffPlayer{}})
+		return tx.Set(docRef, data)
+	})
+
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "name": req.Name, "color": req.Color, "players": []StaffPlayer{}})
+}
+
+func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		methodNotAllowed(w, http.MethodDelete)
+		return
+	}
+
+	var req struct {
+		RoleIndex int `json:"roleIndex"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Кривой JSON")
+		return
+	}
+
+	ctx := r.Context()
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("staff")
+		doc, err := tx.Get(docRef)
+		if err != nil {
+			return err
+		}
+		var data struct {
+			Roles []StaffRole `json:"roles" firestore:"roles"`
+		}
+		doc.DataTo(&data)
+
+		if req.RoleIndex < 0 || req.RoleIndex >= len(data.Roles) {
+			return errors.New("invalid role index")
+		}
+
+		data.Roles = append(data.Roles[:req.RoleIndex], data.Roles[req.RoleIndex+1:]...)
+		return tx.Set(docRef, data)
+	})
+
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func handleStaffRole(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		handleCreateStaffRole(w, r)
+	case http.MethodDelete:
+		handleDeleteStaffRole(w, r)
+	default:
+		methodNotAllowed(w, "POST, DELETE")
+	}
+}
+
 // Handler — точка входа
 func Handler(w http.ResponseWriter, r *http.Request) {
 	// [SECURITY FIX] Security Headers
@@ -567,6 +675,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/leaderboard":   rateLimitMiddleware(handleLeaderboard),
 		"/api/staff":         rateLimitMiddleware(authMiddleware(handleGetStaff)),
 		"/api/staff/add":     rateLimitMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd))),
+		"/api/staff/role":    rateLimitMiddleware(authMiddleware(csrfMiddleware(handleStaffRole))),
 		"/api/projects":      rateLimitMiddleware(handleGetProjects),
 		"/api/projects/save": rateLimitMiddleware(authMiddleware(csrfMiddleware(handleSaveProjects))),
 	}
