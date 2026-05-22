@@ -20,6 +20,8 @@ import (
 	"sync"
 	"time"
 
+	blacklistpkg "smlt-backend/api/blacklist"
+
 	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go"
 	"github.com/golang-jwt/jwt/v5"
@@ -38,62 +40,12 @@ var (
 	trustProxy     bool
 	maxRequestBody = int64(1024 * 1024)
 
-	jwtBlacklist  Blacklist
+	jwtBlacklist  blacklistpkg.JWTBlacklist
 	blacklistOnce sync.Once
 
 	globalRateLimiter rateLimiter
 	rlOnce            sync.Once
 )
-
-type Blacklist interface {
-	IsBlacklisted(token string) bool
-	Add(token string, exp time.Time)
-}
-
-type memoryBlacklist struct {
-	mu     sync.RWMutex
-	tokens map[string]time.Time
-}
-
-func newMemoryBlacklist() Blacklist {
-	bl := &memoryBlacklist{tokens: make(map[string]time.Time)}
-	// [SECURITY FIX] Фоновая очистка blacklist
-	go bl.cleanup()
-	return bl
-}
-
-func (b *memoryBlacklist) IsBlacklisted(token string) bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	exp, ok := b.tokens[token]
-	if !ok {
-		return false
-	}
-	if time.Now().After(exp) {
-		return false // Уже протух, можно не считать в блэклисте
-	}
-	return true
-}
-
-func (b *memoryBlacklist) Add(token string, exp time.Time) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tokens[token] = exp
-}
-
-func (b *memoryBlacklist) cleanup() {
-	ticker := time.NewTicker(1 * time.Hour)
-	for range ticker.C {
-		now := time.Now()
-		b.mu.Lock()
-		for t, exp := range b.tokens {
-			if now.After(exp) {
-				delete(b.tokens, t)
-			}
-		}
-		b.mu.Unlock()
-	}
-}
 
 // === ТИПЫ ДАННЫХ ===
 type StaffPlayer struct {
@@ -172,8 +124,15 @@ func initFirestore() {
 
 func initJWTBlacklist() {
 	blacklistOnce.Do(func() {
-		jwtBlacklist = newMemoryBlacklist()
-		log.Println("[jwt] Blacklist initialized")
+		redisURL := os.Getenv("UPSTASH_REDIS_REST_URL")
+		redisToken := os.Getenv("UPSTASH_REDIS_REST_TOKEN")
+		if redisURL != "" && redisToken != "" {
+			jwtBlacklist = blacklistpkg.NewUpstashBlacklist(redisURL, redisToken)
+			log.Println("[jwt] Успешно инициализирован Upstash Redis")
+		} else {
+			jwtBlacklist = blacklistpkg.NewMemoryBlacklist()
+			log.Println("[jwt] ВНИМАНИЕ: Переменные Redis не найдены. Откат на MemoryBlacklist (Не для продакшена!)")
+		}
 	})
 }
 
@@ -252,7 +211,13 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		tokenString := cookie.Value
 
-		if jwtBlacklist.IsBlacklisted(tokenString) {
+		blacklisted, err := jwtBlacklist.IsBlacklisted(r.Context(), tokenString)
+		if err != nil {
+			log.Printf("[jwt] blacklist check error: %v", err)
+			sendError(w, http.StatusInternalServerError, "Ошибка проверки токена")
+			return
+		}
+		if blacklisted {
 			sendError(w, http.StatusUnauthorized, "Сессия аннулирована")
 			return
 		}
@@ -373,7 +338,9 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 
 	if cookie, err := r.Cookie("auth_token"); err == nil {
 		// [SECURITY FIX] Добавление в blacklist при логауте
-		jwtBlacklist.Add(cookie.Value, time.Now().Add(24*time.Hour))
+		if err := jwtBlacklist.Add(r.Context(), cookie.Value, time.Now().Add(24*time.Hour)); err != nil {
+			log.Printf("[jwt] blacklist add error: %v", err)
+		}
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -524,7 +491,7 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 			defer func() { <-sem }()
 
 			entry := FullPlayerData{Name: name}
-			
+
 			// User Info
 			u1 := fmt.Sprintf("https://api.demonlist.org/leaderboard/user/list?search=%s&limit=1", url.QueryEscape(name))
 			if body, err := fetchAPIWithRetry(ctx, u1, 2); err == nil {
@@ -629,16 +596,16 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://www.youtube.com;")
 
 	path := requestPath(r)
-	
+
 	// Роутинг с применением middleware
 	mux := map[string]http.HandlerFunc{
-		"/api/login":        rateLimitLoginMiddleware(handleLogin),
-		"/api/logout":       rateLimitMiddleware(handleLogout),
-		"/api/csrf-token":   rateLimitMiddleware(handleGetCSRFToken),
-		"/api/leaderboard":  rateLimitMiddleware(handleLeaderboard),
-		"/api/staff":        rateLimitMiddleware(authMiddleware(handleGetStaff)),
-		"/api/staff/add":    rateLimitMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd))),
-		"/api/projects":     rateLimitMiddleware(handleGetProjects),
+		"/api/login":         rateLimitLoginMiddleware(handleLogin),
+		"/api/logout":        rateLimitMiddleware(handleLogout),
+		"/api/csrf-token":    rateLimitMiddleware(handleGetCSRFToken),
+		"/api/leaderboard":   rateLimitMiddleware(handleLeaderboard),
+		"/api/staff":         rateLimitMiddleware(authMiddleware(handleGetStaff)),
+		"/api/staff/add":     rateLimitMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd))),
+		"/api/projects":      rateLimitMiddleware(handleGetProjects),
 		"/api/projects/save": rateLimitMiddleware(authMiddleware(csrfMiddleware(handleSaveProjects))),
 	}
 
@@ -723,14 +690,18 @@ func checkRateLimit(w http.ResponseWriter, r *http.Request, max int) bool {
 
 func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !checkRateLimit(w, r, 60) { return }
+		if !checkRateLimit(w, r, 60) {
+			return
+		}
 		next(w, r)
 	}
 }
 
 func rateLimitLoginMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !checkRateLimit(w, r, 5) { return }
+		if !checkRateLimit(w, r, 5) {
+			return
+		}
 		next(w, r)
 	}
 }
@@ -738,7 +709,9 @@ func rateLimitLoginMiddleware(next http.HandlerFunc) http.HandlerFunc {
 // --- VALIDATION ---
 
 func validateProjectID(id string) error {
-	if id == "" { return errors.New("empty id") }
+	if id == "" {
+		return errors.New("empty id")
+	}
 	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]{1,50}$`, id); !matched {
 		return errors.New("invalid id format")
 	}
@@ -746,18 +719,26 @@ func validateProjectID(id string) error {
 }
 
 func validateNickname(n string) error {
-	if len(n) < 2 || len(n) > 32 { return errors.New("invalid nickname length") }
+	if len(n) < 2 || len(n) > 32 {
+		return errors.New("invalid nickname length")
+	}
 	return nil
 }
 
 func validateDiscord(d string) error {
-	if d == "" { return nil }
-	if len(d) > 64 { return errors.New("discord too long") }
+	if d == "" {
+		return nil
+	}
+	if len(d) > 64 {
+		return errors.New("discord too long")
+	}
 	return nil
 }
 
 func validateRoleName(n string) error {
-	if len(n) < 2 || len(n) > 32 { return errors.New("invalid role name length") }
+	if len(n) < 2 || len(n) > 32 {
+		return errors.New("invalid role name length")
+	}
 	return nil
 }
 
