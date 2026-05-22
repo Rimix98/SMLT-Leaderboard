@@ -1,152 +1,182 @@
 package handler
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"log"
+	"net/http"
+	"os"
 	"sync"
 	"time"
 )
 
 // ============================================
-// JWT BLACKLIST INTERFACE
+// JWT BLACKLIST INTERFACE (Теперь с Context)
 // ============================================
 
 type JWTBlacklist interface {
-	// Добавить токен в черный список
-	Add(token string, expiresAt time.Time) error
-	// Проверить, не в черном ли списке
-	IsBlacklisted(token string) bool
-	// Очистить просроченные токены
-	Cleanup() error
+	Add(ctx context.Context, token string, expiresAt time.Time) error
+	IsBlacklisted(ctx context.Context, token string) (bool, error)
 }
 
-// ============================================
-// IN-MEMORY IMPLEMENTATION (для разработки)
-// ============================================
-
-type MemoryBlacklist struct {
-	mu      sync.RWMutex
-	tokens  map[string]time.Time // token_hash -> expires_at
-	cleaner *time.Ticker
-	done    chan bool
-}
-
-func NewMemoryBlacklist() *MemoryBlacklist {
-	bl := &MemoryBlacklist{
-		tokens:  make(map[string]time.Time),
-		cleaner: time.NewTicker(1 * time.Hour), // Чистим каждый час
-		done:    make(chan bool),
-	}
-	go bl.cleanupLoop()
-	return bl
-}
-
-// Хэшируем токен перед сохранением (безопасность)
+// Хэшируем токен перед сохранением (чтобы не хранить сырые JWT в базе)
 func hashToken(token string) string {
 	hash := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(hash[:])
 }
 
-func (b *MemoryBlacklist) Add(token string, expiresAt time.Time) error {
+// ============================================
+// UPSTASH REDIS IMPLEMENTATION (Для Vercel)
+// ============================================
+
+type UpstashBlacklist struct {
+	url   string
+	token string
+}
+
+func NewUpstashBlacklist(url, token string) *UpstashBlacklist {
+	return &UpstashBlacklist{url: url, token: token}
+}
+
+func (u *UpstashBlacklist) Add(ctx context.Context, token string, expiresAt time.Time) error {
 	if token == "" {
 		return nil
 	}
+	
+	ttl := int64(time.Until(expiresAt).Seconds())
+	if ttl <= 0 {
+		return nil // Токен уже просрочен, в базу писать нет смысла
+	}
 
 	tokenHash := hashToken(token)
+	// Ключ в Redis делаем с префиксом, чтобы не путать с рейт-лимитами
+	key := "blacklist:" + tokenHash
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	// Используем Upstash REST API: SET key true EX seconds
+	reqURL := fmt.Sprintf("%s/set/%s/true/EX/%d", u.url, key, ttl)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+u.token)
 
-	b.tokens[tokenHash] = expiresAt
-	log.Printf("[blacklist] Token added, expires at %v", expiresAt)
+	// Юзаем httpClient, который объявлен глобально в index.go
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("upstash error: status %d", resp.StatusCode)
+	}
+
+	log.Printf("[blacklist] Токен успешно забанен в Redis на %d сек.", ttl)
 	return nil
 }
 
-func (b *MemoryBlacklist) IsBlacklisted(token string) bool {
+func (u *UpstashBlacklist) IsBlacklisted(ctx context.Context, token string) (bool, error) {
 	if token == "" {
-		return false
+		return false, nil
 	}
 
 	tokenHash := hashToken(token)
+	key := "blacklist:" + tokenHash
 
-	b.mu.RLock()
-	expiresAt, exists := b.tokens[tokenHash]
-	b.mu.RUnlock()
+	reqURL := fmt.Sprintf("%s/get/%s", u.url, key)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+u.token)
 
-	if !exists {
-		return false
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("upstash error: status %d", resp.StatusCode)
 	}
 
-	// Если токен просрочен, удаляем из blacklist (он уже невалидный по времени)
-	if time.Now().After(expiresAt) {
-		go b.Remove(tokenHash) // Асинхронно удаляем
-		return false
+	var upstashResp struct {
+		Result *string `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&upstashResp); err != nil {
+		return false, err
 	}
 
-	return true
+	// Если Redis вернул "true", значит токен в черном списке
+	return upstashResp.Result != nil && *upstashResp.Result == "true", nil
 }
 
-func (b *MemoryBlacklist) Remove(tokenHash string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	delete(b.tokens, tokenHash)
+// ============================================
+// IN-MEMORY IMPLEMENTATION (Только для локальной разработки)
+// ============================================
+
+type MemoryBlacklist struct {
+	mu     sync.Mutex
+	tokens map[string]time.Time // token_hash -> expires_at
 }
 
-func (b *MemoryBlacklist) Cleanup() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	now := time.Now()
-	for hash, expiresAt := range b.tokens {
-		if now.After(expiresAt) {
-			delete(b.tokens, hash)
-		}
+func NewMemoryBlacklist() *MemoryBlacklist {
+	return &MemoryBlacklist{
+		tokens: make(map[string]time.Time),
 	}
+}
+
+func (b *MemoryBlacklist) Add(_ context.Context, token string, expiresAt time.Time) error {
+	if token == "" {
+		return nil
+	}
+	b.mu.Lock()
+	b.tokens[hashToken(token)] = expiresAt
+	b.mu.Unlock()
 	return nil
 }
 
-func (b *MemoryBlacklist) cleanupLoop() {
-	for {
-		select {
-		case <-b.cleaner.C:
-			if err := b.Cleanup(); err != nil {
-				log.Printf("[blacklist] Cleanup error: %v", err)
-			}
-		case <-b.done:
-			return
-		}
+func (b *MemoryBlacklist) IsBlacklisted(_ context.Context, token string) (bool, error) {
+	if token == "" {
+		return false, nil
 	}
-}
+	tokenHash := hashToken(token)
 
-func (b *MemoryBlacklist) Stop() {
-	b.cleaner.Stop()
-	close(b.done)
+	b.mu.Lock() // Берем обычный Lock, так как внутри возможна синхронная очистка
+	defer b.mu.Unlock()
+
+	expiresAt, exists := b.tokens[tokenHash]
+	if !exists {
+		return false, nil
+	}
+
+	// Если токен просрочен, удаляем его прямо во время запроса без фоновых горутин
+	if time.Now().After(expiresAt) {
+		delete(b.tokens, tokenHash)
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // ============================================
-// REDIS IMPLEMENTATION
+// ИНИЦИАЛИЗАЦИЯ (Вызывать внутри глобального init() в index.go)
 // ============================================
 
-type RedisBlacklist struct {
-	client interface{} // *redis.Client или другой клиент
-	// Добавь реальную реализацию если используешь Redis
-}
-
-func NewRedisBlacklist(client interface{}) *RedisBlacklist {
-	return &RedisBlacklist{client: client}
-}
-
-// Глобальный экземпляр blacklist
 var blacklist JWTBlacklist
 
-// Инициализация blacklist (вызвать в init())
-func initBlacklist() {
-	// Для начала используем memory версию
-	blacklist = NewMemoryBlacklist()
-	log.Println("[blacklist] Initialized with memory storage")
+func InitBlacklist() {
+	redisURL := os.Getenv("UPSTASH_REDIS_REST_URL")
+	redisToken := os.Getenv("UPSTASH_REDIS_REST_TOKEN")
 
-	// Если есть Redis - можно использовать его
-	// redisClient := redis.NewClient(&redis.Options{...})
-	// blacklist = NewRedisBlacklist(redisClient)
+	if redisURL != "" && redisToken != "" {
+		blacklist = NewUpstashBlacklist(redisURL, redisToken)
+		log.Println("[blacklist] Успешно инициализирован Upstash Redis")
+	} else {
+		blacklist = NewMemoryBlacklist()
+		log.Println("[blacklist] ВНИМАНИЕ: Переменные Redis не найдены. Откат на MemoryBlacklist (Не для продакшена!)")
+	}
 }
