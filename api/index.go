@@ -20,8 +20,6 @@ import (
 	"sync"
 	"time"
 
-	blacklistpkg "smlt-backend/api/blacklist"
-
 	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go"
 	"github.com/golang-jwt/jwt/v5"
@@ -39,9 +37,6 @@ var (
 
 	trustProxy     bool
 	maxRequestBody = int64(1024 * 1024)
-
-	jwtBlacklist  blacklistpkg.JWTBlacklist
-	blacklistOnce sync.Once
 
 	globalRateLimiter rateLimiter
 	rlOnce            sync.Once
@@ -93,7 +88,6 @@ var defaultPlayerNames = []string{
 func init() {
 	trustProxy = os.Getenv("TRUST_PROXY") == "true" || os.Getenv("VERCEL") == "1"
 	initFirestore()
-	initJWTBlacklist()
 	initRateLimiter()
 }
 
@@ -118,20 +112,6 @@ func initFirestore() {
 		if err != nil {
 			fsErr = err
 			log.Printf("[firestore] connect: %v", err)
-		}
-	})
-}
-
-func initJWTBlacklist() {
-	blacklistOnce.Do(func() {
-		redisURL := os.Getenv("UPSTASH_REDIS_REST_URL")
-		redisToken := os.Getenv("UPSTASH_REDIS_REST_TOKEN")
-		if redisURL != "" && redisToken != "" {
-			jwtBlacklist = blacklistpkg.NewUpstashBlacklist(redisURL, redisToken)
-			log.Println("[jwt] Успешно инициализирован Upstash Redis")
-		} else {
-			jwtBlacklist = blacklistpkg.NewMemoryBlacklist()
-			log.Println("[jwt] ВНИМАНИЕ: Переменные Redis не найдены. Откат на MemoryBlacklist (Не для продакшена!)")
 		}
 	})
 }
@@ -210,17 +190,6 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		tokenString := cookie.Value
-
-		blacklisted, err := jwtBlacklist.IsBlacklisted(r.Context(), tokenString)
-		if err != nil {
-			log.Printf("[jwt] blacklist check error: %v", err)
-			sendError(w, http.StatusInternalServerError, "Ошибка проверки токена")
-			return
-		}
-		if blacklisted {
-			sendError(w, http.StatusUnauthorized, "Сессия аннулирована")
-			return
-		}
 
 		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -334,13 +303,6 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
 		return
-	}
-
-	if cookie, err := r.Cookie("auth_token"); err == nil {
-		// [SECURITY FIX] Добавление в blacklist при логауте
-		if err := jwtBlacklist.Add(r.Context(), cookie.Value, time.Now().Add(24*time.Hour)); err != nil {
-			log.Printf("[jwt] blacklist add error: %v", err)
-		}
 	}
 
 	http.SetCookie(w, &http.Cookie{
