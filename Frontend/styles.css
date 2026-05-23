@@ -373,6 +373,7 @@ a:hover {
     color: var(--color-text-primary);
 }
 
+.highlight,
 .info-value .highlight {
     color: var(--color-secondary);
 }
