@@ -45,6 +45,12 @@
                     <a href="projects.html" class="nav-link">Проекты</a>
                     <a href="staff.html" class="nav-link active">Стафф</a>
                 </nav>
+                <div class="header-actions">
+                    <button class="btn btn-secondary btn-lg" id="infoBtn">
+                        <span>ℹ️</span>
+                        <span>Информация</span>
+                    </button>
+                </div>
             </div>
         </header>
 
@@ -67,6 +73,26 @@
                     </div>
                 </section>
 
+                <section class="info-section">
+                    <div class="info-card">
+                        <h3 class="info-title">📋 Контакты</h3>
+                        <div class="info-content">
+                            <div class="info-item">
+                                <span class="info-label">Discord Server</span>
+                                <a href="https://discord.gg/VK56W7ZzdA" target="_blank"
+                                    class="info-value">discord.gg/VK56W7ZzdA</a>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Разработчик</span>
+                                <div class="info-value">
+                                    Discord: <span class="highlight">@rimix.98</span><br>
+                                    Telegram: <span class="highlight">@rimix_98</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
                 <div id="staffLoadingState" class="loading-state">
                     <div class="spinner"></div>
                     <div class="loading-text">Загрузка состава...</div>
@@ -77,6 +103,48 @@
                 </div>
             </div>
         </main>
+
+        <!-- Модальное окно информации -->
+        <div id="infoModal" class="modal-overlay">
+            <div class="modal" style="max-width: 480px;">
+                <div class="modal-header">
+                    <div class="modal-title">📋 Информация</div>
+                    <button class="modal-close">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div style="display: flex; flex-direction: column; gap: var(--spacing-md);">
+                        <div
+                            style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
+                            <div
+                                style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">
+                                Discord Server</div>
+                            <a href="https://discord.gg/VK56W7ZzdA" target="_blank"
+                                style="color: var(--color-secondary); font-weight: 600;">discord.gg/VK56W7ZzdA</a>
+                        </div>
+                        <div
+                            style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
+                            <div
+                                style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">
+                                Admin</div>
+                            <div style="font-weight: 500;">Discord: <span
+                                    style="color: var(--color-secondary);">@.samoletik</span></div>
+                            <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span
+                                    style="color: var(--color-secondary);">@samoltik</span></div>
+                        </div>
+                        <div
+                            style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md); border-left: 3px solid var(--color-success);">
+                            <div
+                                style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">
+                                🔒 За безопасность и бекенд отвечал</div>
+                            <div style="font-weight: 500;">Discord: <span
+                                    style="color: var(--color-secondary);">@rimix.98</span></div>
+                            <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span
+                                    style="color: var(--color-secondary);">@rimix_98</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Модальное окно создания роли -->
         <div id="addRoleModal" class="modal-overlay">
