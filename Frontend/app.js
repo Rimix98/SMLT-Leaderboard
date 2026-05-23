@@ -775,7 +775,6 @@ async function loadGeoStats() {
         const maxPlayers = sortedStats[0] ? sortedStats[0][1] : 1;
 
         sortedStats.forEach(([countryCode, count]) => {
-            const flag = FLAGS[countryCode] || '🏳️';
             const percentage = (count / maxPlayers) * 100;
             const row = h(
                 'div',
@@ -784,7 +783,10 @@ async function loadGeoStats() {
                     style: { display: 'flex', alignItems: 'center', marginBottom: '8px' },
                 },
                 [
-                    h('span', { style: { width: '50px' } }, [document.createTextNode(`${flag} ${countryCode}`)]),
+                    h('span', { style: { width: '50px', display: 'flex', alignItems: 'center' } }, [
+                        getFlag(countryCode),
+                        document.createTextNode(` ${countryCode}`)
+                    ]),
                     h(
                         'div',
                         {
@@ -836,13 +838,23 @@ async function savePlayerNames(names) {
 
 
 function getFlag(c) {
-    if (!c) return '❌';
-    const upper = c.toUpperCase();
-    if (FLAGS[upper]) return FLAGS[upper];
-    const lower = c.toLowerCase().trim().replace(/\s+/g, '-');
-    const code = COUNTRY_TO_CODE[lower];
-    if (code && FLAGS[code]) return FLAGS[code];
-    return '🌍';
+    const code = resolveCountry(c);
+    if (!code) {
+        return h('span', { className: 'flag-emoji' }, [c === null ? '❌' : '🌍']);
+    }
+    return h('img', {
+        className: 'flag-img',
+        attrs: {
+            src: `https://flagcdn.com/w20/${code.toLowerCase()}.png`,
+            alt: code,
+            width: 20
+        },
+        style: {
+            verticalAlign: 'middle',
+            borderRadius: '2px',
+            marginRight: '4px'
+        }
+    });
 }
 
 function getCountryLabel(c) {
@@ -1258,7 +1270,11 @@ function showCountryTop(raw) {
 
     if (!modal || !title || !body) return;
 
-    title.textContent = `${getFlag(country)} Топ игроков: ${CODE_TO_NAME[country] || country}`;
+    const flagNode = getFlag(country);
+    const countryName = CODE_TO_NAME[country] || country;
+    
+    clearEl(title);
+    title.append(flagNode, ` Топ игроков: ${countryName}`);
 
     if (countryPlayers.length === 0) {
         clearEl(body);
@@ -1507,11 +1523,11 @@ function showLevelVictors(levelId) {
     } else {
         const list = h('div', { className: 'level-victors-list' });
         levelData.victors.forEach((victor, idx) => {
-            const flag = getFlag(victor.nationality);
+            const flagNode = getFlag(victor.nationality);
             const span = h('span', {}, [
                 h('strong', {}, [`#${idx + 1} `]),
-                document.createTextNode(`${flag} `),
-                document.createTextNode(victor.name),
+                flagNode,
+                document.createTextNode(` ${victor.name}`),
             ]);
             list.appendChild(
                 h(
@@ -1545,10 +1561,12 @@ function showProfile(idx) {
     if (!p) return;
 
     const rec = p.records ? p.records.filter((r) => r.status === 'accepted' && r.level) : [];
-    const flag = getFlag(p.nationality);
+    const flagNode = getFlag(p.nationality);
     const name = p.name;
 
-    document.getElementById('profileTitle').textContent = `${flag} ${name}`;
+    const titleEl = document.getElementById('profileTitle');
+    clearEl(titleEl);
+    titleEl.append(flagNode, ` ${name}`);
 
     const score = p.score ? p.score.toFixed(2) : '—';
     const rank = p.rank || '—';
@@ -1580,7 +1598,10 @@ function showProfile(idx) {
     body.appendChild(
         h('div', { className: 'profile-info-row' }, [
             h('span', { className: 'profile-info-label' }, ['Страна:']),
-            h('span', { className: 'profile-info-value' }, [`${flag} ${p.nationality || 'Не указана'}`]),
+            h('span', { className: 'profile-info-value' }, [
+                getFlag(p.nationality),
+                document.createTextNode(` ${p.nationality || 'Не указана'}`)
+            ]),
         ])
     );
 
