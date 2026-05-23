@@ -1085,7 +1085,6 @@ function createPlayerRow(index, p) {
         h('div', { className: 'cell cell-player' }, [
             h('span', { className: 'player-flag' }, [
                 getFlag(p.nationality),
-                h('span', { className: 'player-flag-label' }, [getCountryLabel(p.nationality)]),
             ]),
             h('div', { className: 'player-info' }, [
                 h('span', { className: 'player-name' }, [p.name]),
@@ -1108,7 +1107,7 @@ function updatePlayerRow(row, index, p) {
     cellPos.textContent = String(index + 1);
     const flagSpan = cellPlayer.querySelector('.player-flag');
     flagSpan.textContent = '';
-    flagSpan.append(getFlag(p.nationality), h('span', { className: 'player-flag-label' }, [getCountryLabel(p.nationality)]));
+    flagSpan.append(getFlag(p.nationality));
     cellPlayer.querySelector('.player-name').textContent = p.name;
     cellPlayer.querySelector('.player-score').textContent = `${score} pts · #${rank}`;
     cellPoints.textContent = score;
