@@ -1687,3 +1687,31 @@ a:hover {
         grid-template-columns: 1fr;
     }
 }
+
+.captcha-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+}
+
+.captcha-image {
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    height: 80px;
+    width: 240px;
+    display: block;
+    object-fit: contain;
+    background: var(--color-surface-2);
+}
+
+#captchaRefreshBtn {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}

@@ -24,6 +24,7 @@ import (
 	firebase "firebase.google.com/go"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/microcosm-cc/bluemonday"
+	"github.com/mojocn/base64Captcha"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
@@ -51,6 +52,12 @@ var (
 	jwtSecrets     []jwtKey
 	jwtSecretsMu   sync.RWMutex
 	jwtSecretsOnce sync.Once
+
+	captchaStore = base64Captcha.DefaultMemStore
+	captchaInst  = base64Captcha.NewCaptcha(
+		base64Captcha.NewDriverDigit(80, 240, 5, 0.7, 80),
+		captchaStore,
+	)
 )
 
 type StaffPlayer struct {
@@ -393,6 +400,25 @@ func handleVerify(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
+func handleCaptcha(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	id, b64s, _, err := captchaInst.Generate()
+	if err != nil {
+		log.Printf("[captcha] generate: %v", err)
+		sendError(w, http.StatusInternalServerError, "Ошибка генерации капчи")
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"captchaId":    id,
+		"captchaImage": "data:image/png;base64," + b64s,
+	})
+}
+
 func handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
@@ -405,10 +431,16 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Password     string `json:"password"`
-		CaptchaToken string `json:"captchaToken"`
+		CaptchaID    string `json:"captchaId"`
+		CaptchaValue string `json:"captchaValue"`
 	}
 	if err := decodeRequestJSON(w, r, &req); err != nil {
 		sendError(w, http.StatusBadRequest, "Кривой запрос")
+		return
+	}
+
+	if !captchaStore.Verify(req.CaptchaID, req.CaptchaValue, true) {
+		sendError(w, http.StatusBadRequest, "Неверный код с картинки")
 		return
 	}
 
@@ -1010,6 +1042,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	path := requestPath(r)
 
 	mux := map[string]http.HandlerFunc{
+		"/api/captcha":       rateLimitMiddleware(handleCaptcha),
 		"/api/login":         rateLimitLoginMiddleware(handleLogin),
 		"/api/logout":        rateLimitLoginMiddleware(handleLogout),
 		"/api/verify":        rateLimitMiddleware(handleVerify),

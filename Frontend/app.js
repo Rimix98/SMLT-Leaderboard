@@ -57,6 +57,7 @@ const API_BASE = 'https://api.demonlist.org';
 const BACKEND_URL = '/api';
 
 const pendingRequests = new Map();
+let captchaId = '';
 
 function fetchWithAbort(url, options = {}, key = null) {
     if (key && pendingRequests.has(key)) {
@@ -382,11 +383,25 @@ function initEventListeners() {
         });
     }
 
+    const captchaInput = document.getElementById('captchaInput');
+    if (captchaInput) {
+        captchaInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                verifyHost(document.getElementById('hostPassword')?.value || '');
+            }
+        });
+    }
+
     const hostSubmitBtn = document.getElementById('hostSubmitBtn');
     if (hostSubmitBtn) {
         hostSubmitBtn.addEventListener('click', () => {
             verifyHost(document.getElementById('hostPassword')?.value || '');
         });
+    }
+
+    const captchaRefreshBtn = document.getElementById('captchaRefreshBtn');
+    if (captchaRefreshBtn) {
+        captchaRefreshBtn.addEventListener('click', initCaptcha);
     }
 
     document.querySelectorAll('.modal-close').forEach(btn => {
@@ -433,6 +448,30 @@ function updateThemeIcon(theme) {
 // ХОСТ АВТОРИЗАЦИЯ
 // ============================================
 
+async function initCaptcha() {
+    const img = document.getElementById('captcha-img');
+    const input = document.getElementById('captchaInput');
+    if (!img) return;
+
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/captcha`, {
+            credentials: 'include'
+        }, 'captcha-fetch');
+        const data = await parseJsonResponse(res);
+        if (!res.ok || !data.captchaId) {
+            console.error('Ошибка получения капчи');
+            return;
+        }
+        captchaId = data.captchaId;
+        img.src = data.captchaImage;
+        img.style.display = 'block';
+        if (input) input.value = '';
+    } catch (err) {
+        if (isAbortError(err)) return;
+        console.error('Ошибка загрузки капчи:', err);
+    }
+}
+
 async function initHostStatus() {
     try {
         const res = await fetchWithAbort(`${BACKEND_URL}/verify`, {
@@ -463,6 +502,7 @@ function showHostModal() {
         if (errorEl) {
             errorEl.style.display = 'none';
         }
+        initCaptcha();
     }
 }
 
@@ -474,6 +514,8 @@ function closeHostModal() {
 }
 
 async function verifyHost(inputPassword) {
+    const captchaInput = document.getElementById('captchaInput');
+
     try {
         const res = await fetchWithAbort(`${BACKEND_URL}/login`, {
             method: 'POST',
@@ -481,7 +523,8 @@ async function verifyHost(inputPassword) {
             credentials: 'include',
             body: JSON.stringify({
                 password: inputPassword,
-                captchaToken: ''
+                captchaId: captchaId,
+                captchaValue: captchaInput ? captchaInput.value : ''
             })
         }, 'host-login');
 
@@ -504,6 +547,7 @@ async function verifyHost(inputPassword) {
             const errorMsg = data.error || 'Неверный пароль хоста!';
             showToast(errorMsg, 'error');
             store.isHost = false;
+            initCaptcha();
         }
     } catch (err) {
         if (isAbortError(err)) return;
@@ -511,6 +555,7 @@ async function verifyHost(inputPassword) {
         showToast(err.message === 'Сервер вернул некорректный ответ'
             ? 'Ошибка сервера: некорректный формат данных'
             : 'Ошибка соединения с сервером. Проверьте сеть или статус сервера.', 'error');
+        initCaptcha();
     }
 }
 async function logoutHost() {

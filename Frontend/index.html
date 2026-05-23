@@ -120,6 +120,13 @@
                     <label for="hostPassword">Введите пароль:</label>
                     <input type="password" id="hostPassword" class="form-input" placeholder="Пароль">
                 </div>
+                <div class="form-group">
+                    <div class="captcha-row">
+                        <img id="captcha-img" class="captcha-image" alt="Капча" src="">
+                        <button type="button" id="captchaRefreshBtn" class="btn btn-secondary" title="Обновить капчу">🔄</button>
+                    </div>
+                    <input type="text" id="captchaInput" class="form-input" placeholder="Код с картинки" maxlength="6" autocomplete="off">
+                </div>
                 <button id="hostSubmitBtn" class="btn btn-primary">Войти</button>
                 <div id="hostError" class="error-message" style="display: none;">Неверный пароль!</div>
             </div>
