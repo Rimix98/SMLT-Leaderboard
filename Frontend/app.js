@@ -188,7 +188,7 @@ const store = {
     },
     _leaderboard: { body: null, lastSig: '' },
     staffRoles: [],
-    staffTiers: { gp: [], deco: [] },
+    staffTiers: [],
     selectedRoleColor: '#3b82f6',
     pendingProjectParticipants: [],
 };
@@ -366,16 +366,12 @@ function mountDelegatedClicks() {
                 const btn = e.target.closest('[data-action="move-project"]');
                 if (btn) moveProject(Number(btn.dataset.index), btn.dataset.direction);
             },
-            'switch-staff-tab': () => {
-                const btn = e.target.closest('[data-action="switch-staff-tab"]');
-                if (btn) switchStaffTab(btn.dataset.tab);
-            },
             'open-edit-panel': openEditPanel,
             'close-edit-panel': closeEditPanel,
             'edit-add-player': editAddPlayer,
-            'set-player-tier': () => {
-                const badge = e.target.closest('[data-action="set-player-tier"]');
-                if (badge) setPlayerTier(badge.dataset.category, badge.dataset.nickname);
+            'edit-set-player-tier': () => {
+                const badge = e.target.closest('[data-action="edit-set-player-tier"]');
+                if (badge) setPlayerTier(badge.dataset.nickname);
             },
             'edit-remove-player': () => {
                 const btn = e.target.closest('[data-action="edit-remove-player"]');
@@ -2676,7 +2672,7 @@ async function removeStaffPlayer(roleIndex, playerIndex) {
 }
 
 // ============================================
-// ТИРЫ (GP / DECO)
+// ТИРЫ
 // ============================================
 
 const TIER_CONFIG = {
@@ -2693,135 +2689,15 @@ async function loadStaffTiers() {
         const res = await fetchWithAbort(`${BACKEND_URL}/staff/tiers`, {}, 'staff-tiers');
         if (res.ok) {
             const data = await res.json();
-            store.staffTiers = {
-                gp: Array.isArray(data.gp) ? data.gp : [],
-                deco: Array.isArray(data.deco) ? data.deco : [],
-            };
+            store.staffTiers = Array.isArray(data.gp) ? data.gp : [];
         } else {
-            store.staffTiers = { gp: [], deco: [] };
+            store.staffTiers = [];
         }
     } catch (e) {
         if (!isAbortError(e)) {
             console.error('Ошибка загрузки тиров:', e);
-            store.staffTiers = { gp: [], deco: [] };
+            store.staffTiers = [];
         }
-    }
-}
-
-function switchStaffTab(tab) {
-    document.querySelectorAll('.staff-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-
-    const rolesContainer = document.getElementById('staffRolesContainer');
-    const tiersContainer = document.getElementById('staffTiersContainer');
-
-    if (tab === 'roles') {
-        rolesContainer.style.display = '';
-        tiersContainer.style.display = 'none';
-    } else {
-        rolesContainer.style.display = 'none';
-        tiersContainer.style.display = '';
-        renderTierView(tab);
-    }
-}
-
-function getPlayerRoleName(nickname) {
-    for (const role of store.staffRoles) {
-        const rolePlayers = role.players || [];
-        if (rolePlayers.some(p => p.nickname === nickname)) {
-            return role.name;
-        }
-    }
-    return null;
-}
-
-function renderTierView(category) {
-    const container = document.getElementById('staffTierContent');
-    if (!container) return;
-    clearEl(container);
-
-    const tiers = store.staffTiers[category] || [];
-    const categoryLabel = category.toUpperCase();
-    const isHost = store.isHost;
-
-    const allPlayers = [];
-    const seen = new Set();
-    for (const role of store.staffRoles) {
-        const rolePlayers = role.players || [];
-        for (const p of rolePlayers) {
-            if (!seen.has(p.nickname)) {
-                seen.add(p.nickname);
-                allPlayers.push({ nickname: p.nickname, discord: p.discord, roleName: role.name });
-            }
-        }
-    }
-
-    const tierMap = {};
-    for (const t of TIER_CYCLE) tierMap[t] = [];
-    for (const p of allPlayers) {
-        const entry = tiers.find(t => t.nickname === p.nickname);
-        const tier = entry ? entry.tier : 'na';
-        if (!tierMap[tier]) tierMap[tier] = [];
-        tierMap[tier].push(p);
-    }
-
-    const header = h('div', { className: 'tier-category-title' }, [
-        h('span', {}, [categoryLabel]),
-        h('span', { style: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', fontWeight: 400 } },
-            [`— ${allPlayers.length} игроков`]
-        ),
-    ]);
-    container.appendChild(header);
-
-    for (const tier of TIER_CYCLE) {
-        const players = tierMap[tier] || [];
-        const cfg = TIER_CONFIG[tier];
-
-        const group = h('div', { className: 'tier-group' }, []);
-
-        const groupHeader = h('div', {
-            className: 'tier-group-header',
-            style: { background: cfg.color + '22' },
-        }, [
-            h('span', { className: 'tier-square', style: { background: cfg.color } }, []),
-            h('span', {}, [cfg.label]),
-            h('span', { style: { color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)', fontWeight: 400 } },
-                [`(${players.length})`]
-            ),
-        ]);
-        group.appendChild(groupHeader);
-
-        const playersContainer = h('div', { className: 'tier-players' }, []);
-
-        if (players.length === 0) {
-            playersContainer.appendChild(
-                h('span', { className: 'tier-empty' }, ['Нет игроков'])
-            );
-        } else {
-            for (const p of players) {
-                const badge = h('span', {
-                    className: 'tier-player-badge' + (isHost ? ' clickable' : ''),
-                    dataset: isHost ? {
-                        action: 'set-player-tier',
-                        category: category,
-                        nickname: p.nickname,
-                    } : {},
-                    title: isHost ? 'Нажмите, чтобы изменить тир' : '',
-                }, [
-                    h('span', {}, [escapeHtml(p.nickname)]),
-                ]);
-
-                if (p.roleName) {
-                    badge.appendChild(
-                        h('span', { className: 'player-role-label' }, [escapeHtml(p.roleName)])
-                    );
-                }
-
-                playersContainer.appendChild(badge);
-            }
-        }
-
-        group.appendChild(playersContainer);
-        container.appendChild(group);
     }
 }
 
@@ -2831,11 +2707,10 @@ function getNextTier(current) {
     return TIER_CYCLE[idx + 1];
 }
 
-async function setPlayerTier(category, nickname) {
+async function setPlayerTier(nickname) {
     if (!store.isHost) return;
 
-    const tiers = store.staffTiers[category] || [];
-    const current = tiers.find(t => t.nickname === nickname);
+    const current = store.staffTiers.find(t => t.nickname === nickname);
     const currentTier = current ? current.tier : 'na';
     const nextTier = getNextTier(currentTier);
 
@@ -2844,7 +2719,7 @@ async function setPlayerTier(category, nickname) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ category, nickname, tier: nextTier })
+            body: JSON.stringify({ category: 'gp', nickname, tier: nextTier })
         }, 'set-tier');
 
         if (!res.ok) {
@@ -2853,7 +2728,7 @@ async function setPlayerTier(category, nickname) {
         }
 
         await loadStaffTiers();
-        renderTierView(category);
+        renderEditPlayerList();
         showToast(`${escapeHtml(nickname)} → ${TIER_CONFIG[nextTier].label}`, 'success');
     } catch (e) {
         if (!isAbortError(e)) {
@@ -2864,6 +2739,11 @@ async function setPlayerTier(category, nickname) {
             }
         }
     }
+}
+
+function getPlayerTier(nickname) {
+    const entry = store.staffTiers.find(t => t.nickname === nickname);
+    return entry ? entry.tier : 'na';
 }
 
 // ============================================
@@ -2919,12 +2799,24 @@ function renderEditPlayerList() {
 
     let totalPlayers = 0;
     for (const role of store.staffRoles) {
-        for (const p of role.players) {
+        const rolePlayers = role.players || [];
+        for (const p of rolePlayers) {
             totalPlayers++;
+            const tier = getPlayerTier(p.nickname);
+            const cfg = TIER_CONFIG[tier];
             const item = h('div', { className: 'edit-player-list-item' }, [
                 h('div', { className: 'player-info' }, [
                     h('span', { className: 'player-nickname' }, [escapeHtml(p.nickname)]),
                     h('span', { className: 'player-role-name' }, [escapeHtml(role.name)]),
+                ]),
+                h('span', {
+                    className: 'edit-player-tier-badge',
+                    style: { background: cfg.color + '44', borderColor: cfg.color },
+                    dataset: { action: 'edit-set-player-tier', nickname: p.nickname },
+                    title: 'Нажмите, чтобы изменить тир'
+                }, [
+                    h('span', { className: 'edit-player-tier-dot', style: { background: cfg.color } }, []),
+                    h('span', {}, [cfg.label]),
                 ]),
                 h('button', {
                     className: 'player-remove-btn',

@@ -2046,6 +2046,34 @@ a:hover {
     background: rgba(239, 68, 68, 0.1);
 }
 
+.edit-player-tier-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: var(--border-radius-sm);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.edit-player-tier-badge:hover {
+    transform: scale(1.05);
+    filter: brightness(1.2);
+}
+
+.edit-player-tier-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
 .edit-panel-toggle-btn {
     margin-left: var(--spacing-sm);
 }

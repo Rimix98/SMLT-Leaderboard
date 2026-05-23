@@ -73,7 +73,7 @@
                             Здесь отображаются стафф SMLT.
                         </p>
                         <p style="color: var(--color-text-secondary); line-height: 1.7; margin-top: var(--spacing-sm);">
-                            На GP и DECO есть тиры:
+                            Тир-система:
                         </p>
                         <div class="tier-legend">
                             <span class="tier-legend-item"><span class="tier-square" style="background: #00ffff;"></span> приоритет</span>
@@ -84,24 +84,13 @@
                     </div>
                 </section>
 
-
                 <div id="staffLoadingState" class="loading-state">
                     <div class="spinner"></div>
                     <div class="loading-text">Загрузка состава...</div>
                 </div>
 
-                <div class="staff-tabs">
-                    <button class="staff-tab active" data-action="switch-staff-tab" data-tab="roles">Роли</button>
-                    <button class="staff-tab" data-action="switch-staff-tab" data-tab="gp">GP</button>
-                    <button class="staff-tab" data-action="switch-staff-tab" data-tab="deco">DECO</button>
-                </div>
-
                 <div id="staffRolesContainer" class="projects-grid">
                     <!-- Роли будут добавлены сюда через JS -->
-                </div>
-
-                <div id="staffTiersContainer" style="display: none;">
-                    <div id="staffTierContent"></div>
                 </div>
             </div>
         </main>
