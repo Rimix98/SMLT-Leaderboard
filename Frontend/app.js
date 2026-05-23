@@ -777,10 +777,8 @@ async function fetchRecords(id) {
 }
 
 function mapLeaderboardEntry(p) {
-    const root = p.data || {};
-    const users = root.data?.users || [];
-    const nl = (p.name || '').toLowerCase().trim();
-    const pData = users.find(u => (u.username || '').toLowerCase().trim() === nl) || users[0] || {};
+    const nl = (p.username || '').toLowerCase().trim();
+    const pData = p;
 
     const recRoot = p.records || {};
     const pRecs = recRoot.data?.records || recRoot.records || [];
@@ -802,11 +800,74 @@ function mapLeaderboardEntry(p) {
     };
 }
 
-function hasLeaderboardData(entries) {
-    return Array.isArray(entries) && entries.some(e => {
-        const users = e.data?.data?.users;
-        return Array.isArray(users) && users.length > 0;
-    });
+    return {
+        id: pData.id,
+        name: pData.username || p.name,
+        rank: pData.placement || 0,
+        score: parseFloat(pData.points) || 0,
+        nationality: pData.country || null,
+        records: pRecs,
+        hardest
+    };
+}
+
+function hasLeaderboardData(resData) {
+    return resData && resData.data && Array.isArray(resData.data.users);
+}
+
+async function loadAllPlayers() {
+    if (_loadingLeaderboard) return;
+    _loadingLeaderboard = true;
+
+    const table = document.getElementById('leaderboardTable');
+    const count = document.getElementById('playersCount');
+    if (!table) {
+        _loadingLeaderboard = false;
+        return;
+    }
+
+    try {
+        let playersToMap = [];
+        const res = await fetchWithAbort('/api/leaderboard', {}, 'leaderboard');
+
+        if (res.ok) {
+            const responseData = await parseJsonResponse(res);
+            if (hasLeaderboardData(responseData)) {
+                playersToMap = responseData.data.users;
+            }
+        }
+
+        if (playersToMap.length === 0) {
+            await loadPlayersFromClientAPI();
+            return;
+        }
+
+        const loaded = playersToMap.map(mapLeaderboardEntry).filter(p => p.id);
+        if (loaded.length === 0) {
+            await loadPlayersFromClientAPI();
+            return;
+        }
+
+        store.players = loaded.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
+        store.allPlayers = [...store.players];
+        renderPlayers();
+        renderHardestLevels();
+
+    } catch (e) {
+        if (isAbortError(e)) return;
+        try {
+            await loadPlayersFromClientAPI();
+        } catch (err) {
+            if (isAbortError(err)) return;
+            clearEl(table);
+            table.appendChild(
+                h('div', { className: 'empty-state' }, [h('p', {}, ['Не удалось загрузить данные'])])
+            );
+            showToast('Ошибка загрузки лидерборда', 'error');
+        }
+    } finally {
+        _loadingLeaderboard = false;
+    }
 }
 
 async function loadPlayersFromClientAPI() {
