@@ -837,11 +837,23 @@ async function fetchRecords(id) {
 }
 
 function mapLeaderboardEntry(p) {
-    const nl = (p.username || '').toLowerCase().trim();
-    const pData = p;
+    const nl = (p.name || '').toLowerCase().trim();
+    
+    // Извлекаем данные пользователя из вложенной структуры
+    let userData = null;
+    if (p.data && p.data.data && Array.isArray(p.data.data.users) && p.data.data.users.length > 0) {
+        userData = p.data.data.users[0];
+    } else if (p.data && Array.isArray(p.data.users) && p.data.users.length > 0) {
+        userData = p.data.users[0];
+    }
 
-    const recRoot = p.records || {};
-    const pRecs = recRoot.data?.records || recRoot.records || [];
+    // Извлекаем records
+    let pRecs = [];
+    if (p.records && p.records.data && Array.isArray(p.records.data.records)) {
+        pRecs = p.records.data.records;
+    } else if (p.records && Array.isArray(p.records.records)) {
+        pRecs = p.records.records;
+    }
 
     let hardest = null;
     const acceptedRecs = pRecs.filter(r => r.status === 'accepted' && r.level);
@@ -850,18 +862,18 @@ function mapLeaderboardEntry(p) {
     }
 
     return {
-        id: pData.id,
-        name: pData.username || p.name,
-        rank: pData.placement || 0,
-        score: parseFloat(pData.points) || 0,
-        nationality: pData.country || null,
+        id: userData?.id || p.id,
+        name: userData?.username || p.name,
+        rank: userData?.placement || 0,
+        score: parseFloat(userData?.points) || 0,
+        nationality: userData?.country || null,
         records: pRecs,
         hardest
     };
 }
 
 function hasLeaderboardData(resData) {
-    return resData && resData.data && Array.isArray(resData.data.users);
+    return Array.isArray(resData);
 }
 
 let _loadingLeaderboard = false;
@@ -884,7 +896,7 @@ async function loadAllPlayers() {
         if (res.ok) {
             const responseData = await parseJsonResponse(res);
             if (hasLeaderboardData(responseData)) {
-                playersToMap = responseData.data.users;
+                playersToMap = responseData;
             }
         }
 
@@ -2714,7 +2726,8 @@ function switchStaffTab(tab) {
 
 function getPlayerRoleName(nickname) {
     for (const role of store.staffRoles) {
-        if (role.players.some(p => p.nickname === nickname)) {
+        const rolePlayers = role.players || [];
+        if (rolePlayers.some(p => p.nickname === nickname)) {
             return role.name;
         }
     }
@@ -2733,7 +2746,8 @@ function renderTierView(category) {
     const allPlayers = [];
     const seen = new Set();
     for (const role of store.staffRoles) {
-        for (const p of role.players) {
+        const rolePlayers = role.players || [];
+        for (const p of rolePlayers) {
             if (!seen.has(p.nickname)) {
                 seen.add(p.nickname);
                 allPlayers.push({ nickname: p.nickname, discord: p.discord, roleName: role.name });
