@@ -4,22 +4,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="description" content="Проекты SMLT - уровни и коллабы от участников сервера">
+    <meta name="description" content="SMLT - Discord сервер с ивентами, коллабами, турнирами и прохождениями уровней">
     <meta name="theme-color" content="#0a0a0a">
-    <title>Проекты SMLT</title>
+    <title>SMLT - Главная</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="stylesheet" href="styles.css">
     <script>
-    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
-    </script>
-   <script defer src="/_vercel/insights/script.js"></script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
 </head>
 
-<body>
+<body class="home-page">
     <div id="app">
+
         <!-- Кнопка смены темы -->
         <button class="theme-toggle" id="themeToggle" title="Сменить тему">
             <span class="theme-icon">🌙</span>
@@ -33,69 +34,85 @@
         <header class="app-header">
             <div class="header-content">
                 <div class="header-brand">
-                    <span class="header-logo">📁</span>
                     <div class="header-title">
-                        <h1>Проекты SMLT</h1>
-                        <span class="header-subtitle">Уровни и коллабы</span>
+                        <h1>SMLT</h1>
+                        <span class="header-subtitle">Discord Community</span>
                     </div>
                 </div>
                 <nav class="header-nav">
-                    <a href="index.html" class="nav-link">Главная</a>
-                    <a href="demonlist.html" class="nav-link">Лидерборд</a>
-                    <a href="projects.html" class="nav-link active">Проекты</a>
+                    <a href="index.html" class="nav-link active">Главная</a>
+                    <a href="demonlist.html" class="nav-link">Демонлист</a>
+                    <a href="projects.html" class="nav-link">Проекты</a>
                     <a href="staff.html" class="nav-link">Стафф</a>
                 </nav>
-                <div class="header-actions">
-                    <button class="btn btn-secondary btn-lg" id="infoBtn">
-                        <span>ℹ️</span>
-                        <span>Информация</span>
-                    </button>
-                </div>
             </div>
         </header>
 
-        <main class="app-main">
+        <main class="app-main home-page">
             <div class="container">
-                <!-- Панель хоста для управления проектами -->
-                <div class="admin-panel admin-only" style="display: none;">
-                    <div class="admin-panel-header">👑 Управление проектами</div>
-                    <div class="admin-panel-content">
-                        <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
-                            <button class="btn btn-primary" id="addProjectBtn" data-action="show-add-project-modal">➕ Добавить проект</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Информация о странице -->
-                <section class="info-section" style="padding-top: 0;">
-                    <div class="info-card" style="border-left: 3px solid var(--color-secondary);">
-                        <p style="color: var(--color-text-secondary); line-height: 1.7;">
-                            Здесь размещаются коллабы от SMLT. Каждый проект содержит информацию о статусе, участниках и ссылке на видео.
+                <!-- Главный баннер -->
+                <section class="hero-section">
+                    <div class="hero-content">
+                        <h2 class="hero-title">Что такое SMLT?</h2>
+                        <p class="hero-description">
+                            SMLT - это дискорд сервер, где происходят разные ивенты, например коллабы, турниры,
+                            прохождения уровней по частям, и даже игры в майнкрафте.
+                        </p>
+                        <p class="hero-description">
+                            Все участники сервера - участники SMLT, независимо от его скилла.
+                            Идея нашего сервера - <strong>удовольствие</strong>.
                         </p>
                     </div>
                 </section>
 
-                <!-- Статусы проектов -->
-                <section class="status-legend" style="margin-bottom: var(--spacing-lg);">
-                    <div style="display: flex; flex-wrap: wrap; gap: var(--spacing-sm);">
-                        <span class="project-status status-ready">Готов</span>
-                        <span class="project-status status-verifying">В процессе верифа</span>
-                        <span class="project-status status-building">В процессе постройки</span>
-                        <span class="project-status status-planned">Планируется</span>
-                        <span class="project-status status-frozen">Заморожен</span>
-                        <span class="project-status status-dead">Мёртв</span>
-                    </div>
+                <!-- Кнопки навигации -->
+                <section class="nav-buttons">
+                    <a href="demonlist.html" class="nav-card">
+                        <span class="nav-card-icon">🏆</span>
+                        <span class="nav-card-title">Демонлист</span>
+                        <span class="nav-card-desc">Лучшие слееры SMLT</span>
+                    </a>
+                    <a href="projects.html" class="nav-card">
+                        <span class="nav-card-icon">📁</span>
+                        <span class="nav-card-title">Проекты SMLT</span>
+                        <span class="nav-card-desc">Коллабы SMLT</span>
+                    </a>
+                    <a href="staff.html" class="nav-card">
+                        <span class="nav-card-icon">👥</span>
+                        <span class="nav-card-title">Стафф SMLT</span>
+                        <span class="nav-card-desc">Состав команды</span>
+                    </a>
                 </section>
 
-                <!-- Сетка проектов -->
-                <div class="projects-grid" id="projectsGrid">
-                    <div class="loading-state" style="grid-column: 1 / -1;">
-                        <div class="spinner"></div>
-                        <span class="loading-text">Загрузка проектов...</span>
+                <!-- Информация -->
+                <section class="info-section">
+                    <div class="info-card">
+                        <h3 class="info-title">📋 Информация</h3>
+                        <div class="info-content">
+                            <div class="info-item">
+                                <span class="info-label">Discord Server</span>
+                                <a href="https://discord.gg/VK56W7ZzdA" target="_blank"
+                                    class="info-value">discord.gg/VK56W7ZzdA</a>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Admin</span>
+                                <div class="info-value">
+                                    Discord: <span class="highlight">@.samoletik</span><br>
+                                    Telegram: <span class="highlight">@samoltik</span>
+                                </div>
+                            </div>
+                            <div class="info-item security">
+                                <span class="info-label">🔒 За безопасность и бекенд отвечал</span>
+                                <div style="font-weight: 500;">Discord: <span class="highlight">@rimix.98</span><br>
+                                    Telegram: <span class="highlight">@Rimix980</span></div>
+                                
+                            </div>
+                        </div>
                     </div>
-                </div>
+                </section>
             </div>
         </main>
+
 
     </div>
 
@@ -108,33 +125,19 @@
             </div>
             <div class="modal-body">
                 <div style="display: flex; flex-direction: column; gap: var(--spacing-md);">
-                    <div
-                        style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
-                        <div
-                            style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">
-                            Discord Server</div>
-                        <a href="https://discord.gg/VK56W7ZzdA" target="_blank"
-                            style="color: var(--color-secondary); font-weight: 600;">discord.gg/VK56W7ZzdA</a>
+                    <div style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
+                        <div style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">Discord Server</div>
+                        <a href="https://discord.gg/VK56W7ZzdA" target="_blank" style="color: var(--color-secondary); font-weight: 600;">discord.gg/VK56W7ZzdA</a>
                     </div>
-                    <div
-                        style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
-                        <div
-                            style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">
-                            Admin</div>
-                        <div style="font-weight: 500;">Discord: <span
-                                style="color: var(--color-secondary);">@.samoletik</span></div>
-                        <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span
-                                style="color: var(--color-secondary);">@samoltik</span></div>
+                    <div style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
+                        <div style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">Admin</div>
+                        <div style="font-weight: 500;">Discord: <span style="color: var(--color-secondary);">@.samoletik</span></div>
+                        <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span style="color: var(--color-secondary);">@samoltik</span></div>
                     </div>
-                    <div
-                        style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md); border-left: 3px solid var(--color-success);">
-                        <div
-                            style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">
-                            🔒 За безопасность и бекенд отвечал</div>
-                        <div style="font-weight: 500;">Discord: <span
-                                style="color: var(--color-secondary);">@rimix.98</span></div>
-                        <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span
-                                style="color: var(--color-secondary);">@Rimix980</span></div>
+                    <div style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md); border-left: 3px solid var(--color-success);">
+                        <div style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">🔒 За безопасность и бекенд отвечал</div>
+                        <div style="font-weight: 500;">Discord: <span style="color: var(--color-secondary);">@rimix.98</span></div>
+                        <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span style="color: var(--color-secondary);">@Rimix980</span></div>
                     </div>
                 </div>
             </div>
@@ -146,7 +149,7 @@
         <div class="modal">
             <div class="modal-header">
                 <div class="modal-title">🔐 Вход хоста</div>
-                <button class="modal-close" data-action="close-host-modal">✕</button>
+                <button class="modal-close">✕</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
@@ -160,73 +163,8 @@
                     </div>
                     <input type="text" id="captchaInput" class="form-input" placeholder="Код с картинки" maxlength="6" autocomplete="off">
                 </div>
-                <button class="btn btn-primary" data-action="verify-host">Войти</button>
+                <button id="hostSubmitBtn" class="btn btn-primary">Войти</button>
                 <div id="hostError" class="error-message" style="display: none;">Неверный пароль!</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Модальное окно редактирования проекта -->
-    <div id="projectModal" class="modal-overlay">
-        <div class="modal modal-lg">
-            <div class="modal-header">
-                <div class="modal-title" id="projectModalTitle">Редактировать проект</div>
-                <button class="modal-close" data-action="close-project-modal">✕</button>
-            </div>
-            <div class="modal-body">
-                <form id="projectForm" onsubmit="return false;">
-                <input type="hidden" id="projectIndex" value="-1">
-                <div class="form-group">
-                    <label for="projectName">Название:</label>
-                    <input type="text" id="projectName" class="form-input" placeholder="Название проекта">
-                </div>
-                <div class="form-group">
-                    <label for="projectVideo">Ссылка на видео:</label>
-                    <input type="text" id="projectVideo" class="form-input" placeholder="YouTube URL">
-                </div>
-                <div class="form-group">
-                    <label for="projectId">ID:</label>
-                    <input type="text" id="projectId" class="form-input" placeholder="ID проекта">
-                </div>
-                <div class="form-group">
-                    <label for="projectComment">Комментарий:</label>
-                    <textarea id="projectComment" class="form-input" rows="3" placeholder="Комментарий"></textarea>
-                </div>
-                <div class="form-group">
-                    <label for="projectStatus">Статус:</label>
-                    <select id="projectStatus" class="form-input">
-                        <option value="готов">Готов</option>
-                        <option value="в процессе верифа">В процессе верифа</option>
-                        <option value="в процессе постройки">В процессе постройки</option>
-                        <option value="планируется">Планируется</option>
-                        <option value="заморожен">Заморожен</option>
-                        <option value="мёртв">Мёртв</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="projectVerifier">Верифнул:</label>
-                    <input type="text" id="projectVerifier" class="form-input" placeholder="Кто верифнул">
-                </div>
-                <div class="form-group">
-                    <label>Участники:</label>
-                    <div class="participant-builder">
-                        <div class="participant-add-row">
-                            <input type="text" id="participantSearchInput" class="form-input" placeholder="🔍 Поиск игрока...">
-                            <select id="participantPlayerSelect" class="form-input">
-                                <option value="">Выберите игрока...</option>
-                            </select>
-                            <div class="participant-role-tags" id="participantRoleTags"></div>
-                            <button type="button" class="btn btn-primary btn-sm" id="addParticipantBtn" data-action="add-project-participant">➕</button>
-                        </div>
-                        <div id="participantsPreview" class="participants-preview"></div>
-                        <textarea id="projectParticipants" style="display:none;"></textarea>
-                    </div>
-                </div>
-                <div style="display: flex; gap: var(--spacing-sm); margin-top: var(--spacing-md);">
-                    <button class="btn btn-secondary" data-action="close-project-modal">Отмена</button>
-                    <button class="btn btn-primary" data-action="save-project">Сохранить</button>
-                </div>
-                </form>
             </div>
         </div>
     </div>
@@ -234,7 +172,6 @@
     <div id="toastContainer"></div>
 
     <script src="app.js"></script>
-    
 </body>
 
 </html>
