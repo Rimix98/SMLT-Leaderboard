@@ -1230,6 +1230,8 @@ function renderCountryStats() {
     clearEl(countryList);
     const frag = document.createDocumentFragment();
     sorted.forEach((c) => {
+        const code = resolveCountry(c.name);
+        const displayName = code ? (CODE_TO_NAME[code] || code) : 'Unknown';
         const countryName = CODE_TO_NAME[c.name.toUpperCase()] || c.name;
         const token = encodeCountryToken(c.name);
         const row = h(
@@ -1243,6 +1245,7 @@ function renderCountryStats() {
             [
                 h('div', { className: 'country-info' }, [
                     h('span', { className: 'country-flag' }, [getFlag(c.name)]),
+                    h('span', { className: 'country-name' }, [displayName]),
                 ]),
                 h('span', { className: 'country-count' }, [String(c.count)]),
             ]
