@@ -376,4 +376,6 @@ curl -X POST https://smltdemonlist.vercel.app/api/login \
 
 [⬆ Наверх](#smlt-demonlist)
 
+**Последнее обновление:** май 2026
+
 </div>
