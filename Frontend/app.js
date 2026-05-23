@@ -635,7 +635,15 @@ async function getPlayerNames() {
         const res = await fetchWithAbort(`${BACKEND_URL}/players`, {}, 'players-list');
         if (!res.ok) return DEFAULT_PLAYER_NAMES;
         const data = await res.json();
-        return Array.isArray(data) && data.length > 0 ? data : DEFAULT_PLAYER_NAMES;
+        if (Array.isArray(data) && data.length > 0) {
+            // Если это массив объектов { name: "..." }, извлекаем имена
+            if (typeof data[0] === 'object' && data[0].name) {
+                return data.map(p => p.name);
+            }
+            // Если это массив строк, возвращаем как есть
+            return data;
+        }
+        return DEFAULT_PLAYER_NAMES;
     } catch {
         return DEFAULT_PLAYER_NAMES;
     }
