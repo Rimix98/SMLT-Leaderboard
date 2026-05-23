@@ -800,17 +800,6 @@ function mapLeaderboardEntry(p) {
     };
 }
 
-    return {
-        id: pData.id,
-        name: pData.username || p.name,
-        rank: pData.placement || 0,
-        score: parseFloat(pData.points) || 0,
-        nationality: pData.country || null,
-        records: pRecs,
-        hardest
-    };
-}
-
 function hasLeaderboardData(resData) {
     return resData && resData.data && Array.isArray(resData.data.users);
 }
