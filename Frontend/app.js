@@ -2214,9 +2214,7 @@ async function createRole() {
             throw new Error(err.error || 'Ошибка создания роли');
         }
 
-        const newRole = await res.json();
-        store.staffRoles.push(newRole);
-        renderStaffRoles();
+        await loadStaffRoles();
         closeAddRoleModal();
         nameInput.value = '';
         showToast(`Роль «${name}» создана`, 'success');
@@ -2257,9 +2255,7 @@ async function updateRole(roleIndex) {
             throw new Error(err.error || 'Ошибка обновления роли');
         }
 
-        role.name = name;
-        role.color = color;
-        renderStaffRoles();
+        await loadStaffRoles();
         closeAddRoleModal();
         showToast(`Роль «${name}» обновлена`, 'success');
     } catch (e) {
@@ -2292,8 +2288,7 @@ async function deleteRole(index) {
             throw new Error(err.error || 'Ошибка удаления роли');
         }
 
-        store.staffRoles.splice(index, 1);
-        renderStaffRoles();
+        await loadStaffRoles();
         showToast('Роль удалена', 'success');
     } catch (e) {
         if (!isAbortError(e)) {
@@ -2363,8 +2358,7 @@ async function addPlayerToRole() {
             throw new Error(err.error || 'Ошибка добавления игрока');
         }
 
-        role.players.push({ nickname, discord });
-        renderStaffRoles();
+        await loadStaffRoles();
         closeAddStaffPlayerModal();
         showToast(`Игрок «${escapeHtml(nickname)}» добавлен в роль «${escapeHtml(role.name)}»`, 'success');
     } catch (e) {
@@ -2400,8 +2394,7 @@ async function removeStaffPlayer(roleIndex, playerIndex) {
             throw new Error(err.error || 'Ошибка удаления игрока');
         }
 
-        role.players.splice(playerIndex, 1);
-        renderStaffRoles();
+        await loadStaffRoles();
         showToast(`Игрок «${escapeHtml(player.nickname)}» удалён из роли`, 'success');
     } catch (e) {
         if (!isAbortError(e)) {
