@@ -13,7 +13,6 @@
 Свяжитесь с командой безопасности напрямую:
 - Discord: **@rimix.98** (основной) или **@.samoletik** (админ)
 - Telegram: **@samoltik**
-- GitHub: Откройте [draft security advisory](https://github.com/<owner>/SMLT-Demonlist/security/advisories/new)
 
 Мы стараемся подтверждать получение сообщений в течение 48 часов и выпускать исправление в течение 7 дней.
 
