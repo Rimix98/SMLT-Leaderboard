@@ -139,6 +139,26 @@ const COUNTRY_TO_CODE = {
     'macau': 'MO', 'armenia': 'AM', 'moldova': 'MD'
 };
 
+const CODE_TO_NAME = {
+    'RU': 'Россия', 'US': 'США', 'DE': 'Германия', 'FR': 'Франция',
+    'GB': 'Великобритания', 'BR': 'Бразилия', 'KR': 'Южная Корея',
+    'JP': 'Япония', 'CN': 'Китай', 'PL': 'Польша', 'UA': 'Украина',
+    'CA': 'Канада', 'AU': 'Австралия', 'ES': 'Испания', 'IT': 'Италия',
+    'AR': 'Аргентина', 'CL': 'Чили', 'MX': 'Мексика', 'NL': 'Нидерланды',
+    'SE': 'Швеция', 'NO': 'Норвегия', 'FI': 'Финляндия', 'DK': 'Дания',
+    'BE': 'Бельгия', 'AT': 'Австрия', 'CZ': 'Чехия', 'SK': 'Словакия',
+    'HU': 'Венгрия', 'RO': 'Румыния', 'BG': 'Болгария', 'TR': 'Турция',
+    'IL': 'Израиль', 'SA': 'Саудовская Аравия', 'AE': 'ОАЭ', 'IN': 'Индия',
+    'ID': 'Индонезия', 'TH': 'Таиланд', 'VN': 'Вьетнам', 'MY': 'Малайзия',
+    'SG': 'Сингапур', 'PH': 'Филиппины', 'NZ': 'Новая Зеландия',
+    'ZA': 'ЮАР', 'EG': 'Египет', 'NG': 'Нигерия', 'CO': 'Колумбия',
+    'PE': 'Перу', 'VE': 'Венесуэла', 'EC': 'Эквадор', 'PT': 'Португалия',
+    'GR': 'Греция', 'HR': 'Хорватия', 'RS': 'Сербия', 'SI': 'Словения',
+    'EE': 'Эстония', 'LV': 'Латвия', 'LT': 'Литва', 'BY': 'Беларусь',
+    'KZ': 'Казахстан', 'UZ': 'Узбекистан', 'TW': 'Тайвань',
+    'HK': 'Гонконг', 'MO': 'Макао', 'AM': 'Армения', 'MD': 'Молдова'
+};
+
 // ============================================
 // DOM helpers + состояние (модульный стиль без глобальных let)
 // ============================================
@@ -1184,6 +1204,7 @@ function renderCountryStats() {
     clearEl(countryList);
     const frag = document.createDocumentFragment();
     sorted.forEach((c) => {
+        const countryName = CODE_TO_NAME[c.name.toUpperCase()] || c.name;
         const token = encodeCountryToken(c.name);
         const row = h(
             'div',
@@ -1191,12 +1212,12 @@ function renderCountryStats() {
                 className: 'country-item',
                 style: { cursor: 'pointer' },
                 dataset: { countryToken: token },
-                title: `Топ игроков ${c.name}`,
+                title: `Топ игроков ${countryName}`,
             },
             [
                 h('div', { className: 'country-info' }, [
                     h('span', { className: 'country-flag' }, [getFlag(c.name)]),
-                    h('span', { className: 'country-name' }, [c.name]),
+                    h('span', { className: 'country-name' }, [countryName]),
                 ]),
                 h('span', { className: 'country-count' }, [String(c.count)]),
             ]
@@ -1224,7 +1245,8 @@ function showCountryTop(raw) {
 
     if (!modal || !title || !body) return;
 
-    title.textContent = `${getFlag(country)} Топ игроков: ${country}`;
+    const countryName = CODE_TO_NAME[country] || country;
+    title.textContent = `${getFlag(country)} Топ игроков: ${countryName}`;
 
     if (countryPlayers.length === 0) {
         clearEl(body);
