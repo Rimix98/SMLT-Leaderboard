@@ -560,7 +560,6 @@ async function verifyHost(inputPassword) {
 }
 async function logoutHost() {
     store.isHost = false;
-    sessionStorage.removeItem('adminToken');
 
     try {
         await fetchWithAbort(`${BACKEND_URL}/logout`, {

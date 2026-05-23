@@ -26,6 +26,7 @@ import (
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/mojocn/base64Captcha"
 	"golang.org/x/crypto/bcrypt"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -53,12 +54,70 @@ var (
 	jwtSecretsMu   sync.RWMutex
 	jwtSecretsOnce sync.Once
 
-	captchaStore = base64Captcha.DefaultMemStore
-	captchaInst  = base64Captcha.NewCaptcha(
-		base64Captcha.NewDriverDigit(80, 240, 5, 0.7, 80),
-		captchaStore,
-	)
+	captchaStore base64Captcha.Store
+	captchaInst  *base64Captcha.Captcha
+	captchaOnce  sync.Once
 )
+
+type firestoreCaptchaStore struct {
+	client *firestore.Client
+}
+
+func (s *firestoreCaptchaStore) Set(id string, value string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := s.client.Collection("captcha").Doc(id).Set(ctx, map[string]interface{}{
+		"value":     value,
+		"expiresAt": time.Now().Add(10 * time.Minute),
+	})
+	if err != nil {
+		log.Printf("[captcha] firestore set: %v", err)
+	}
+}
+
+func (s *firestoreCaptchaStore) Get(id string, clear bool) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	doc, err := s.client.Collection("captcha").Doc(id).Get(ctx)
+	if err != nil {
+		return ""
+	}
+	var data struct {
+		Value     string    `firestore:"value"`
+		ExpiresAt time.Time `firestore:"expiresAt"`
+	}
+	doc.DataTo(&data)
+	if time.Now().After(data.ExpiresAt) {
+		if clear {
+			s.client.Collection("captcha").Doc(id).Delete(ctx)
+		}
+		return ""
+	}
+	if clear {
+		s.client.Collection("captcha").Doc(id).Delete(ctx)
+	}
+	return data.Value
+}
+
+func (s *firestoreCaptchaStore) Verify(id, answer string, clear bool) bool {
+	return s.Get(id, clear) == answer
+}
+
+func ensureCaptcha() {
+	captchaOnce.Do(func() {
+		if fsClient != nil {
+			log.Println("[captcha] using firestore store")
+			captchaStore = &firestoreCaptchaStore{client: fsClient}
+		} else {
+			log.Println("[captcha] using default memory store")
+			captchaStore = base64Captcha.DefaultMemStore
+		}
+		captchaInst = base64Captcha.NewCaptcha(
+			base64Captcha.NewDriverDigit(80, 240, 5, 0.7, 80),
+			captchaStore,
+		)
+	})
+}
 
 type StaffPlayer struct {
 	Nickname string `json:"nickname" firestore:"nickname"`
@@ -118,7 +177,7 @@ var (
 	reDiscord       = regexp.MustCompile(`^[a-zA-Z0-9 _.\-#]+$`)
 	reVideoID       = regexp.MustCompile(`^[a-zA-Z0-9_-]{11}$`)
 	reRoleName      = regexp.MustCompile(`^[a-zA-Z0-9 _.\-]+$`)
-
+	reHexColor      = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 )
 
 func init() {
@@ -244,6 +303,10 @@ func hashIP(ip string) string {
 }
 
 func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{}) error {
+	ct := r.Header.Get("Content-Type")
+	if ct != "" && !strings.HasPrefix(ct, "application/json") {
+		return errors.New("unsupported content type")
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
@@ -406,6 +469,8 @@ func handleCaptcha(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ensureCaptcha()
+
 	id, b64s, _, err := captchaInst.Generate()
 	if err != nil {
 		log.Printf("[captcha] generate: %v", err)
@@ -439,10 +504,9 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !captchaStore.Verify(req.CaptchaID, req.CaptchaValue, true) {
-		sendError(w, http.StatusBadRequest, "Неверный код с картинки")
-		return
-	}
+	ensureCaptcha()
+
+	captchaValid := captchaStore.Verify(req.CaptchaID, req.CaptchaValue, true)
 
 	adminHash := os.Getenv("ADMIN_HASH")
 	if adminHash == "" {
@@ -457,7 +521,9 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(adminHash), []byte(req.Password)); err != nil {
+	passwordValid := bcrypt.CompareHashAndPassword([]byte(adminHash), []byte(req.Password)) == nil
+
+	if !captchaValid || !passwordValid {
 		sendError(w, http.StatusUnauthorized, "Неверный пароль")
 		return
 	}
@@ -558,8 +624,13 @@ func handleGetProjects(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		doc, err := iter.Next()
-		if err != nil {
+		if err == iterator.Done {
 			break
+		}
+		if err != nil {
+			log.Printf("[projects] iter error: %v", err)
+			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+			return
 		}
 		var p Project
 		if err := doc.DataTo(&p); err != nil {
@@ -664,7 +735,14 @@ func fetchAPIWithRetry(ctx context.Context, apiURL string, maxRetries int) ([]by
 			lastErr = err
 			continue
 		}
-		defer resp.Body.Close()
+
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+		resp.Body.Close()
+
+		if readErr != nil {
+			lastErr = readErr
+			continue
+		}
 
 		if resp.StatusCode != http.StatusOK {
 			lastErr = fmt.Errorf("status %d", resp.StatusCode)
@@ -672,7 +750,7 @@ func fetchAPIWithRetry(ctx context.Context, apiURL string, maxRetries int) ([]by
 			continue
 		}
 
-		return io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+		return body, nil
 	}
 	return nil, lastErr
 }
@@ -758,6 +836,10 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
+	if !requireFirestore(w) {
+		return
+	}
+
 	var req struct {
 		RoleIndex int    `json:"roleIndex"`
 		Nickname  string `json:"nickname"`
@@ -826,6 +908,9 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w, http.MethodPost)
 		return
 	}
+	if !requireFirestore(w) {
+		return
+	}
 
 	var req struct {
 		Name  string `json:"name"`
@@ -845,6 +930,9 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Color == "" {
 		req.Color = "#3b82f6"
+	} else if !reHexColor.MatchString(req.Color) {
+		sendError(w, http.StatusBadRequest, "Некорректный цвет")
+		return
 	}
 
 	ctx := r.Context()
@@ -886,6 +974,9 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		methodNotAllowed(w, http.MethodDelete)
+		return
+	}
+	if !requireFirestore(w) {
 		return
 	}
 
@@ -946,6 +1037,9 @@ func handleStaffRole(w http.ResponseWriter, r *http.Request) {
 func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
 		return
 	}
 
@@ -1220,6 +1314,8 @@ func checkFirestoreLoginLimit(w http.ResponseWriter, r *http.Request, key string
 			return false
 		}
 		log.Printf("[ratelimit] firestore error: %v", err)
+		sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
+		return false
 	}
 
 	return true
