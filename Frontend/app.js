@@ -2358,19 +2358,17 @@ async function saveStaffRoles() {
 
 function renderStaffRoles() {
     const container = document.getElementById('staffRolesContainer');
+    const emptyState = document.getElementById('staffEmptyState');
     if (!container) return;
 
     clearEl(container);
 
     if (store.staffRoles.length === 0) {
-        container.appendChild(
-            h('div', { className: 'empty-state', style: { gridColumn: '1 / -1' } }, [
-                h('div', { className: 'empty-state-icon' }, ['👥']),
-                h('p', {}, ['Роли пока не созданы'])
-            ])
-        );
+        if (emptyState) emptyState.style.display = 'flex';
         return;
     }
+
+    if (emptyState) emptyState.style.display = 'none';
 
     store.staffRoles.forEach((role, roleIndex) => {
         const roleColor = role.color || '#3b82f6';
