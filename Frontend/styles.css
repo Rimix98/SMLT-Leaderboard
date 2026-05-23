@@ -924,6 +924,14 @@ a:hover {
     white-space: nowrap;
 }
 
+.project-actions .btn-sm[data-action^="move-"] {
+    flex: 0 0 auto;
+    min-width: 36px;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: var(--font-size-md);
+    line-height: 1;
+}
+
 /* === Modals === */
 .modal-overlay {
     position: fixed;

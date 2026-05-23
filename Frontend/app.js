@@ -356,6 +356,14 @@ function mountDelegatedClicks() {
             'remove-staff-player': () => {
                 const btn = e.target.closest('[data-action="remove-staff-player"]');
                 if (btn) removeStaffPlayer(Number(btn.dataset.roleIndex), Number(btn.dataset.playerIndex));
+            },
+            'move-role': () => {
+                const btn = e.target.closest('[data-action="move-role"]');
+                if (btn) moveRole(Number(btn.dataset.index), btn.dataset.direction);
+            },
+            'move-project': () => {
+                const btn = e.target.closest('[data-action="move-project"]');
+                if (btn) moveProject(Number(btn.dataset.index), btn.dataset.direction);
             }
         };
 
@@ -1774,6 +1782,8 @@ function renderProjects() {
         if (store.isHost) {
             contentChildren.push(
                 h('div', { className: 'project-actions' }, [
+                    h('button', { className: 'btn btn-secondary btn-sm', attrs: { type: 'button' }, dataset: { action: 'move-project', index: String(idx), direction: 'up' } }, ['↑']),
+                    h('button', { className: 'btn btn-secondary btn-sm', attrs: { type: 'button' }, dataset: { action: 'move-project', index: String(idx), direction: 'down' } }, ['↓']),
                     h('button', { className: 'btn btn-secondary btn-sm', attrs: { type: 'button' }, dataset: { action: 'edit-project', projectIndex: String(idx) } }, [
                         '✏️ Редактировать',
                     ]),
@@ -2284,6 +2294,16 @@ function renderStaffRoles() {
                     h('button', {
                         className: 'btn btn-secondary btn-sm',
                         attrs: { type: 'button' },
+                        dataset: { action: 'move-role', index: String(roleIndex), direction: 'up' }
+                    }, ['↑']),
+                    h('button', {
+                        className: 'btn btn-secondary btn-sm',
+                        attrs: { type: 'button' },
+                        dataset: { action: 'move-role', index: String(roleIndex), direction: 'down' }
+                    }, ['↓']),
+                    h('button', {
+                        className: 'btn btn-secondary btn-sm',
+                        attrs: { type: 'button' },
                         dataset: { action: 'show-add-staff-player-modal', roleIndex: String(roleIndex) }
                     }, ['➕ Добавить игрока']),
                     h('button', {
@@ -2302,6 +2322,26 @@ function renderStaffRoles() {
 
         cardParts.push(h('div', { className: 'project-content' }, contentChildren));
         container.appendChild(h('div', { className: 'project-card' }, cardParts));
+    });
+}
+
+function moveRole(index, direction) {
+    const target = direction === 'down' ? index + 1 : index - 1;
+    if (target < 0 || target >= store.staffRoles.length) return;
+    [store.staffRoles[index], store.staffRoles[target]] = [store.staffRoles[target], store.staffRoles[index]];
+    renderStaffRoles();
+    saveStaffRoles();
+}
+
+function moveProject(index, direction) {
+    const target = direction === 'down' ? index + 1 : index - 1;
+    if (target < 0 || target >= store.projects.length) return;
+    [store.projects[index], store.projects[target]] = [store.projects[target], store.projects[index]];
+    renderProjects();
+    saveProjects(store.projects).catch(e => {
+        [store.projects[index], store.projects[target]] = [store.projects[target], store.projects[index]];
+        renderProjects();
+        showToast(e.message, 'error');
     });
 }
 
