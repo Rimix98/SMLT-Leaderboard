@@ -428,6 +428,11 @@ function initDemonlistTabs() {
         const tab = btn.dataset.tab;
         const content = document.getElementById(tab === 'players' ? 'tabPlayers' : 'tabLevels');
         if (content) content.classList.add('active');
+
+        const adminPanel = document.querySelector('.admin-panel');
+        if (adminPanel) {
+            adminPanel.style.display = tab === 'players' && store.isHost ? '' : 'none';
+        }
     });
 }
 
