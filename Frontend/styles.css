@@ -884,12 +884,82 @@ a:hover {
     font-weight: 600;
 }
 
+/* Participant builder */
+.participant-builder {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.participant-add-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.participant-role-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+}
+
+.role-tag-btn {
+    padding: 4px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-sm);
+    background: var(--color-surface-2);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.role-tag-btn:hover {
+    border-color: var(--color-secondary);
+    color: var(--color-text-primary);
+}
+
+.role-tag-btn.active {
+    background: var(--color-secondary);
+    border-color: var(--color-secondary);
+    color: #fff;
+}
+
+.participants-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm);
+    min-height: 40px;
+    background: var(--color-surface);
+    border-radius: var(--border-radius-sm);
+    border: 1px solid var(--color-border);
+}
+
+.participant-preview-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+#addParticipantBtn {
+    align-self: flex-start;
+}
+
 .project-actions {
     display: flex;
-    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
     margin-top: var(--spacing-md);
     padding-top: var(--spacing-md);
     border-top: 1px solid var(--color-border);
+}
+
+.project-actions .btn-sm {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
 }
 
 /* === Modals === */
@@ -1685,7 +1755,8 @@ a:hover {
     position: relative;
 }
 
-.staff-player-tag .staff-player-remove-tag {
+.staff-player-tag .staff-player-remove-tag,
+.participant-preview-tag .staff-player-remove-tag {
     background: none;
     border: none;
     color: var(--color-text-muted);
@@ -1697,7 +1768,8 @@ a:hover {
     margin-left: 2px;
 }
 
-.staff-player-tag .staff-player-remove-tag:hover {
+.staff-player-tag .staff-player-remove-tag:hover,
+.participant-preview-tag .staff-player-remove-tag:hover {
     color: var(--color-error);
 }
 

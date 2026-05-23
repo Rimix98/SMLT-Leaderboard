@@ -197,6 +197,7 @@ const store = {
     _leaderboard: { body: null, lastSig: '' },
     staffRoles: [],
     selectedRoleColor: '#3b82f6',
+    pendingProjectParticipants: [],
 };
 
 function encodeCountryToken(country) {
@@ -309,6 +310,14 @@ function mountDelegatedClicks() {
             'show-add-player-modal': showAddPlayerModal,
             'show-add-project-modal': showAddProjectModal,
             'add-player': addPlayer,
+            'add-project-participant': addProjectParticipant,
+            'toggle-role-tag': (e) => {
+                const btn = e.target.closest('[data-action="toggle-role-tag"]');
+                if (btn) {
+                    e.preventDefault();
+                    btn.classList.toggle('active');
+                }
+            },
             'remove-player': () => {
                 const btn = e.target.closest('[data-remove-player]');
                 if (btn) removePlayer(btn.dataset.playerName);
@@ -320,6 +329,10 @@ function mountDelegatedClicks() {
             'delete-project': () => {
                 const btn = e.target.closest('[data-delete-project]');
                 if (btn) deleteProject(Number(btn.dataset.projectIndex));
+            },
+            'remove-project-participant': () => {
+                const btn = e.target.closest('[data-action="remove-project-participant"]');
+                if (btn) removeProjectParticipant(Number(btn.dataset.index));
             },
             'show-add-role-modal': showAddRoleModal,
             'show-edit-role-modal': () => {
@@ -1617,14 +1630,26 @@ async function loadProjects() {
 function buildParticipantNodes(participants) {
     const frag = document.createDocumentFragment();
     (participants || []).forEach((line) => {
-        const match = line.match(/^(.+?)\s*\((.+?)\)$/);
         const div = document.createElement('div');
         div.className = 'participant-tag';
 
-        if (match) {
-            const name = match[1].trim();
-            const roles = match[2].split(',').map((r) => r.trim());
+        // New format: "Name - ROLE1 ROLE2"
+        const newMatch = line.match(/^(.+?)\s*-\s+(.+)$/);
+        // Old format: "Name (ROLE1, ROLE2)"
+        const oldMatch = !newMatch ? line.match(/^(.+?)\s*\((.+?)\)$/) : null;
 
+        if (newMatch) {
+            const name = newMatch[1].trim();
+            const roles = newMatch[2].split(/\s+/).filter(Boolean);
+            div.appendChild(document.createTextNode(`${name} - `));
+            roles.forEach((role, i) => {
+                if (i) div.appendChild(document.createTextNode(' '));
+                const roleSpan = createSafeRoleSpan(role);
+                div.appendChild(roleSpan);
+            });
+        } else if (oldMatch) {
+            const name = oldMatch[1].trim();
+            const roles = oldMatch[2].split(',').map((r) => r.trim());
             div.appendChild(document.createTextNode(`${name} - (`));
             roles.forEach((role, i) => {
                 if (i) div.appendChild(document.createTextNode(', '));
@@ -1800,13 +1825,93 @@ function showAddProjectModal() {
         form.reset();
         document.getElementById('projectIndex').value = '-1';
         document.getElementById('projectModalTitle').textContent = 'Добавить проект';
+        resetParticipantBuilder();
         modal.classList.add('active');
+        setTimeout(initParticipantBuilder, 50);
     }
 }
 
 function closeProjectModal() {
     const modal = document.getElementById('projectModal');
     if (modal) modal.classList.remove('active');
+}
+
+function resetParticipantBuilder() {
+    store.pendingProjectParticipants = [];
+    const preview = document.getElementById('participantsPreview');
+    if (preview) preview.innerHTML = '';
+    const select = document.getElementById('participantPlayerSelect');
+    if (select) select.value = '';
+    document.querySelectorAll('#participantRoleTags .role-tag-btn').forEach(b => b.classList.remove('active'));
+}
+
+async function initParticipantBuilder() {
+    const select = document.getElementById('participantPlayerSelect');
+    if (!select) return;
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">Выберите игрока...</option>';
+    try {
+        const names = await getPlayerNames();
+        names.forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            select.appendChild(opt);
+        });
+    } catch {}
+    if (currentVal) select.value = currentVal;
+    updateParticipantsPreview();
+}
+
+function addProjectParticipant() {
+    const select = document.getElementById('participantPlayerSelect');
+    if (!select) return;
+    const name = select.value;
+    if (!name) {
+        showToast('Выберите игрока', 'error');
+        return;
+    }
+    const activeRoles = [];
+    document.querySelectorAll('#participantRoleTags .role-tag-btn.active').forEach(b => {
+        activeRoles.push(b.dataset.role);
+    });
+    let entry = name;
+    if (activeRoles.length > 0) {
+        entry = name + ' - ' + activeRoles.join(' ');
+    }
+    store.pendingProjectParticipants.push(entry);
+    select.value = '';
+    document.querySelectorAll('#participantRoleTags .role-tag-btn').forEach(b => b.classList.remove('active'));
+    updateParticipantsPreview();
+}
+
+function removeProjectParticipant(index) {
+    if (index >= 0 && index < store.pendingProjectParticipants.length) {
+        store.pendingProjectParticipants.splice(index, 1);
+        updateParticipantsPreview();
+    }
+}
+
+function updateParticipantsPreview() {
+    const preview = document.getElementById('participantsPreview');
+    if (!preview) return;
+    clearEl(preview);
+    if (!store.pendingProjectParticipants || store.pendingProjectParticipants.length === 0) {
+        preview.appendChild(
+            h('span', { style: { color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)' } }, ['Участники не добавлены'])
+        );
+        return;
+    }
+    store.pendingProjectParticipants.forEach((entry, i) => {
+        const tag = h('span', { className: 'participant-tag participant-preview-tag' }, [
+            h('span', {}, [escapeHtml(entry)]),
+            h('button', {
+                className: 'staff-player-remove-tag',
+                attrs: { 'data-action': 'remove-project-participant', 'data-index': String(i), 'title': 'Удалить' }
+            }, ['✕'])
+        ]);
+        preview.appendChild(tag);
+    });
 }
 
 function editProject(idx) {
@@ -1826,9 +1931,12 @@ function editProject(idx) {
     document.getElementById('projectComment').value = project.comment || '';
     document.getElementById('projectStatus').value = project.status || 'планируется';
     document.getElementById('projectVerifier').value = project.verifier || '';
-    document.getElementById('projectParticipants').value = (project.participants || []).join(', ');
+
+    store.pendingProjectParticipants = [...(project.participants || [])];
+    updateParticipantsPreview();
 
     document.getElementById('projectModal').classList.add('active');
+    setTimeout(initParticipantBuilder, 50);
 }
 
 async function saveProject() {
@@ -1840,7 +1948,7 @@ async function saveProject() {
         comment: document.getElementById('projectComment').value.trim(),
         status: document.getElementById('projectStatus').value,
         verifier: document.getElementById('projectVerifier').value.trim(),
-        participants: document.getElementById('projectParticipants').value.split(',').map(p => p.trim()).filter(p => p)
+        participants: Array.isArray(store.pendingProjectParticipants) ? store.pendingProjectParticipants.filter(Boolean) : []
     };
 
     const oldProject = idx === -1 ? null : { ...store.projects[idx] };
