@@ -127,7 +127,7 @@ var (
 
 var (
 	reProjectID    = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,50}$`)
-	reAlphanumeric = regexp.MustCompile(`^[a-zA-Z0-9 _.\-]+$`)
+	reAlphanumeric = regexp.MustCompile(`^[\p{L}0-9 _.\-]+$`)
 	reDiscord      = regexp.MustCompile(`^[a-zA-Z0-9 _.\-#]+$`)
 	reVideoID      = regexp.MustCompile(`^[a-zA-Z0-9_-]{11}$`)
 	reRoleName     = regexp.MustCompile(`^[\p{L}0-9 _.\-]+$`)
