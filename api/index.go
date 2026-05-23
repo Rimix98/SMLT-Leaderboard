@@ -1449,6 +1449,10 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
 	if !requireFirestore(w) {
 		return
 	}
