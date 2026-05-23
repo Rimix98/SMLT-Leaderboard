@@ -845,6 +845,16 @@ function getFlag(c) {
     return '🌍';
 }
 
+function getCountryLabel(c) {
+    if (!c) return 'неизвестно';
+    const upper = c.toUpperCase();
+    if (FLAGS[upper]) return upper;
+    const lower = c.toLowerCase().trim().replace(/\s+/g, '-');
+    const code = COUNTRY_TO_CODE[lower];
+    if (code) return CODE_TO_NAME[code] || code;
+    return c;
+}
+
 function showToast(msg, type = 'error') {
     const t = document.createElement('div');
     t.className = `toast toast-${type}`;
@@ -1073,7 +1083,10 @@ function createPlayerRow(index, p) {
     return h('div', { className: 'player-row', dataset: { profileIndex: String(index) } }, [
         h('div', { className: `cell cell-position ${rc}` }, [String(index + 1)]),
         h('div', { className: 'cell cell-player' }, [
-            h('span', { className: 'player-flag' }, [getFlag(p.nationality)]),
+            h('span', { className: 'player-flag' }, [
+                getFlag(p.nationality),
+                h('span', { className: 'player-flag-label' }, [getCountryLabel(p.nationality)]),
+            ]),
             h('div', { className: 'player-info' }, [
                 h('span', { className: 'player-name' }, [p.name]),
                 h('span', { className: 'player-score' }, [`${score} pts · #${rank}`]),
@@ -1093,7 +1106,9 @@ function updatePlayerRow(row, index, p) {
     const [cellPos, cellPlayer, cellPoints, cellRec] = row.children;
     cellPos.className = `cell cell-position ${rc}`;
     cellPos.textContent = String(index + 1);
-    cellPlayer.querySelector('.player-flag').textContent = getFlag(p.nationality);
+    const flagSpan = cellPlayer.querySelector('.player-flag');
+    flagSpan.textContent = '';
+    flagSpan.append(getFlag(p.nationality), h('span', { className: 'player-flag-label' }, [getCountryLabel(p.nationality)]));
     cellPlayer.querySelector('.player-name').textContent = p.name;
     cellPlayer.querySelector('.player-score').textContent = `${score} pts · #${rank}`;
     cellPoints.textContent = score;
