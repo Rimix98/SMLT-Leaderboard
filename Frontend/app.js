@@ -381,6 +381,20 @@ function initEventListeners() {
             }
         });
     }
+
+    const hostSubmitBtn = document.getElementById('hostSubmitBtn');
+    if (hostSubmitBtn) {
+        hostSubmitBtn.addEventListener('click', () => {
+            verifyHost(document.getElementById('hostPassword')?.value || '');
+        });
+    }
+
+    document.querySelectorAll('.modal-close').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const modal = btn.closest('.modal-overlay');
+            if (modal) modal.classList.remove('active');
+        });
+    });
 }
 
 // ============================================
