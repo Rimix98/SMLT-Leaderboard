@@ -75,7 +75,11 @@ function fetchWithAbort(url, options = {}, key = null) {
         headers['X-CSRF-Token'] = csrfToken;
     }
 
+    const timeoutMs = options.timeout || 30000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     return fetch(url, { ...options, headers, signal: controller.signal }).finally(() => {
+        clearTimeout(timeoutId);
         if (key && pendingRequests.get(key) === controller) {
             pendingRequests.delete(key);
         }
@@ -216,17 +220,24 @@ function decodeCountryToken(token) {
 let csrfToken = '';
 
 async function refreshCsrfToken() {
-    try {
-        const res = await fetch(`${BACKEND_URL}/csrf-token`, { credentials: 'include' });
-        const data = await res.json();
-        if (data.token) {
-            csrfToken = data.token;
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            const res = await fetch(`${BACKEND_URL}/csrf-token`, { credentials: 'include' });
+            const data = await res.json();
+            if (data.token) {
+                csrfToken = data.token;
+            }
+            return data.token || null;
+        } catch (e) {
+            if (attempt === 0) {
+                await new Promise(r => setTimeout(r, 1000));
+                continue;
+            }
+            console.error('Не удалось получить CSRF токен:', e);
+            return null;
         }
-        return data.token || null;
-    } catch (e) {
-        console.error('Не удалось получить CSRF токен:', e);
-        return null;
     }
+    return null;
 }
 
 // ============================================
@@ -839,10 +850,18 @@ async function loadPlayersFromClientAPI() {
     renderHardestLevels();
 }
 
+let _loadingLeaderboard = false;
+
 async function loadAllPlayers() {
+    if (_loadingLeaderboard) return;
+    _loadingLeaderboard = true;
+
     const table = document.getElementById('leaderboardTable');
     const count = document.getElementById('playersCount');
-    if (!table) return;
+    if (!table) {
+        _loadingLeaderboard = false;
+        return;
+    }
 
     try {
         let rawData = [];
@@ -881,6 +900,8 @@ async function loadAllPlayers() {
             );
             showToast('Ошибка загрузки лидерборда', 'error');
         }
+    } finally {
+        _loadingLeaderboard = false;
     }
 }
 
@@ -1486,6 +1507,11 @@ async function addPlayer() {
 
     if (!name) return;
 
+    if (name.length < 2 || name.length > 32) {
+        showToast('Ник должен быть от 2 до 32 символов', 'error');
+        return;
+    }
+
     let playerNames = await getPlayerNames();
     if (playerNames.includes(name)) {
         showToast('Такой игрок уже есть', 'error');
@@ -1859,7 +1885,7 @@ function extractVideoId(url) {
         if (match) return match[1];
     }
 
-    return url;
+    return '';
 }
 
 // ============================================
@@ -2224,8 +2250,7 @@ async function addPlayerToRole() {
             throw new Error(err.error || 'Ошибка добавления игрока');
         }
 
-        const newPlayer = await res.json();
-        role.players.push(newPlayer);
+        role.players.push({ nickname, discord });
         renderStaffRoles();
         closeAddStaffPlayerModal();
         showToast(`Игрок «${escapeHtml(nickname)}» добавлен в роль «${escapeHtml(role.name)}»`, 'success');

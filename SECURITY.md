@@ -1,26 +1,72 @@
-Условия использования и политика конфиденциальности SMLT
-1. Общие положения
+# Security Policy
 
-    SMLT Community Edition — это открытая платформа для отслеживания рекордов (демонлиста), совместных проектов и активности участников сообщества SMLT.
+## Supported Versions
 
-    Администрация (Хосты) имеет полное право редактировать или удалять рекорды и проекты, если они нарушают правила или содержат ошибки.
+| Version | Supported          |
+|---------|--------------------|
+| 1.x     | ✅ Active support  |
 
-2. Правила Демонлиста и проектов
+## Reporting a Vulnerability
 
-    Честная игра: В таблицу лидеров принимаются только легитные прохождения. Использование читов (Noclip, Speedhack, автокликеры и т.д.), не разрешенных правилами сообщества SMLT, приведет к аннулированию рекорда.
+**DO NOT** create a public GitHub issue for security vulnerabilities.
 
-    Адекватность: Запрещено использовать оскорбительные ники, спамить фейковыми проектами или писать нецензурщину в описании уровней.
+Contact the security team directly:
+- Discord: **@rimix.98** (primary) or **@.samoletik** (admin)
+- Telegram: **@samoltik**
+- GitHub: Open a [draft security advisory](https://github.com/<owner>/SMLT-Demonlist/security/advisories/new)
 
-3. Какие данные мы собираем и зачем?
+We aim to acknowledge reports within 48 hours and deploy a fix within 7 days.
 
-Мы не требуем регистрации, не просим твою почту, пароли или номер телефона. Всё, что обрабатывает сайт:
+## Security Architecture
 
-    Игровые ники и ID (Geometry Dash / Discord): Нужны исключительно для того, чтобы показывать тебя в топе и отмечать твоё участие в коллабах.
+### Authentication
+- **Password**: Stored as bcrypt hash (cost 10), never in plaintext.
+- **JWT**: HS256-signed, 24h expiry, `jti` claim for individual revocation, `ver` claim for bulk invalidation.
+- **Cookies**: `HttpOnly`, `Secure`, `SameSite=Strict`. Auth and CSRF tokens are separate cookies.
+- **CSRF**: Double-submit cookie pattern. Token in HttpOnly cookie + `X-CSRF-Token` header.
 
-    Технические данные хостов: Если ты заходишь в панель управления как хост, сайт сохраняет сессию в твоем браузере, чтобы тебе не приходилось вводить пароль при каждой перезагрузке.
+### Rate Limiting
+- **All endpoints**: 30–60 requests/min per IP (sliding window).
+- **Login endpoint**: 5 requests/min per IP with CAPTCHA requirement.
+- **Production**: Upstash Redis (distributed). **Fallback**: In-memory (per-Vercel-instance).
+- **IP extraction**: Trusted headers from Vercel (`X-Vercel-Forwarded-For`) with validated leftmost `X-Forwarded-For` fallback.
 
-    Анонимная аналитика (Vercel Analytics): Собирает общую статистику (какие страницы популярны, с телефона ты зашел или с ПК, из какой страны). Твой IP-адрес или личные данные при этом не записываются.
+### Input Validation
+- All JSON bodies: limited to 1 MB, unknown fields rejected.
+- All string inputs: sanitized via `bluemonday` UGCPolicy.
+- Project IDs, video IDs, nicknames, Discord tags, role names, hex colors: regex-validated.
+- No `innerHTML` or raw HTML attribute injection in frontend.
 
-4. Отказ от ответственности
+### Database (Firestore)
+- Server-side writes: only through authenticated, CSRF-protected endpoints.
+- Transactions used for all read-modify-write operations (staff roles).
+- Batch writes for project saves use `MergeAll` to prevent field loss.
+- Token blacklist collection (`token_blacklist`) with 24h TTL for forced logout.
 
-    Сайт работает «как есть». Если упадет бэкенд-API (api.demonlist.org) или возникнут лаги на стороне хостинга, мы сделаем всё возможное, чтобы это починить, но за временную потерю циферок в топе ответственности не несем.
+### Frontend Security
+- No `innerHTML`, `outerHTML`, `insertAdjacentHTML`, or `document.write`.
+- All text content set via `textContent` or `document.createTextNode`.
+- Attribute values set via `setAttribute()` with proper escaping.
+- Styles set via `style` property (not `cssText`).
+- All external links use `rel="noopener noreferrer"`.
+- CSP enforced: `default-src 'self'`, `frame-src https://www.youtube.com`, `form-action 'self'`.
+
+### Data Collection
+See [PRIVACY.md](PRIVACY.md) or the website's info modal for details on what we collect.
+We do NOT store IP addresses, browser fingerprints, or personal identifiable information beyond Discord tags and in-game nicknames.
+
+## Deployment Checklist
+
+Before deploying to production:
+1. [ ] `JWT_SECRET` is ≥32 random characters
+2. [ ] `ADMIN_HASH` is a bcrypt hash of a strong password
+3. [ ] `FIREBASE_CREDENTIALS` is the service account JSON (single line)
+4. [ ] `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are set
+5. [ ] `VERCEL=1` is set in production (automatic on Vercel)
+6. [ ] Firestore security rules restrict client access (server-only writes)
+
+## Known Security Considerations
+
+1. **Demonlist.org dependency**: Leaderboard data is fetched from an external API. We validate the response schema but cannot guarantee data integrity from the upstream.
+2. **JWT token lifetime**: Tokens expire after 24 hours. For immediate revocation, increment `tokenVersion` in Firestore (`config/auth`).
+3. **No user registration**: The admin panel is accessible only via shared password. Audit logging tracks all admin actions.
