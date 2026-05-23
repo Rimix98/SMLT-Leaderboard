@@ -8,9 +8,22 @@
 
 function escapeHtml(text) {
     if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;')
+        .replace(/\//g, '&#x2F;')
+        .replace(/`/g, '&#x60;');
+}
+
+function resolveCountry(input) {
+    if (!input) return null;
+    const upper = input.toUpperCase().trim();
+    if (FLAGS[upper]) return upper;
+    const lower = input.toLowerCase().trim();
+    return COUNTRY_TO_CODE[lower] || null;
 }
 
 // Функция для безопасного создания класса роли
@@ -32,7 +45,7 @@ function getSafeRoleClass(role) {
 function createSafeRoleSpan(roleText) {
     const span = document.createElement('span');
     span.className = `role ${getSafeRoleClass(roleText)}`;
-    span.textContent = roleText; // textContent автоматически экранирует
+    span.textContent = roleText;
     return span;
 }
 
@@ -43,7 +56,6 @@ function createSafeRoleSpan(roleText) {
 const API_BASE = 'https://api.demonlist.org';
 const BACKEND_URL = '/api';
 
-// [FIXED] Отмена предыдущих fetch при повторном клике / новом запросе
 const pendingRequests = new Map();
 
 function fetchWithAbort(url, options = {}, key = null) {
@@ -58,7 +70,6 @@ function fetchWithAbort(url, options = {}, key = null) {
         'X-Requested-With': 'XMLHttpRequest'
     };
 
-    // [SECURITY FIX] Добавление CSRF токена для мутирующих запросов
     if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase()) && csrfToken) {
         headers['X-CSRF-Token'] = csrfToken;
     }
@@ -74,7 +85,6 @@ function isAbortError(err) {
     return err?.name === 'AbortError';
 }
 
-// [FIXED] Безопасный разбор JSON (Vercel 500 отдаёт HTML, не JSON)
 async function parseJsonResponse(res) {
     const contentType = res.headers.get('content-type') || '';
     const text = await res.text();
@@ -112,7 +122,6 @@ const FLAGS = {
     'TW': '🇹🇼', 'HK': '🇭🇰', 'MO': '🇲🇴', 'AM': '🇦🇲', 'MD': '🇲🇩'
 };
 
-// Маппинг названий стран к кодам
 const COUNTRY_TO_CODE = {
     'russia': 'RU', 'united-states': 'US', 'germany': 'DE', 'france': 'FR',
     'united-kingdom': 'GB', 'brazil': 'BR', 'south-korea': 'KR', 'korea': 'KR',
@@ -173,7 +182,6 @@ const store = {
     players: [],
     allPlayers: [],
     projects: [],
-    /** Состояние блока «топ уровней» (раньше window.allLevels / window.levelData) */
     levels: {
         all: null,
         levelData: null,
@@ -181,20 +189,19 @@ const store = {
         filter: '',
         _body: null,
     },
-    /** Кэш строк лидерборда для инкрементального обновления */
     _leaderboard: { body: null, lastSig: '' },
     staffRoles: [],
     selectedRoleColor: '#3b82f6',
 };
 
 function encodeCountryToken(country) {
-    // [SECURITY FIX] Замена unescape на encodeURIComponent
-    return btoa(encodeURIComponent(country));
+    const code = resolveCountry(country);
+    if (!code) return '';
+    return btoa(encodeURIComponent(code));
 }
 
 function decodeCountryToken(token) {
     try {
-        // [SECURITY FIX] Замена escape на decodeURIComponent
         return decodeURIComponent(atob(token));
     } catch {
         return '';
@@ -214,8 +221,10 @@ async function refreshCsrfToken() {
         if (data.token) {
             csrfToken = data.token;
         }
+        return data.token || null;
     } catch (e) {
         console.error('Не удалось получить CSRF токен:', e);
+        return null;
     }
 }
 
@@ -228,11 +237,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     initHostStatus();
     initEventListeners();
     mountDelegatedClicks();
-    
-    // Получаем CSRF токен при загрузке
+
     await refreshCsrfToken();
 
-    // Загружаем данные в зависимости от страницы
     if (document.getElementById('leaderboardTable')) {
         loadAllPlayers();
     }
@@ -244,7 +251,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-/** Делегирование вместо inline onclick в разметке из JS */
 function mountDelegatedClicks() {
     document.getElementById('leaderboardTable')?.addEventListener('click', (e) => {
         const row = e.target.closest('[data-profile-index]');
@@ -268,7 +274,6 @@ function mountDelegatedClicks() {
         else if (delBtn) deleteProject(Number(delBtn.dataset.projectIndex));
     });
 
-    // Global delegation for data-action attributes
     document.addEventListener('click', (e) => {
         const actionEl = e.target.closest('[data-action]');
         if (!actionEl) return;
@@ -330,13 +335,11 @@ function mountDelegatedClicks() {
 }
 
 function initEventListeners() {
-    // Кнопка смены темы
     const themeToggle = document.getElementById('themeToggle');
     if (themeToggle) {
         themeToggle.addEventListener('click', toggleTheme);
     }
 
-    // Кнопка хоста
     const hostBtn = document.getElementById('hostBtn');
     if (hostBtn) {
         hostBtn.addEventListener('click', () => {
@@ -348,7 +351,6 @@ function initEventListeners() {
         });
     }
 
-    // Закрытие модалок по клику на оверлей
     document.querySelectorAll('.modal-overlay').forEach(overlay => {
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) {
@@ -357,7 +359,6 @@ function initEventListeners() {
         });
     });
 
-    // Поиск по демонлисту
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
@@ -365,7 +366,6 @@ function initEventListeners() {
         });
     }
 
-    // Поиск по уровням
     const levelSearchInput = document.getElementById('levelSearchInput');
     if (levelSearchInput) {
         levelSearchInput.addEventListener('input', (e) => {
@@ -373,7 +373,6 @@ function initEventListeners() {
         });
     }
 
-    // Enter для входа хоста
     const hostPassword = document.getElementById('hostPassword');
     if (hostPassword) {
         hostPassword.addEventListener('keypress', (e) => {
@@ -381,7 +380,7 @@ function initEventListeners() {
                 verifyHost(hostPassword.value);
             }
         });
-    }   
+    }
 }
 
 // ============================================
@@ -397,16 +396,13 @@ function initTheme() {
 function toggleTheme() {
     const currentTheme = document.documentElement.getAttribute('data-theme');
     const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    
-    // Add transition animation
+
     document.body.classList.add('theme-transitioning');
-    
-    // Change theme
+
     document.documentElement.setAttribute('data-theme', newTheme);
     localStorage.setItem('smlt-theme', newTheme);
     updateThemeIcon(newTheme);
-    
-    // Remove transition class after animation completes
+
     setTimeout(() => {
         document.body.classList.remove('theme-transitioning');
     }, 400);
@@ -488,7 +484,6 @@ async function verifyHost(inputPassword) {
         if (res.ok && data.success === true) {
             store.isHost = true;
             localStorage.setItem('smlt-host', 'true');
-            // Токен в sessionStorage больше не пишем, бэкенд сам поставил HttpOnly куку!
 
             showToast('Доступ предоставлен! Вы вошли как хост.', 'success');
 
@@ -498,7 +493,6 @@ async function verifyHost(inputPassword) {
             updateHostButton();
             updateAdminControls();
 
-            // Перезагружаем данные, чтобы обновились кнопки управления
             if (document.getElementById('projectsGrid')) loadProjects();
             if (document.getElementById('leaderboardTable')) loadAllPlayers();
         } else {
@@ -517,10 +511,10 @@ async function verifyHost(inputPassword) {
 async function logoutHost() {
     store.isHost = false;
     localStorage.removeItem('smlt-host');
-    sessionStorage.removeItem('adminToken'); 
-    
+    sessionStorage.removeItem('adminToken');
+
     try {
-        await fetchWithAbort(`${BACKEND_URL}/logout`, { 
+        await fetchWithAbort(`${BACKEND_URL}/logout`, {
             method: 'POST',
             credentials: 'include'
         }, 'host-logout');
@@ -554,7 +548,6 @@ function updateAdminControls() {
         el.style.display = store.isHost ? '' : 'none';
     });
 
-    // Если мы на странице стаффа — перерендерить роли (там conditional кнопки)
     if (document.getElementById('staffRolesContainer')) {
         renderStaffRoles();
     }
@@ -644,7 +637,6 @@ async function loadGeoStats() {
 }
 
 async function savePlayerNames(names) {
-    // Форматируем массив под структуру Player в Go (объект с полем name)
     const formattedPlayers = names.map(n => ({ name: n }));
 
     const res = await fetchWithAbort(`${BACKEND_URL}/players`, {
@@ -658,7 +650,6 @@ async function savePlayerNames(names) {
         throw new Error(err.error || 'Ошибка сохранения игроков (возможно, сессия истекла)');
     }
 }
-
 
 
 function getFlag(c) {
@@ -721,7 +712,6 @@ async function fetchRecords(id) {
     }
 }
 
-// [FIXED] Парсинг ответа Demonlist из /api/leaderboard (users внутри data.data)
 function mapLeaderboardEntry(p) {
     const root = p.data || {};
     const users = root.data?.users || [];
@@ -759,13 +749,12 @@ async function loadPlayersFromClientAPI() {
     const table = document.getElementById('leaderboardTable');
     const names = await getPlayerNames();
 
-    // Запускаем всё параллельно
     const promises = names.map(async (name) => {
         try {
             const fp = await fetchPlayerData(name);
             if (!fp) return null;
             const recs = await fetchRecords(fp.id);
-            
+
             let hardest = null;
             const acceptedRecs = recs.filter(r => r.status === 'accepted' && r.level);
             if (acceptedRecs.length > 0) {
@@ -801,29 +790,6 @@ async function loadPlayersFromClientAPI() {
     renderPlayers();
     renderHardestLevels();
 }
-
-async function getCSRFToken() {
-    const response = await fetch('/api/csrf-token', {
-        credentials: 'include'
-    });
-    const data = await response.json();
-    return data.token;
-}
-
-// Обновить все мутирующие запросы
-async function addPlayer() {
-    const csrfToken = await getCSRFToken();
-    const res = await fetchWithAbort(`${BACKEND_URL}/players`, {
-        method: 'POST',
-        headers: { 
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': csrfToken
-        },
-        credentials: 'include',
-        body: JSON.stringify(formattedPlayers)
-    }, 'players-save');
-}
-
 
 async function loadAllPlayers() {
     const table = document.getElementById('leaderboardTable');
@@ -1058,10 +1024,16 @@ function renderCountryStats() {
     countryList.appendChild(frag);
 }
 
-function showCountryTop(country) {
+function showCountryTop(raw) {
+    const country = resolveCountry(raw);
+    if (!country) {
+        showToast('Страна не найдена', 'error');
+        return;
+    }
+
     const countryPlayers = store.allPlayers.filter(p => {
-        const pCountry = p.nationality?.toLowerCase().trim();
-        return pCountry === country.toLowerCase().trim();
+        const pCountry = resolveCountry(p.nationality);
+        return pCountry === country;
     }).sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
 
     const modal = document.getElementById('countryModal');
@@ -1123,9 +1095,8 @@ function renderHardestLevels() {
 
     if (!levelsTable) return;
 
-    // Collect all completed levels from all players
     const levelMap = new Map();
-    
+
     store.players.forEach(player => {
         if (player.records) {
             player.records.forEach(record => {
@@ -1133,7 +1104,7 @@ function renderHardestLevels() {
                     const levelId = record.level.id;
                     const levelName = record.level.name;
                     const placement = record.level.placement;
-                    
+
                     if (!levelMap.has(levelId)) {
                         levelMap.set(levelId, {
                             id: levelId,
@@ -1142,8 +1113,7 @@ function renderHardestLevels() {
                             victors: []
                         });
                     }
-                    
-                    // Add player to victors if not already added
+
                     const levelData = levelMap.get(levelId);
                     if (!levelData.victors.find(v => v.id === player.id)) {
                         levelData.victors.push({
@@ -1157,7 +1127,6 @@ function renderHardestLevels() {
         }
     });
 
-    // Sort levels by placement (lower placement = harder)
     const sortedLevels = Array.from(levelMap.values())
         .filter(level => level.placement !== undefined && level.placement !== null)
         .sort((a, b) => a.placement - b.placement);
@@ -1371,11 +1340,12 @@ function showProfile(idx) {
     const body = document.getElementById('profileBody');
     clearEl(body);
 
-    const stat = (value, label) =>
-        h('div', { className: 'profile-stat' }, [
+    function stat(value, label) {
+        return h('div', { className: 'profile-stat' }, [
             h('div', { className: 'profile-stat-value' }, [String(value)]),
             h('div', { className: 'profile-stat-label' }, [label]),
         ]);
+    }
 
     body.appendChild(
         h('div', { className: 'profile-stats' }, [stat(score, 'Очки'), stat(`#${rank}`, 'Глобальный топ'), stat(String(rec.length), 'Уровней')])
@@ -1465,7 +1435,7 @@ function closeAddPlayerModal() {
 async function addPlayer() {
     const nameInput = document.getElementById('newPlayerName');
     const name = nameInput.value.trim();
-    
+
     if (!name) return;
 
     let playerNames = await getPlayerNames();
@@ -1475,12 +1445,12 @@ async function addPlayer() {
     }
 
     playerNames.push(name);
-    
+
     try {
         await savePlayerNames(playerNames);
-    closeAddStaffPlayerModal();
+        closeAddPlayerModal();
         nameInput.value = '';
-        await loadAllPlayers(); 
+        await loadAllPlayers();
         showToast('Игрок успешно добавлен', 'success');
     } catch (e) {
         if (isAbortError(e)) return;
@@ -1500,7 +1470,6 @@ async function removePlayer(name) {
     if (!confirm(`Удалить игрока "${name}"?`)) return;
 
     try {
-        // [SECURITY FIX] Удаление через защищённый DELETE /api/players
         const res = await fetchWithAbort(`${BACKEND_URL}/players`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
@@ -1563,11 +1532,11 @@ function buildParticipantNodes(participants) {
         const match = line.match(/^(.+?)\s*\((.+?)\)$/);
         const div = document.createElement('div');
         div.className = 'participant-tag';
-        
+
         if (match) {
             const name = match[1].trim();
             const roles = match[2].split(',').map((r) => r.trim());
-            
+
             div.appendChild(document.createTextNode(`${name} - (`));
             roles.forEach((role, i) => {
                 if (i) div.appendChild(document.createTextNode(', '));
@@ -1935,8 +1904,6 @@ async function loadStaffRoles() {
 }
 
 async function saveStaffRoles() {
-    // Deprecated: используй точечные запросы (addPlayerToRole, removeStaffPlayer, createRole, deleteRole)
-    // Оставлена для обратной совместимости
     try {
         const res = await fetchWithAbort(`${BACKEND_URL}/staff`, {
             method: 'POST',
@@ -1944,7 +1911,7 @@ async function saveStaffRoles() {
             credentials: 'include',
             body: JSON.stringify(store.staffRoles)
         }, 'staff-save');
-        
+
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.error || 'Ошибка сохранения ролей');
@@ -2096,7 +2063,7 @@ async function createRole() {
             credentials: 'include',
             body: JSON.stringify({ name, color })
         }, 'create-role');
-        
+
         if (!res.ok) {
             const err = await parseJsonResponse(res);
             throw new Error(err.error || 'Ошибка создания роли');
@@ -2132,7 +2099,7 @@ async function deleteRole(index) {
             credentials: 'include',
             body: JSON.stringify({ roleIndex: index })
         }, 'delete-role');
-        
+
         if (!res.ok) {
             const err = await parseJsonResponse(res);
             throw new Error(err.error || 'Ошибка удаления роли');
@@ -2203,7 +2170,7 @@ async function addPlayerToRole() {
             credentials: 'include',
             body: JSON.stringify({ roleIndex, nickname, discord })
         }, 'add-player');
-        
+
         if (!res.ok) {
             const err = await parseJsonResponse(res);
             throw new Error(err.error || 'Ошибка добавления игрока');
@@ -2241,7 +2208,7 @@ async function removeStaffPlayer(roleIndex, playerIndex) {
             credentials: 'include',
             body: JSON.stringify({ roleIndex, nickname: player.nickname })
         }, 'remove-player');
-        
+
         if (!res.ok) {
             const err = await parseJsonResponse(res);
             throw new Error(err.error || 'Ошибка удаления игрока');
@@ -2260,15 +2227,3 @@ async function removeStaffPlayer(roleIndex, playerIndex) {
         }
     }
 }
-
-function escapeHtml(text) {
-    if (!text) return '';
-    return String(text)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
-
-// HTML-шаблоны (demonlist.html, projects.html, index.html) вызывают эти имена в inline onclick

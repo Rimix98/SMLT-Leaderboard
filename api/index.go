@@ -36,8 +36,10 @@ var (
 
 	httpClient = &http.Client{Timeout: 10 * time.Second}
 
-	trustProxy     bool
-	maxRequestBody = int64(1024 * 1024)
+	trustProxy      bool
+	maxRequestBody  = int64(1024 * 1024)
+	primaryJWTKey   []byte
+	primaryJWTID    string
 
 	globalRateLimiter rateLimiter
 	rlOnce            sync.Once
@@ -45,9 +47,9 @@ var (
 	rateLimitSalt string
 	saltOnce      sync.Once
 
-	jwtSecrets      []jwtKey
-	jwtSecretsMu    sync.RWMutex
-	jwtSecretsOnce  sync.Once
+	jwtSecrets     []jwtKey
+	jwtSecretsMu   sync.RWMutex
+	jwtSecretsOnce sync.Once
 )
 
 type StaffPlayer struct {
@@ -102,6 +104,16 @@ var defaultPlayerNames = []string{
 	"Спини", "Linqwq", "RossceorpGD", "69liqu69",
 }
 
+var (
+	reProjectID     = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,50}$`)
+	reAlphanumeric  = regexp.MustCompile(`^[a-zA-Z0-9 _.\-]+$`)
+	reDiscord       = regexp.MustCompile(`^[a-zA-Z0-9 _.\-#]+$`)
+	reVideoID       = regexp.MustCompile(`^[a-zA-Z0-9_-]{11}$`)
+	reRoleName      = regexp.MustCompile(`^[a-zA-Z0-9 _.\-]+$`)
+	reStripHTML     = regexp.MustCompile(`<[^>]*>`)
+	reStripControl  = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F]`)
+)
+
 func init() {
 	trustProxy = os.Getenv("TRUST_PROXY") == "true" || os.Getenv("VERCEL") == "1"
 	initFirestore()
@@ -128,7 +140,9 @@ func initJWTSecrets() {
 			log.Println("[jwt] JWT_SECRET not set, auth will fail")
 			return
 		}
-		jwtSecrets = append(jwtSecrets, jwtKey{Secret: []byte(primary), ID: "1"})
+		primaryJWTKey = []byte(primary)
+		primaryJWTID = "1"
+		jwtSecrets = append(jwtSecrets, jwtKey{Secret: primaryJWTKey, ID: primaryJWTID})
 		for i := 2; ; i++ {
 			key := os.Getenv(fmt.Sprintf("JWT_SECRET_%d", i))
 			if key == "" {
@@ -144,7 +158,7 @@ func initFirestore() {
 		ctx := context.Background()
 		creds := os.Getenv("FIREBASE_CREDENTIALS")
 		if creds == "" {
-			fsErr = errors.New("FIREBASE_CREDENTIALS не задан")
+			fsErr = errors.New("FIREBASE_CREDENTIALS not set")
 			log.Printf("[firestore] %v", fsErr)
 			return
 		}
@@ -166,13 +180,14 @@ func initFirestore() {
 
 func requireFirestore(w http.ResponseWriter) bool {
 	if fsErr != nil || fsClient == nil {
-		http.Error(w, `{"error":"База данных недоступна"}`, http.StatusServiceUnavailable)
+		sendError(w, http.StatusServiceUnavailable, "База данных недоступна")
 		return false
 	}
 	return true
 }
 
 func sendError(w http.ResponseWriter, status int, msg string) {
+	log.Printf("[error] %d %s", status, msg)
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
@@ -192,11 +207,15 @@ func remoteAddrIP(r *http.Request) string {
 
 func getRealIP(r *http.Request) string {
 	if trustProxy {
-		if xri := r.Header.Get("X-Real-IP"); xri != "" {
-			return xri
-		}
-		if cf := r.Header.Get("CF-Connecting-IP"); cf != "" {
-			return cf
+		xff := r.Header.Get("X-Forwarded-For")
+		if xff != "" {
+			parts := strings.Split(xff, ",")
+			for _, part := range parts {
+				ip := net.ParseIP(strings.TrimSpace(part))
+				if ip != nil {
+					return ip.String()
+				}
+			}
 		}
 	}
 	return remoteAddrIP(r)
@@ -215,6 +234,12 @@ func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{})
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	return dec.Decode(dest)
+}
+
+func sanitizeString(s string) string {
+	s = reStripHTML.ReplaceAllString(s, "")
+	s = reStripControl.ReplaceAllString(s, "")
+	return strings.TrimSpace(s)
 }
 
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -383,9 +408,15 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	adminHash := os.Getenv("ADMIN_HASH")
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if adminHash == "" || jwtSecret == "" {
-		sendError(w, http.StatusInternalServerError, "Сервер не настроен")
+	if adminHash == "" {
+		log.Println("[login] ADMIN_HASH not set")
+		sendError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
+		return
+	}
+
+	if primaryJWTKey == nil {
+		log.Println("[login] JWT secrets not initialized")
+		sendError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 		return
 	}
 
@@ -395,7 +426,6 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tokenVersion := getCurrentTokenVersion(r.Context())
-
 	exp := time.Now().Add(24 * time.Hour)
 	now := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -405,14 +435,11 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		"ver":   tokenVersion,
 	})
 
-	jwtSecretsMu.RLock()
-	if len(jwtSecrets) > 0 {
-		token.Header["kid"] = jwtSecrets[0].ID
-	}
-	jwtSecretsMu.RUnlock()
+	token.Header["kid"] = primaryJWTID
 
-	tokenString, err := token.SignedString(jwtSecretKey())
+	tokenString, err := token.SignedString(primaryJWTKey)
 	if err != nil {
+		log.Printf("[login] token signing: %v", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка выдачи токена")
 		return
 	}
@@ -428,15 +455,6 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
-}
-
-func jwtSecretKey() []byte {
-	jwtSecretsMu.RLock()
-	defer jwtSecretsMu.RUnlock()
-	if len(jwtSecrets) > 0 {
-		return jwtSecrets[0].Secret
-	}
-	return []byte(os.Getenv("JWT_SECRET"))
 }
 
 func getCurrentTokenVersion(ctx context.Context) int64 {
@@ -531,16 +549,28 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, p := range projectList {
+	for i, p := range projectList {
+		projectList[i].Name = sanitizeString(p.Name)
+		projectList[i].VideoID = sanitizeString(p.VideoID)
+		projectList[i].Comment = sanitizeString(p.Comment)
+		projectList[i].Verifier = sanitizeString(p.Verifier)
+		for j, part := range projectList[i].Participants {
+			projectList[i].Participants[j] = sanitizeString(part)
+		}
+
 		if err := validateProjectID(p.ID); err != nil {
 			sendError(w, http.StatusBadRequest, "Некорректные данные проекта")
 			return
 		}
-		if len(p.Name) == 0 || len(p.Name) > 100 {
+		if len(projectList[i].Name) == 0 || len(projectList[i].Name) > 100 {
 			sendError(w, http.StatusBadRequest, "Некорректные данные проекта")
 			return
 		}
-		if len(p.Comment) > 1000 {
+		if projectList[i].VideoID != "" && !reVideoID.MatchString(projectList[i].VideoID) {
+			sendError(w, http.StatusBadRequest, "Некорректные данные проекта")
+			return
+		}
+		if len(projectList[i].Comment) > 1000 {
 			sendError(w, http.StatusBadRequest, "Некорректные данные проекта")
 			return
 		}
@@ -553,6 +583,7 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		batch.Set(ref, p)
 	}
 	if _, err := batch.Commit(ctx); err != nil {
+		log.Printf("[projects] batch commit: %v", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -687,6 +718,9 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.Nickname = sanitizeString(req.Nickname)
+	req.Discord = sanitizeString(req.Discord)
+
 	if err := validateNickname(req.Nickname); err != nil {
 		sendError(w, http.StatusBadRequest, "Некорректные данные")
 		return
@@ -720,6 +754,7 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
+		log.Printf("[staff] add player: %v", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -751,7 +786,9 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.Name = strings.TrimSpace(req.Name)
+	req.Name = sanitizeString(req.Name)
+	req.Color = sanitizeString(req.Color)
+
 	if err := validateRoleName(req.Name); err != nil {
 		sendError(w, http.StatusBadRequest, "Некорректные данные")
 		return
@@ -782,6 +819,7 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
+		log.Printf("[staff] create role: %v", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -830,6 +868,7 @@ func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
+		log.Printf("[staff] delete role: %v", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -869,6 +908,8 @@ func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.Nickname = sanitizeString(req.Nickname)
+
 	ctx := r.Context()
 	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		docRef := fsClient.Collection("config").Doc("staff")
@@ -901,6 +942,7 @@ func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
+		log.Printf("[staff] remove player: %v", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -1126,6 +1168,7 @@ func checkFirestoreLoginLimit(w http.ResponseWriter, r *http.Request, key string
 			sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
 			return false
 		}
+		log.Printf("[ratelimit] firestore error: %v", err)
 	}
 
 	return true
@@ -1143,11 +1186,8 @@ func auditLog(ctx context.Context, entry AuditEntry) {
 }
 
 func validateProjectID(id string) error {
-	if id == "" {
-		return errors.New("empty id")
-	}
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]{1,50}$`, id); !matched {
-		return errors.New("invalid id format")
+	if id == "" || !reProjectID.MatchString(id) {
+		return errors.New("invalid project id")
 	}
 	return nil
 }
@@ -1155,6 +1195,9 @@ func validateProjectID(id string) error {
 func validateNickname(n string) error {
 	if len(n) < 2 || len(n) > 32 {
 		return errors.New("invalid nickname length")
+	}
+	if !reAlphanumeric.MatchString(n) {
+		return errors.New("invalid nickname characters")
 	}
 	return nil
 }
@@ -1166,12 +1209,18 @@ func validateDiscord(d string) error {
 	if len(d) > 64 {
 		return errors.New("discord too long")
 	}
+	if !reDiscord.MatchString(d) {
+		return errors.New("invalid discord characters")
+	}
 	return nil
 }
 
 func validateRoleName(n string) error {
 	if len(n) < 2 || len(n) > 32 {
 		return errors.New("invalid role name length")
+	}
+	if !reRoleName.MatchString(n) {
+		return errors.New("invalid role name characters")
 	}
 	return nil
 }
@@ -1258,7 +1307,10 @@ func findUserID(users []interface{}, playerName string) string {
 		}
 		username, _ := user["username"].(string)
 		if strings.ToLower(strings.TrimSpace(username)) == nl {
-			id := user["id"]
+			id, ok := user["id"]
+			if !ok {
+				continue
+			}
 			switch v := id.(type) {
 			case float64:
 				return strconv.FormatInt(int64(v), 10)
