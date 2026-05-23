@@ -804,6 +804,8 @@ function hasLeaderboardData(resData) {
     return resData && resData.data && Array.isArray(resData.data.users);
 }
 
+let _loadingLeaderboard = false;
+
 async function loadAllPlayers() {
     if (_loadingLeaderboard) return;
     _loadingLeaderboard = true;
@@ -903,61 +905,6 @@ async function loadPlayersFromClientAPI() {
     store.allPlayers = [...store.players];
     renderPlayers();
     renderHardestLevels();
-}
-
-let _loadingLeaderboard = false;
-
-async function loadAllPlayers() {
-    if (_loadingLeaderboard) return;
-    _loadingLeaderboard = true;
-
-    const table = document.getElementById('leaderboardTable');
-    const count = document.getElementById('playersCount');
-    if (!table) {
-        _loadingLeaderboard = false;
-        return;
-    }
-
-    try {
-        let rawData = [];
-        const res = await fetchWithAbort('/api/leaderboard', {}, 'leaderboard');
-
-        if (res.ok) {
-            rawData = await parseJsonResponse(res);
-            if (!Array.isArray(rawData)) rawData = [];
-        }
-
-        if (!hasLeaderboardData(rawData)) {
-            await loadPlayersFromClientAPI();
-            return;
-        }
-
-        store.players = rawData.map(mapLeaderboardEntry).filter(p => p.id);
-        if (store.players.length === 0) {
-            await loadPlayersFromClientAPI();
-            return;
-        }
-
-        store.players.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
-        store.allPlayers = [...store.players];
-        renderPlayers();
-        renderHardestLevels();
-
-    } catch (e) {
-        if (isAbortError(e)) return;
-        try {
-            await loadPlayersFromClientAPI();
-        } catch (err) {
-            if (isAbortError(err)) return;
-            clearEl(table);
-            table.appendChild(
-                h('div', { className: 'empty-state' }, [h('p', {}, ['Не удалось загрузить данные'])])
-            );
-            showToast('Ошибка загрузки лидерборда', 'error');
-        }
-    } finally {
-        _loadingLeaderboard = false;
-    }
 }
 
 function filterPlayers(query) {
