@@ -26,25 +26,17 @@ function resolveCountry(input) {
     return COUNTRY_TO_CODE[lower] || null;
 }
 
-// Функция для безопасного создания класса роли
-function getSafeRoleClass(role) {
-    const safeRole = String(role).replace(/[^a-zA-Z0-9-]/g, '');
-    const roleMap = {
-        'HOST': 'role-host',
-        'DECO': 'role-deco',
-        'GP': 'role-gp',
-        'PLAYTEST': 'role-playtest',
-        'VERIFER': 'role-verifer',
-        'MERGER': 'role-merger',
-        'TRANSITION': 'role-transition'
-    };
-    return roleMap[safeRole.toUpperCase()] || '';
+function getRoleColor(roleName) {
+    if (!store.staffRoles) return null;
+    const role = store.staffRoles.find(r => r.name === roleName);
+    return role ? role.color : null;
 }
 
-// Функция для безопасного создания текста роли
 function createSafeRoleSpan(roleText) {
     const span = document.createElement('span');
-    span.className = `role ${getSafeRoleClass(roleText)}`;
+    span.className = 'role';
+    const color = getRoleColor(roleText);
+    if (color) span.style.color = color;
     span.textContent = roleText;
     return span;
 }
@@ -316,6 +308,16 @@ function mountDelegatedClicks() {
                 if (btn) {
                     e.preventDefault();
                     btn.classList.toggle('active');
+                    const color = btn.dataset.color || 'var(--color-secondary)';
+                    if (btn.classList.contains('active')) {
+                        btn.style.background = color;
+                        btn.style.borderColor = color;
+                        btn.style.color = '#fff';
+                    } else {
+                        btn.style.background = '';
+                        btn.style.borderColor = color;
+                        btn.style.color = color;
+                    }
                 }
             },
             'remove-player': () => {
@@ -1799,19 +1801,6 @@ function getStatusClass(status) {
     return classes[status?.toLowerCase()] || 'status-planned';
 }
 
-function getRoleClass(role) {
-    const roleMap = {
-        'HOST': 'role-host',
-        'DECO': 'role-deco',
-        'GP': 'role-gp',
-        'PLAYTEST': 'role-playtest',
-        'VERIFER': 'role-verifer',
-        'MERGER': 'role-merger',
-        'TRANSITION': 'role-transition'
-    };
-    return roleMap[role.toUpperCase()] || '';
-}
-
 function showAddProjectModal() {
     if (!store.isHost) {
         showToast('Только хост может добавлять проекты', 'error');
@@ -1848,20 +1837,55 @@ function resetParticipantBuilder() {
 async function initParticipantBuilder() {
     const select = document.getElementById('participantPlayerSelect');
     if (!select) return;
+
+    if (!store.staffRoles || store.staffRoles.length === 0) {
+        try {
+            const res = await fetchWithAbort(`${BACKEND_URL}/staff`, {}, 'staff-list-part');
+            if (res.ok) {
+                const data = await res.json();
+                store.staffRoles = Array.isArray(data) ? data : [];
+            }
+        } catch {}
+    }
+
+    const tagsContainer = document.getElementById('participantRoleTags');
+    if (tagsContainer) {
+        clearEl(tagsContainer);
+        (store.staffRoles || []).forEach(role => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'role-tag-btn';
+            btn.dataset.action = 'toggle-role-tag';
+            btn.dataset.role = role.name;
+            if (role.color) {
+                btn.dataset.color = role.color;
+                btn.style.borderColor = role.color;
+                btn.style.color = role.color;
+            }
+            btn.textContent = role.name;
+            tagsContainer.appendChild(btn);
+        });
+    }
+
     const currentVal = select.value;
     select.innerHTML = '<option value="">Выберите игрока...</option>';
-    try {
-        let names = await getPlayerNames();
-        names = names.sort((a, b) => a.localeCompare(b));
-        names.forEach(name => {
-            const opt = document.createElement('option');
-            opt.value = name;
-            opt.textContent = name;
-            select.appendChild(opt);
+    const staffPlayers = [];
+    (store.staffRoles || []).forEach(role => {
+        (role.players || []).forEach(player => {
+            if (!staffPlayers.includes(player.nickname)) {
+                staffPlayers.push(player.nickname);
+            }
         });
-        store._allPlayerNames = names;
-    } catch {}
-    if (currentVal) select.value = currentVal;
+    });
+    staffPlayers.sort((a, b) => a.localeCompare(b));
+    store._staffPlayerNames = staffPlayers;
+    staffPlayers.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+    });
+    if (currentVal && staffPlayers.includes(currentVal)) select.value = currentVal;
     updateParticipantsPreview();
 
     const searchInput = document.getElementById('participantSearchInput');
@@ -1870,7 +1894,7 @@ async function initParticipantBuilder() {
         searchInput.oninput = function() {
             const q = this.value.toLowerCase().trim();
             select.innerHTML = '<option value="">Выберите игрока...</option>';
-            const names = store._allPlayerNames || [];
+            const names = store._staffPlayerNames || [];
             names.forEach(name => {
                 if (!q || name.toLowerCase().includes(q)) {
                     const opt = document.createElement('option');
@@ -1923,13 +1947,27 @@ function updateParticipantsPreview() {
         return;
     }
     store.pendingProjectParticipants.forEach((entry, i) => {
-        const tag = h('span', { className: 'participant-tag participant-preview-tag' }, [
-            h('span', {}, [escapeHtml(entry)]),
-            h('button', {
-                className: 'staff-player-remove-tag',
-                attrs: { 'data-action': 'remove-project-participant', 'data-index': String(i), 'title': 'Удалить' }
-            }, ['✕'])
-        ]);
+        const tag = document.createElement('span');
+        tag.className = 'participant-tag participant-preview-tag';
+        const newMatch = entry.match(/^(.+?)\s*-\s+(.+)$/);
+        if (newMatch) {
+            const name = newMatch[1].trim();
+            const roles = newMatch[2].split(/\s+/).filter(Boolean);
+            tag.appendChild(document.createTextNode(`${name} - `));
+            roles.forEach((role, ri) => {
+                if (ri) tag.appendChild(document.createTextNode(' '));
+                tag.appendChild(createSafeRoleSpan(role));
+            });
+        } else {
+            tag.appendChild(h('span', {}, [escapeHtml(entry)]));
+        }
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'staff-player-remove-tag';
+        removeBtn.dataset.action = 'remove-project-participant';
+        removeBtn.dataset.index = String(i);
+        removeBtn.title = 'Удалить';
+        removeBtn.textContent = '✕';
+        tag.appendChild(removeBtn);
         preview.appendChild(tag);
     });
 }

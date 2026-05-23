@@ -72,7 +72,7 @@ body {
 
 body.home-page {
     background-image: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url('Background_Image_DarkMode.png');
-    background-size: cover;
+    background-size: 60%;
     background-position: center;
     background-attachment: fixed;
     background-repeat: no-repeat;
@@ -262,10 +262,7 @@ a:hover {
     font-size: var(--font-size-3xl);
     font-weight: 700;
     margin-bottom: var(--spacing-lg);
-    background: linear-gradient(135deg, var(--color-secondary), #8b5cf6);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--color-text-primary);
 }
 
 .hero-description {
@@ -277,8 +274,8 @@ a:hover {
 }
 
 .hero-description strong {
-    color: var(--color-secondary);
-    font-weight: 600;
+    font-weight: 700;
+    color: var(--color-text-primary);
 }
 
 /* === Navigation Cards === */
@@ -851,35 +848,6 @@ a:hover {
     font-size: var(--font-size-xs);
 }
 
-/* Role colors */
-.role-host {
-    color: #ef4444;
-}
-
-.role-deco {
-    color: #06b6d4;
-}
-
-.role-gp {
-    color: #d4a574;
-}
-
-.role-playtest {
-    color: #eab308;
-}
-
-.role-verifer {
-    color: #991b1b;
-}
-
-.role-merger {
-    color: #a855f7;
-}
-
-.role-transition {
-    color: #f97316;
-}
-
 .participant-tag .role {
     font-weight: 600;
 }
@@ -918,12 +886,6 @@ a:hover {
 .role-tag-btn:hover {
     border-color: var(--color-secondary);
     color: var(--color-text-primary);
-}
-
-.role-tag-btn.active {
-    background: var(--color-secondary);
-    border-color: var(--color-secondary);
-    color: #fff;
 }
 
 .participants-preview {
