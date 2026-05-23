@@ -1,5 +1,6 @@
 ﻿<!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -9,13 +10,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="stylesheet" href="styles.css">
-    <script>
-  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
-    </script>
-   <script defer src="/_vercel/insights/script.js"></script>
 </head>
+
 <body>
     <div id="app">
         <!-- Кнопка смены темы -->
@@ -41,10 +38,9 @@
                     <a href="index.html" class="nav-link">Главная</a>
                     <a href="demonlist.html" class="nav-link active">Демонлист</a>
                     <a href="projects.html" class="nav-link">Проекты</a>
-                    <a href="staff.html" class="nav-link">Стафф</a>
                 </nav>
                 <div class="header-actions">
-                    <button class="btn btn-secondary btn-lg" id="infoBtn">
+                    <button class="btn btn-secondary btn-lg" onclick="showInfoModal()">
                         <span>ℹ️</span>
                         <span>Информация</span>
                     </button>
@@ -56,24 +52,21 @@
             <div class="container">
                 <!-- Панель хоста для управления игроками -->
                 <div class="admin-panel admin-only" style="display: none;">
-                    <div class="admin-panel-header">🎮 Управление игроками</div>
+                    <div class="admin-panel-header">👑 Управление игроками</div>
                     <div class="admin-panel-content">
                         <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
-                            <button class="btn btn-primary" id="addPlayerBtn" data-action="show-add-player-modal">➕ Добавить игрока</button>
+                            <button class="btn btn-primary" onclick="showAddPlayerModal()">➕ Добавить игрока</button>
                         </div>
                     </div>
                 </div>
 
-                <!-- Вкладки: Топ игроков / Топ уровней -->
-                <div class="demonlist-tabs">
-                    <div class="demonlist-tab-header">
-                        <button class="demonlist-tab-btn active" data-tab="players">🏆 Топ игроков</button>
-                        <button class="demonlist-tab-btn" data-tab="levels">📚 Топ уровней</button>
-                    </div>
-
-                    <div class="demonlist-tab-content active" id="tabPlayers">
+                <!-- 2 колонки: Топ игроков + Топ уровней -->
+                <div class="demonlist-grid">
+                    <!-- Левая колонка: Топ игроков -->
+                    <div class="demonlist-column">
                         <div class="leaderboard-section">
                             <div class="leaderboard-header">
+                                <h2>🏆 Топ игроков</h2>
                                 <div class="leaderboard-controls">
                                     <input type="text" id="searchInput" class="search-input" placeholder="🔍 Поиск по нику...">
                                     <div class="leaderboard-stats" id="playersCount">Загрузка...</div>
@@ -91,9 +84,11 @@
                         </div>
                     </div>
 
-                    <div class="demonlist-tab-content" id="tabLevels">
+                    <!-- Правая колонка: Топ уровней -->
+                    <div class="demonlist-column">
                         <div class="leaderboard-section">
                             <div class="leaderboard-header">
+                                <h2>📔 Топ уровней</h2>
                                 <div class="leaderboard-controls">
                                     <input type="text" id="levelSearchInput" class="search-input" placeholder="🔍 Поиск по уровню...">
                                     <div class="leaderboard-stats" id="levelsCount">Загрузка...</div>
@@ -105,8 +100,8 @@
                                     <span class="loading-text">Загрузка уровней...</span>
                                 </div>
                             </div>
-                            <div id="expandLevelsContainer" style="display: none; text-align: center; padding: var(--spacing-md);">
-                                <button class="btn btn-secondary" id="expandLevelsBtn">Показать ещё</button>
+                            <div id="expandLevelsContainer" style="display: none; padding: var(--spacing-sm); text-align: center; border-top: 1px solid var(--color-border);">
+                                <button class="btn btn-secondary btn-sm" onclick="expandLevels()">Показать ещё</button>
                             </div>
                         </div>
                     </div>
@@ -134,69 +129,82 @@
                     <div class="stats-section">
                         <h3>🌍 По странам</h3>
                         <div class="country-list" id="countryList">
-                            <div style="color: var(--color-text-muted); font-size: var(--font-size-sm);">Загрузка...</div>
+                            <div style="color: var(--color-text-muted); font-size: var(--font-size-sm);">Загрузка...
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </main>
+
     </div>
 
     <!-- Модальное окно профиля -->
-    <div id="profileModal" class="modal-overlay">
-        <div class="modal">
+    <div id="profileModal" class="modal-overlay" onclick="closeProfileModal(event)">
+        <div class="modal" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <div class="modal-title" id="profileTitle">Профиль</div>
-                <button class="modal-close">✕</button>
+                <button class="modal-close" onclick="closeProfileModal()">✕</button>
             </div>
             <div class="modal-body" id="profileBody"></div>
         </div>
     </div>
 
     <!-- Модальное окно топа страны -->
-    <div id="countryModal" class="modal-overlay">
-        <div class="modal">
+    <div id="countryModal" class="modal-overlay" onclick="closeCountryModal()">
+        <div class="modal" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <div class="modal-title" id="countryTitle">Топ страны</div>
-                <button class="modal-close">✕</button>
+                <button class="modal-close" onclick="closeCountryModal()">✕</button>
             </div>
             <div class="modal-body" id="countryBody"></div>
         </div>
     </div>
 
     <!-- Модальное окно викторов уровня -->
-    <div id="levelModal" class="modal-overlay">
-        <div class="modal">
+    <div id="levelModal" class="modal-overlay" onclick="closeLevelModal()">
+        <div class="modal" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <div class="modal-title" id="levelTitle">Викторы уровня</div>
-                <button class="modal-close">✕</button>
+                <button class="modal-close" onclick="closeLevelModal()">✕</button>
             </div>
             <div class="modal-body" id="levelBody"></div>
         </div>
     </div>
 
     <!-- Модальное окно информации -->
-    <div id="infoModal" class="modal-overlay">
-        <div class="modal" style="max-width: 480px;">
+    <div id="infoModal" class="modal-overlay" onclick="closeInfoModal(event)">
+        <div class="modal" style="max-width: 480px;" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <div class="modal-title">📋 Информация</div>
-                <button class="modal-close">✕</button>
+                <button class="modal-close" onclick="closeInfoModal()">✕</button>
             </div>
             <div class="modal-body">
                 <div style="display: flex; flex-direction: column; gap: var(--spacing-md);">
-                    <div style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
-                        <div style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">Discord Server</div>
-                        <a href="https://discord.gg/VK56W7ZzdA" target="_blank" style="color: var(--color-secondary); font-weight: 600;">discord.gg/VK56W7ZzdA</a>
+                    <div
+                        style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
+                        <div
+                            style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">
+                            Discord Server</div>
+                        <a href="https://discord.gg/VK56W7ZzdA" target="_blank"
+                            style="color: var(--color-secondary); font-weight: 600;">discord.gg/VK56W7ZzdA</a>
                     </div>
-                    <div style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
-                        <div style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">Admin</div>
-                        <div style="font-weight: 500;">Discord: <span style="color: var(--color-secondary);">@.samoletik</span></div>
-                        <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span style="color: var(--color-secondary);">@samoltik</span></div>
+                    <div
+                        style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
+                        <div
+                            style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">
+                            Admin</div>
+                        <div style="font-weight: 500;">Discord: <span
+                                style="color: var(--color-secondary);">@.samoletik</span></div>
+                        <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span
+                                style="color: var(--color-secondary);">@samoltik</span></div>
                     </div>
-                    <div style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md); border-left: 3px solid var(--color-success);">
-                        <div style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">🔒 За безопасность и бекенд отвечал</div>
-                        <div style="font-weight: 500;">Discord: <span style="color: var(--color-secondary);">@rimix.98</span></div>
-                        <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span style="color: var(--color-secondary);">@Rimix980</span></div>
+                    <div
+                        style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md); border-left: 3px solid var(--color-success);">
+                        <div
+                            style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">
+                            🔒 За безопасность отвечал</div>
+                        <div style="font-weight: 600; color: var(--color-secondary);">@rimix.98</div>
                     </div>
                 </div>
             </div>
@@ -205,24 +213,17 @@
 
     <!-- Модальное окно входа хоста -->
     <div id="hostModal" class="modal-overlay">
-        <div class="modal">
+        <div class="modal" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <div class="modal-title">🔐 Вход хоста</div>
-                <button class="modal-close">✕</button>
+                <button class="modal-close" onclick="closeHostModal()">✕</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
                     <label for="hostPassword">Введите пароль:</label>
                     <input type="password" id="hostPassword" class="form-input" placeholder="Пароль">
                 </div>
-                <div class="form-group">
-                    <div class="captcha-row">
-                        <img id="captcha-img" class="captcha-image" alt="Капча" src="">
-                        <button type="button" id="captchaRefreshBtn" class="btn btn-secondary" title="Обновить капчу">🔄</button>
-                    </div>
-                    <input type="text" id="captchaInput" class="form-input" placeholder="Код с картинки" maxlength="6" autocomplete="off">
-                </div>
-                <button id="hostSubmitBtn" class="btn btn-primary">Войти</button>
+                <button class="btn btn-primary" onclick="verifyHost(document.getElementById('hostPassword').value)">Войти</button>
                 <div id="hostError" class="error-message" style="display: none;">Неверный пароль!</div>
             </div>
         </div>
@@ -230,10 +231,10 @@
 
     <!-- Модальное окно добавления игрока -->
     <div id="addPlayerModal" class="modal-overlay">
-        <div class="modal">
+        <div class="modal" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <div class="modal-title">➕ Добавить игрока</div>
-                <button class="modal-close">✕</button>
+                <button class="modal-close" onclick="closeAddPlayerModal()">✕</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
@@ -241,8 +242,8 @@
                     <input type="text" id="newPlayerName" class="form-input" placeholder="Например: samoletik">
                 </div>
                 <div style="display: flex; gap: var(--spacing-sm);">
-                    <button class="btn btn-secondary modal-close">Отмена</button>
-                    <button class="btn btn-primary" id="addPlayerSubmitBtn" data-action="add-player">Добавить</button>
+                    <button class="btn btn-secondary" onclick="closeAddPlayerModal()">Отмена</button>
+                    <button class="btn btn-primary" onclick="addPlayer()">Добавить</button>
                 </div>
             </div>
         </div>
@@ -252,4 +253,5 @@
 
     <script src="app.js"></script>
 </body>
+
 </html>
