@@ -64,13 +64,16 @@
                     </div>
                 </div>
 
-                <!-- 2 колонки: Топ игроков + Топ уровней -->
-                <div class="demonlist-grid">
-                    <!-- Левая колонка: Топ игроков -->
-                    <div class="demonlist-column">
+                <!-- Вкладки: Топ игроков / Топ уровней -->
+                <div class="demonlist-tabs">
+                    <div class="demonlist-tab-header">
+                        <button class="demonlist-tab-btn active" data-tab="players">🏆 Топ игроков</button>
+                        <button class="demonlist-tab-btn" data-tab="levels">📚 Топ уровней</button>
+                    </div>
+
+                    <div class="demonlist-tab-content active" id="tabPlayers">
                         <div class="leaderboard-section">
                             <div class="leaderboard-header">
-                                <h2>🏆 Топ игроков</h2>
                                 <div class="leaderboard-controls">
                                     <input type="text" id="searchInput" class="search-input" placeholder="🔍 Поиск по нику...">
                                     <div class="leaderboard-stats" id="playersCount">Загрузка...</div>
@@ -88,12 +91,13 @@
                         </div>
                     </div>
 
-                    <!-- Правая колонка: Топ уровней -->
-                    <div class="demonlist-column">
+                    <div class="demonlist-tab-content" id="tabLevels">
                         <div class="leaderboard-section">
                             <div class="leaderboard-header">
-                                <h2>📚 Топ уровней</h2>
-                                <div class="leaderboard-stats" id="levelsCount">Загрузка...</div>
+                                <div class="leaderboard-controls">
+                                    <input type="text" id="levelSearchInput" class="search-input" placeholder="🔍 Поиск по уровню...">
+                                    <div class="leaderboard-stats" id="levelsCount">Загрузка...</div>
+                                </div>
                             </div>
                             <div class="leaderboard-table" id="levelsTable">
                                 <div class="loading-state">

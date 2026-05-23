@@ -249,6 +249,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (document.getElementById('leaderboardTable')) {
         loadAllPlayers();
     }
+    if (document.querySelector('.demonlist-tabs')) {
+        initDemonlistTabs();
+    }
     if (document.getElementById('projectsGrid')) {
         loadProjects();
     }
@@ -408,6 +411,23 @@ function mountDelegatedClicks() {
         if (handlers[action]) {
             handlers[action](e);
         }
+    });
+}
+
+function initDemonlistTabs() {
+    const header = document.querySelector('.demonlist-tab-header');
+    if (!header) return;
+    header.addEventListener('click', (e) => {
+        const btn = e.target.closest('.demonlist-tab-btn');
+        if (!btn) return;
+
+        document.querySelectorAll('.demonlist-tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.demonlist-tab-content').forEach(c => c.classList.remove('active'));
+
+        btn.classList.add('active');
+        const tab = btn.dataset.tab;
+        const content = document.getElementById(tab === 'players' ? 'tabPlayers' : 'tabLevels');
+        if (content) content.classList.add('active');
     });
 }
 
