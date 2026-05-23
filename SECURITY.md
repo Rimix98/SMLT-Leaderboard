@@ -1,72 +1,62 @@
-# Security Policy
+﻿# Политика безопасности
 
-## Supported Versions
+## Поддерживаемые версии
 
 | Version | Supported          |
 |---------|--------------------|
-| 1.x     | ✅ Active support  |
+| 1.x     | ✅ Активная поддержка |
 
-## Reporting a Vulnerability
+## Сообщение об уязвимости
 
-**DO NOT** create a public GitHub issue for security vulnerabilities.
+**НЕ** создавайте публичный issue на GitHub для сообщений об уязвимостях.
 
-Contact the security team directly:
-- Discord: **@rimix.98** (primary) or **@.samoletik** (admin)
+Свяжитесь с командой безопасности напрямую:
+- Discord: **@rimix.98** (основной) или **@.samoletik** (админ)
 - Telegram: **@samoltik**
-- GitHub: Open a [draft security advisory](https://github.com/<owner>/SMLT-Demonlist/security/advisories/new)
+- GitHub: Откройте [draft security advisory](https://github.com/<owner>/SMLT-Demonlist/security/advisories/new)
 
-We aim to acknowledge reports within 48 hours and deploy a fix within 7 days.
+Мы стараемся подтверждать получение сообщений в течение 48 часов и выпускать исправление в течение 7 дней.
 
-## Security Architecture
+## Архитектура безопасности
 
-### Authentication
-- **Password**: Stored as bcrypt hash (cost 10), never in plaintext.
-- **JWT**: HS256-signed, 24h expiry, `jti` claim for individual revocation, `ver` claim for bulk invalidation.
-- **Cookies**: `HttpOnly`, `Secure`, `SameSite=Strict`. Auth and CSRF tokens are separate cookies.
-- **CSRF**: Double-submit cookie pattern. Token in HttpOnly cookie + `X-CSRF-Token` header.
+### Аутентификация
+- **Пароль**: хранится в виде bcrypt-хеша (cost 10), никогда не в открытом виде.
+- **JWT**: подписывается HS256, срок действия 24 часа, `jti` для отзыва отдельных токенов, `ver` для массовой инвалидизации.
+- **Cookies**: `HttpOnly`, `Secure`, `SameSite=Strict`. Токены аутентификации и CSRF хранятся в отдельных cookie.
+- **CSRF**: схема двойной отправки cookie. Токен хранится в `HttpOnly` cookie и передается в заголовке `X-CSRF-Token`.
 
-### Rate Limiting
-- **All endpoints**: 30–60 requests/min per IP (sliding window).
-- **Login endpoint**: 5 requests/min per IP with CAPTCHA requirement.
-- **Production**: Upstash Redis (distributed). **Fallback**: In-memory (per-Vercel-instance).
-- **IP extraction**: Trusted headers from Vercel (`X-Vercel-Forwarded-For`) with validated leftmost `X-Forwarded-For` fallback.
+### Ограничение скорости
+- **Все endpoints**: 30–60 запросов в минуту на IP (скользящее окно).
+- **Login endpoint**: 5 запросов в минуту на IP с обязательной CAPTCHA.
+- **Production**: Upstash Redis (распределенное). **Резерв**: память на экземпляре (для Vercel).
+- **Определение IP**: доверенные заголовки Vercel (`X-Vercel-Forwarded-For`) с проверенным fallback на левый `X-Forwarded-For`.
 
-### Input Validation
-- All JSON bodies: limited to 1 MB, unknown fields rejected.
-- All string inputs: sanitized via `bluemonday` UGCPolicy.
-- Project IDs, video IDs, nicknames, Discord tags, role names, hex colors: regex-validated.
-- No `innerHTML` or raw HTML attribute injection in frontend.
+### Валидация входных данных
+- Все JSON-тела ограничены 1 МБ, неизвестные поля отклоняются.
+- Все строковые данные очищаются с помощью `bluemonday` UGCPolicy.
+- Идентификаторы проектов, видео ID, псевдонимы, Discord-метки, названия ролей, hex-коды цветов проверяются регулярными выражениями.
+- Во frontend нет `innerHTML` и сырых вставок HTML-атрибутов.
 
-### Database (Firestore)
-- Server-side writes: only through authenticated, CSRF-protected endpoints.
-- Transactions used for all read-modify-write operations (staff roles).
-- Batch writes for project saves use `MergeAll` to prevent field loss.
-- Token blacklist collection (`token_blacklist`) with 24h TTL for forced logout.
+### База данных (Firestore)
+- Записи на сервере выполняются только через аутентифицированные endpoint-ы с CSRF-защитой.
+- Транзакции используются для всех операций чтения-модификации-записи (роли staff).
+- Пакетные записи для сохранения проектов используют `MergeAll`, чтобы избежать потери полей.
+- Коллекция blacklist токенов (`token_blacklist`) с TTL 24 часа для принудительного выхода.
 
-### Frontend Security
-- No `innerHTML`, `outerHTML`, `insertAdjacentHTML`, or `document.write`.
-- All text content set via `textContent` or `document.createTextNode`.
-- Attribute values set via `setAttribute()` with proper escaping.
-- Styles set via `style` property (not `cssText`).
-- All external links use `rel="noopener noreferrer"`.
-- CSP enforced: `default-src 'self'`, `frame-src https://www.youtube.com`, `form-action 'self'`.
+### Безопасность фронтенда
+- Нет `innerHTML`, `outerHTML`, `insertAdjacentHTML` или `document.write`.
+- Весь текст устанавливается через `textContent` или `document.createTextNode`.
+- Значения атрибутов задаются через `setAttribute()` с корректным экранированием.
+- Стили задаются через свойство `style`, а не `cssText`.
+- Все внешние ссылки используют `rel="noopener noreferrer"`.
+- Включена CSP: `default-src 'self'`, `frame-src https://www.youtube.com`, `form-action 'self'`.
 
-### Data Collection
-See [PRIVACY.md](PRIVACY.md) or the website's info modal for details on what we collect.
-We do NOT store IP addresses, browser fingerprints, or personal identifiable information beyond Discord tags and in-game nicknames.
+### Сбор данных
+См. [PRIVACY.md](PRIVACY.md) или информационное модальное окно на сайте для деталей о том, что мы собираем.
+Мы НЕ храним IP-адреса, отпечатки браузера или личные данные, кроме Discord-меток и игровых псевдонимов.
 
-## Deployment Checklist
+## Известные соображения по безопасности
 
-Before deploying to production:
-1. [ ] `JWT_SECRET` is ≥32 random characters
-2. [ ] `ADMIN_HASH` is a bcrypt hash of a strong password
-3. [ ] `FIREBASE_CREDENTIALS` is the service account JSON (single line)
-4. [ ] `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are set
-5. [ ] `VERCEL=1` is set in production (automatic on Vercel)
-6. [ ] Firestore security rules restrict client access (server-only writes)
-
-## Known Security Considerations
-
-1. **Demonlist.org dependency**: Leaderboard data is fetched from an external API. We validate the response schema but cannot guarantee data integrity from the upstream.
-2. **JWT token lifetime**: Tokens expire after 24 hours. For immediate revocation, increment `tokenVersion` in Firestore (`config/auth`).
-3. **No user registration**: The admin panel is accessible only via shared password. Audit logging tracks all admin actions.
+1. **Зависимость от Demonlist.org**: данные рейтинга загружаются из внешнего API. Мы проверяем схему ответа, но не можем гарантировать целостность данных от upstream.
+2. **Срок жизни JWT**: токены действуют 24 часа. Для немедленного отзыва увеличьте `tokenVersion` в Firestore (`config/auth`).
+3. **Нет регистрации пользователей**: админ-панель доступна только по общему паролю. Аудит логирует все админские действия.

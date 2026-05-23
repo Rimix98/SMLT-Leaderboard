@@ -14,8 +14,8 @@ require (
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
-	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
-	github.com/mojocn/base64Captcha v1.3.6 // indirect
+	github.com/microcosm-cc/bluemonday v1.0.27 // direct
+	github.com/mojocn/base64Captcha v1.3.6 // direct
 	golang.org/x/image v0.13.0 // indirect
 )
 
