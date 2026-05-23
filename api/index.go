@@ -130,7 +130,7 @@ var (
 	reAlphanumeric = regexp.MustCompile(`^[a-zA-Z0-9 _.\-]+$`)
 	reDiscord      = regexp.MustCompile(`^[a-zA-Z0-9 _.\-#]+$`)
 	reVideoID      = regexp.MustCompile(`^[a-zA-Z0-9_-]{11}$`)
-	reRoleName     = regexp.MustCompile(`^[a-zA-Z0-9 _.\-]+$`)
+	reRoleName     = regexp.MustCompile(`^[\p{L}0-9 _.\-]+$`)
 	reHexColor     = regexp.MustCompile(`^#?[0-9a-fA-F]{6}$`)
 )
 

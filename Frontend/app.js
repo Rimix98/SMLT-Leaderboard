@@ -358,7 +358,7 @@ function mountDelegatedClicks() {
         };
 
         if (handlers[action]) {
-            handlers[action]();
+            handlers[action](e);
         }
     });
 }
@@ -1851,16 +1851,36 @@ async function initParticipantBuilder() {
     const currentVal = select.value;
     select.innerHTML = '<option value="">Выберите игрока...</option>';
     try {
-        const names = await getPlayerNames();
+        let names = await getPlayerNames();
+        names = names.sort((a, b) => a.localeCompare(b));
         names.forEach(name => {
             const opt = document.createElement('option');
             opt.value = name;
             opt.textContent = name;
             select.appendChild(opt);
         });
+        store._allPlayerNames = names;
     } catch {}
     if (currentVal) select.value = currentVal;
     updateParticipantsPreview();
+
+    const searchInput = document.getElementById('participantSearchInput');
+    if (searchInput) {
+        searchInput.oninput = null;
+        searchInput.oninput = function() {
+            const q = this.value.toLowerCase().trim();
+            select.innerHTML = '<option value="">Выберите игрока...</option>';
+            const names = store._allPlayerNames || [];
+            names.forEach(name => {
+                if (!q || name.toLowerCase().includes(q)) {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    select.appendChild(opt);
+                }
+            });
+        };
+    }
 }
 
 function addProjectParticipant() {
@@ -2188,7 +2208,7 @@ function renderStaffRoles() {
         } else {
             players.forEach((player, pIdx) => {
                 const tagParts = [
-                    h('span', {}, [escapeHtml(player.nickname)]),
+                    h('span', { className: 'nickname-glow' }, [escapeHtml(player.nickname)]),
                     ...(player.discord ? [h('span', { className: 'staff-player-discord-inline' }, [escapeHtml(player.discord)])] : []),
                 ];
 
