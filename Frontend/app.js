@@ -415,6 +415,11 @@ function initEventListeners() {
         captchaRefreshBtn.addEventListener('click', initCaptcha);
     }
 
+    const infoBtn = document.getElementById('infoBtn');
+    if (infoBtn) {
+        infoBtn.addEventListener('click', showInfoModal);
+    }
+
     document.querySelectorAll('.modal-close').forEach(btn => {
         btn.addEventListener('click', () => {
             const modal = btn.closest('.modal-overlay');
