@@ -63,7 +63,7 @@ type firestoreCaptchaStore struct {
 	client *firestore.Client
 }
 
-func (s *firestoreCaptchaStore) Set(id string, value string) {
+func (s *firestoreCaptchaStore) Set(id string, value string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := s.client.Collection("captcha").Doc(id).Set(ctx, map[string]interface{}{
@@ -72,7 +72,9 @@ func (s *firestoreCaptchaStore) Set(id string, value string) {
 	})
 	if err != nil {
 		log.Printf("[captcha] firestore set: %v", err)
+		return err
 	}
+	return nil
 }
 
 func (s *firestoreCaptchaStore) Get(id string, clear bool) string {
