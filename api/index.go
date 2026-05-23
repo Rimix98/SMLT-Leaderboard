@@ -305,7 +305,7 @@ func (u *upstashLimiter) allow(ctx context.Context, key string, max int, window 
 	}
 	_, count, err := u.getOrCreate(ctx, key, max, windowSeconds)
 	if err != nil {
-		return false, err
+		return true, err
 	}
 	return count <= max, nil
 }
