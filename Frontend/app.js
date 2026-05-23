@@ -1217,7 +1217,6 @@ function renderCountryStats() {
             [
                 h('div', { className: 'country-info' }, [
                     h('span', { className: 'country-flag' }, [getFlag(c.name)]),
-                    h('span', { className: 'country-name' }, [countryName]),
                 ]),
                 h('span', { className: 'country-count' }, [String(c.count)]),
             ]
@@ -1245,8 +1244,7 @@ function showCountryTop(raw) {
 
     if (!modal || !title || !body) return;
 
-    const countryName = CODE_TO_NAME[country] || country;
-    title.textContent = `${getFlag(country)} Топ игроков: ${countryName}`;
+    title.textContent = `${getFlag(country)} Топ игроков: ${CODE_TO_NAME[country] || country}`;
 
     if (countryPlayers.length === 0) {
         clearEl(body);
