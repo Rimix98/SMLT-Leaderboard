@@ -1970,12 +1970,7 @@ function initStaffEventListeners() {
         roleNameInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                const editIndex = document.getElementById('editRoleIndex');
-                if (editIndex && parseInt(editIndex.value) >= 0) {
-                    updateRole();
-                } else {
-                    createRole();
-                }
+                createRole();
             }
         });
     }

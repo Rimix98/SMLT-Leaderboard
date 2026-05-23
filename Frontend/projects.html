@@ -175,6 +175,7 @@
                 <button class="modal-close" data-action="close-project-modal">✕</button>
             </div>
             <div class="modal-body">
+                <form id="projectForm" onsubmit="return false;">
                 <input type="hidden" id="projectIndex" value="-1">
                 <div class="form-group">
                     <label for="projectName">Название:</label>
@@ -215,6 +216,7 @@
                     <button class="btn btn-secondary" data-action="close-project-modal">Отмена</button>
                     <button class="btn btn-primary" data-action="save-project">Сохранить</button>
                 </div>
+                </form>
             </div>
         </div>
     </div>
