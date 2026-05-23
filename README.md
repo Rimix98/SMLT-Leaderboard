@@ -9,7 +9,7 @@
 <br>
 
 [![Live Demo](https://img.shields.io/badge/Демо-открыть_сайт-5865F2?style=for-the-badge)](https://smltdemonlist.vercel.app)
-[![Demonlist](https://img.shields.io/badge/Демонлист-таблица_лидеров-00ADD8?style=for-the-badge)](https://smltdemonlist.vercel.app/demonlist.html)
+[![Demonlist](https://img.shields.io/badge/Демонлист-таблица_лидеров-00ADD8?style=for-the-badge)](https://smltdemonlist.vercel.app/leaderboard.html)
 [![Projects](https://img.shields.io/badge/Проекты-коллабы-22c55e?style=for-the-badge)](https://smltdemonlist.vercel.app/projects.html)
 
 <br>
@@ -32,7 +32,7 @@
 | Страница | Что внутри |
 |----------|------------|
 | [Главная](https://smltdemonlist.vercel.app/) | О сообществе, ссылки, вход хоста |
-| [Демонлист](https://smltdemonlist.vercel.app/demonlist.html) | Топ игроков, рекорды, hardest, флаги стран |
+| [Демонлист](https://smltdemonlist.vercel.app/leaderboard.html) | Топ игроков, рекорды, hardest, флаги стран |
 | [Проекты](https://smltdemonlist.vercel.app/projects.html) | Коллабы: роли, статусы, участники, превью |
 
 > Первый заход на демонлист может занять **30–60 секунд** — данные подтягиваются с внешнего API для каждого игрока.
@@ -104,7 +104,7 @@ docs/screenshots/
 <p align="center"><i>Демонлист — топ игроков и уровней</i></p>
 -->
 
-Пока скриншотов нет — откройте **[живое демо](https://smltdemonlist.vercel.app/demonlist.html)**.
+Пока скриншотов нет — откройте **[живое демо](https://smltdemonlist.vercel.app/leaderboard.html)**.
 
 ---
 
@@ -159,7 +159,7 @@ SMLT-Demonlist/
 │   └── ratelimit.go   # Распределённый rate limit
 ├── Frontend/
 │   ├── index.html
-│   ├── demonlist.html
+│   ├── leaderboard.html
 │   ├── projects.html
 │   ├── app.js
 │   └── styles.css
@@ -189,7 +189,7 @@ SMLT-Demonlist/
 1. **Fork** репозитория → **Import** в Vercel.
 2. **Environment Variables** — см. [таблицу](#переменные-окружения) (минимум три обязательные).
 3. **Deploy** → проверка:
-   - `/demonlist.html` — таблица грузится
+   - `/leaderboard.html` — таблица грузится
    - `/api/players` — JSON, не HTML
    - вход **Хост** — `{"success":true}`
 
@@ -283,7 +283,7 @@ vercel dev
 ```
 
 - http://localhost:3000/index.html  
-- http://localhost:3000/demonlist.html  
+- http://localhost:3000/leaderboard.html  
 - http://localhost:3000/projects.html  
 
 ```bash
