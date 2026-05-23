@@ -2348,11 +2348,6 @@ function renderStaffRoles() {
                         dataset: { action: 'move-role', index: String(roleIndex), direction: 'down' }
                     }, ['↓']),
                     h('button', {
-                        className: 'btn btn-primary btn-sm',
-                        attrs: { type: 'button' },
-                        dataset: { action: 'show-edit-role-modal', roleIndex: String(roleIndex) }
-                    }, ['✏️ Редактировать']),
-                    h('button', {
                         className: 'btn btn-danger btn-sm',
                         attrs: { type: 'button' },
                         dataset: { action: 'delete-role', roleIndex: String(roleIndex) }
