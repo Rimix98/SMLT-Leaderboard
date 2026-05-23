@@ -22,7 +22,7 @@ function resolveCountry(input) {
     if (!input) return null;
     const upper = input.toUpperCase().trim();
     if (FLAGS[upper]) return upper;
-    const lower = input.toLowerCase().trim();
+    const lower = input.toLowerCase().trim().replace(/\s+/g, '-');
     return COUNTRY_TO_CODE[lower] || null;
 }
 
@@ -188,6 +188,7 @@ const store = {
     },
     _leaderboard: { body: null, lastSig: '' },
     staffRoles: [],
+    staffTiers: { gp: [], deco: [] },
     selectedRoleColor: '#3b82f6',
     pendingProjectParticipants: [],
 };
@@ -364,6 +365,29 @@ function mountDelegatedClicks() {
             'move-project': () => {
                 const btn = e.target.closest('[data-action="move-project"]');
                 if (btn) moveProject(Number(btn.dataset.index), btn.dataset.direction);
+            },
+            'switch-staff-tab': () => {
+                const btn = e.target.closest('[data-action="switch-staff-tab"]');
+                if (btn) switchStaffTab(btn.dataset.tab);
+            },
+            'open-edit-panel': openEditPanel,
+            'close-edit-panel': closeEditPanel,
+            'edit-add-player': editAddPlayer,
+            'set-player-tier': () => {
+                const badge = e.target.closest('[data-action="set-player-tier"]');
+                if (badge) setPlayerTier(badge.dataset.category, badge.dataset.nickname);
+            },
+            'edit-remove-player': () => {
+                const btn = e.target.closest('[data-action="edit-remove-player"]');
+                if (btn) {
+                    const roleIndex = Number(btn.dataset.roleIndex);
+                    const nickname = btn.dataset.nickname;
+                    const role = store.staffRoles[roleIndex];
+                    if (role) {
+                        const pIdx = role.players.findIndex(p => p.nickname === nickname);
+                        if (pIdx >= 0) removeStaffPlayer(roleIndex, pIdx);
+                    }
+                }
             }
         };
 
@@ -617,6 +641,7 @@ async function logoutHost() {
 
     updateHostButton();
     updateAdminControls();
+    closeEditPanel();
     showToast('Вы вышли из режима хоста', 'info');
 }
 
@@ -755,7 +780,7 @@ function getFlag(c) {
     if (!c) return '';
     const upper = c.toUpperCase();
     if (FLAGS[upper]) return FLAGS[upper];
-    const lower = c.toLowerCase().trim();
+    const lower = c.toLowerCase().trim().replace(/\s+/g, '-');
     const code = COUNTRY_TO_CODE[lower];
     if (code && FLAGS[code]) return FLAGS[code];
     return '';
@@ -1086,7 +1111,7 @@ function renderCountryStats() {
     store.players.forEach(p => {
         const country = p.nationality;
         if (country) {
-            const key = country.toLowerCase().trim();
+            const key = country.toLowerCase().trim().replace(/\s+/g, '-');
             if (!countryCounts[key]) {
                 countryCounts[key] = { name: country, count: 0, members: [] };
             }
@@ -2099,7 +2124,10 @@ function closeInfoModal(e) {
 // ============================================
 
 async function initStaffPage() {
-    await loadStaffRoles();
+    await Promise.all([
+        loadStaffRoles(),
+        loadStaffTiers()
+    ]);
     initStaffEventListeners();
 }
 
@@ -2157,6 +2185,16 @@ function initStaffEventListeners() {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 addPlayerToRole();
+            }
+        });
+    }
+
+    const editPlayerNickname = document.getElementById('editPlayerNickname');
+    if (editPlayerNickname) {
+        editPlayerNickname.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                editAddPlayer();
             }
         });
     }
@@ -2301,11 +2339,6 @@ function renderStaffRoles() {
                         attrs: { type: 'button' },
                         dataset: { action: 'move-role', index: String(roleIndex), direction: 'down' }
                     }, ['↓']),
-                    h('button', {
-                        className: 'btn btn-secondary btn-sm',
-                        attrs: { type: 'button' },
-                        dataset: { action: 'show-add-staff-player-modal', roleIndex: String(roleIndex) }
-                    }, ['➕ Добавить игрока']),
                     h('button', {
                         className: 'btn btn-primary btn-sm',
                         attrs: { type: 'button' },
@@ -2573,8 +2606,12 @@ async function addPlayerToRole() {
             throw new Error(err.error || 'Ошибка добавления игрока');
         }
 
-        await loadStaffRoles();
+        await Promise.all([
+            loadStaffRoles(),
+            loadStaffTiers()
+        ]);
         closeAddStaffPlayerModal();
+        renderEditPlayerList();
         showToast(`Игрок «${escapeHtml(nickname)}» добавлен в роль «${escapeHtml(role.name)}»`, 'success');
     } catch (e) {
         if (!isAbortError(e)) {
@@ -2609,11 +2646,339 @@ async function removeStaffPlayer(roleIndex, playerIndex) {
             throw new Error(err.error || 'Ошибка удаления игрока');
         }
 
-        await loadStaffRoles();
+        await Promise.all([
+            loadStaffRoles(),
+            loadStaffTiers()
+        ]);
+        renderEditPlayerList();
         showToast(`Игрок «${escapeHtml(player.nickname)}» удалён из роли`, 'success');
     } catch (e) {
         if (!isAbortError(e)) {
             console.error('Ошибка удаления игрока:', e);
+            showToast(e.message, 'error');
+            if (e.message.includes('401')) {
+                logoutHost();
+            }
+        }
+    }
+}
+
+// ============================================
+// ТИРЫ (GP / DECO)
+// ============================================
+
+const TIER_CONFIG = {
+    priority: { label: 'Приоритет', color: '#00ffff' },
+    base: { label: 'Основа', color: '#6d0b0d' },
+    reserve: { label: 'Резерв', color: '#540b6d' },
+    na: { label: 'N/A', color: '#888888' },
+};
+
+const TIER_CYCLE = ['na', 'priority', 'base', 'reserve'];
+
+async function loadStaffTiers() {
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff/tiers`, {}, 'staff-tiers');
+        if (res.ok) {
+            const data = await res.json();
+            store.staffTiers = {
+                gp: Array.isArray(data.gp) ? data.gp : [],
+                deco: Array.isArray(data.deco) ? data.deco : [],
+            };
+        } else {
+            store.staffTiers = { gp: [], deco: [] };
+        }
+    } catch (e) {
+        if (!isAbortError(e)) {
+            console.error('Ошибка загрузки тиров:', e);
+            store.staffTiers = { gp: [], deco: [] };
+        }
+    }
+}
+
+function switchStaffTab(tab) {
+    document.querySelectorAll('.staff-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+
+    const rolesContainer = document.getElementById('staffRolesContainer');
+    const tiersContainer = document.getElementById('staffTiersContainer');
+
+    if (tab === 'roles') {
+        rolesContainer.style.display = '';
+        tiersContainer.style.display = 'none';
+    } else {
+        rolesContainer.style.display = 'none';
+        tiersContainer.style.display = '';
+        renderTierView(tab);
+    }
+}
+
+function getPlayerRoleName(nickname) {
+    for (const role of store.staffRoles) {
+        if (role.players.some(p => p.nickname === nickname)) {
+            return role.name;
+        }
+    }
+    return null;
+}
+
+function renderTierView(category) {
+    const container = document.getElementById('staffTierContent');
+    if (!container) return;
+    clearEl(container);
+
+    const tiers = store.staffTiers[category] || [];
+    const categoryLabel = category.toUpperCase();
+    const isHost = store.isHost;
+
+    const allPlayers = [];
+    const seen = new Set();
+    for (const role of store.staffRoles) {
+        for (const p of role.players) {
+            if (!seen.has(p.nickname)) {
+                seen.add(p.nickname);
+                allPlayers.push({ nickname: p.nickname, discord: p.discord, roleName: role.name });
+            }
+        }
+    }
+
+    const tierMap = {};
+    for (const t of TIER_CYCLE) tierMap[t] = [];
+    for (const p of allPlayers) {
+        const entry = tiers.find(t => t.nickname === p.nickname);
+        const tier = entry ? entry.tier : 'na';
+        if (!tierMap[tier]) tierMap[tier] = [];
+        tierMap[tier].push(p);
+    }
+
+    const header = h('div', { className: 'tier-category-title' }, [
+        h('span', {}, [categoryLabel]),
+        h('span', { style: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', fontWeight: 400 } },
+            [`— ${allPlayers.length} игроков`]
+        ),
+    ]);
+    container.appendChild(header);
+
+    for (const tier of TIER_CYCLE) {
+        const players = tierMap[tier] || [];
+        const cfg = TIER_CONFIG[tier];
+
+        const group = h('div', { className: 'tier-group' }, []);
+
+        const groupHeader = h('div', {
+            className: 'tier-group-header',
+            style: { background: cfg.color + '22' },
+        }, [
+            h('span', { className: 'tier-square', style: { background: cfg.color } }, []),
+            h('span', {}, [cfg.label]),
+            h('span', { style: { color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)', fontWeight: 400 } },
+                [`(${players.length})`]
+            ),
+        ]);
+        group.appendChild(groupHeader);
+
+        const playersContainer = h('div', { className: 'tier-players' }, []);
+
+        if (players.length === 0) {
+            playersContainer.appendChild(
+                h('span', { className: 'tier-empty' }, ['Нет игроков'])
+            );
+        } else {
+            for (const p of players) {
+                const badge = h('span', {
+                    className: 'tier-player-badge' + (isHost ? ' clickable' : ''),
+                    dataset: isHost ? {
+                        action: 'set-player-tier',
+                        category: category,
+                        nickname: p.nickname,
+                    } : {},
+                    title: isHost ? 'Нажмите, чтобы изменить тир' : '',
+                }, [
+                    h('span', {}, [escapeHtml(p.nickname)]),
+                ]);
+
+                if (p.roleName) {
+                    badge.appendChild(
+                        h('span', { className: 'player-role-label' }, [escapeHtml(p.roleName)])
+                    );
+                }
+
+                playersContainer.appendChild(badge);
+            }
+        }
+
+        group.appendChild(playersContainer);
+        container.appendChild(group);
+    }
+}
+
+function getNextTier(current) {
+    const idx = TIER_CYCLE.indexOf(current);
+    if (idx === -1 || idx >= TIER_CYCLE.length - 1) return TIER_CYCLE[0];
+    return TIER_CYCLE[idx + 1];
+}
+
+async function setPlayerTier(category, nickname) {
+    if (!store.isHost) return;
+
+    const tiers = store.staffTiers[category] || [];
+    const current = tiers.find(t => t.nickname === nickname);
+    const currentTier = current ? current.tier : 'na';
+    const nextTier = getNextTier(currentTier);
+
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff/tier`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ category, nickname, tier: nextTier })
+        }, 'set-tier');
+
+        if (!res.ok) {
+            const err = await parseJsonResponse(res);
+            throw new Error(err.error || 'Ошибка установки тира');
+        }
+
+        await loadStaffTiers();
+        renderTierView(category);
+        showToast(`${escapeHtml(nickname)} → ${TIER_CONFIG[nextTier].label}`, 'success');
+    } catch (e) {
+        if (!isAbortError(e)) {
+            console.error('Ошибка установки тира:', e);
+            showToast(e.message, 'error');
+            if (e.message.includes('401')) {
+                logoutHost();
+            }
+        }
+    }
+}
+
+// ============================================
+// ПАНЕЛЬ РЕДАКТИРОВАНИЯ
+// ============================================
+
+function openEditPanel() {
+    if (!store.isHost) return;
+    document.getElementById('editPanelOverlay').classList.add('active');
+    document.getElementById('editPanel').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    populateEditRoleSelect();
+    renderEditPlayerList();
+    document.getElementById('editPlayerNickname').value = '';
+    document.getElementById('editPlayerDiscord').value = '';
+    setTimeout(() => document.getElementById('editPlayerNickname').focus(), 100);
+}
+
+function closeEditPanel() {
+    const overlay = document.getElementById('editPanelOverlay');
+    const panel = document.getElementById('editPanel');
+    if (overlay) overlay.classList.remove('active');
+    if (panel) panel.classList.remove('open');
+    document.body.style.overflow = '';
+}
+
+function populateEditRoleSelect() {
+    const select = document.getElementById('editPlayerRole');
+    if (!select) return;
+    clearEl(select);
+
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Выберите роль...';
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    select.appendChild(placeholder);
+
+    store.staffRoles.forEach((role, idx) => {
+        const opt = document.createElement('option');
+        opt.value = String(idx);
+        opt.textContent = role.name;
+        select.appendChild(opt);
+    });
+}
+
+function renderEditPlayerList() {
+    const container = document.getElementById('editPlayerList');
+    if (!container) return;
+    clearEl(container);
+
+    if (!store.isHost) return;
+
+    let totalPlayers = 0;
+    for (const role of store.staffRoles) {
+        for (const p of role.players) {
+            totalPlayers++;
+            const item = h('div', { className: 'edit-player-list-item' }, [
+                h('div', { className: 'player-info' }, [
+                    h('span', { className: 'player-nickname' }, [escapeHtml(p.nickname)]),
+                    h('span', { className: 'player-role-name' }, [escapeHtml(role.name)]),
+                ]),
+                h('button', {
+                    className: 'player-remove-btn',
+                    attrs: {
+                        'data-action': 'edit-remove-player',
+                        'data-role-index': String(store.staffRoles.indexOf(role)),
+                        'data-nickname': p.nickname,
+                        'title': 'Удалить игрока'
+                    }
+                }, ['✕']),
+            ]);
+            container.appendChild(item);
+        }
+    }
+
+    if (totalPlayers === 0) {
+        container.appendChild(
+            h('span', { style: { color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)' } },
+                ['Нет игроков']
+            )
+        );
+    }
+}
+
+async function editAddPlayer() {
+    const nicknameInput = document.getElementById('editPlayerNickname');
+    const discordInput = document.getElementById('editPlayerDiscord');
+    const roleSelect = document.getElementById('editPlayerRole');
+
+    const nickname = nicknameInput.value.trim();
+    if (!nickname) {
+        showToast('Введите ник игрока', 'error');
+        return;
+    }
+
+    const roleIndex = parseInt(roleSelect.value);
+    if (isNaN(roleIndex) || roleIndex < 0 || roleIndex >= store.staffRoles.length) {
+        showToast('Выберите роль', 'error');
+        return;
+    }
+
+    const discord = discordInput.value.trim() || '';
+    const role = store.staffRoles[roleIndex];
+
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff/add`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ roleIndex, nickname, discord })
+        }, 'edit-add-player');
+
+        if (!res.ok) {
+            const err = await parseJsonResponse(res);
+            throw new Error(err.error || 'Ошибка добавления игрока');
+        }
+
+        await Promise.all([
+            loadStaffRoles(),
+            loadStaffTiers()
+        ]);
+        nicknameInput.value = '';
+        discordInput.value = '';
+        renderEditPlayerList();
+        showToast(`Игрок «${escapeHtml(nickname)}» добавлен в роль «${escapeHtml(role.name)}»`, 'success');
+    } catch (e) {
+        if (!isAbortError(e)) {
+            console.error('Ошибка добавления игрока:', e);
             showToast(e.message, 'error');
             if (e.message.includes('401')) {
                 logoutHost();

@@ -49,6 +49,11 @@ type StaffRole struct {
 	Players []StaffPlayer `json:"players" firestore:"players"`
 }
 
+type StaffTierEntry struct {
+	Nickname string `json:"nickname" firestore:"nickname"`
+	Tier     string `json:"tier" firestore:"tier"`
+}
+
 type Project struct {
 	Name         string   `json:"name" firestore:"name"`
 	VideoID      string   `json:"videoId" firestore:"videoId"`
@@ -1837,6 +1842,136 @@ func handleReorderStaffRoles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"success": true})
 }
 
+func handleGetStaffTiers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+	ctx := r.Context()
+	doc, err := fsClient.Collection("config").Doc("staff").Get(ctx)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			writeJSON(w, map[string]interface{}{"gp": []StaffTierEntry{}, "deco": []StaffTierEntry{}})
+			return
+		}
+		log.Printf("[staff] Get tiers doc: %v", err)
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		return
+	}
+	var data struct {
+		GP   []StaffTierEntry `json:"gp" firestore:"gp_tiers"`
+		DECO []StaffTierEntry `json:"deco" firestore:"deco_tiers"`
+	}
+	if err := doc.DataTo(&data); err != nil {
+		log.Printf("[staff] tiers DataTo error: %v", err)
+		data.GP = []StaffTierEntry{}
+		data.DECO = []StaffTierEntry{}
+	}
+	writeJSON(w, data)
+}
+
+func handleSetStaffTier(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+	var req struct {
+		Category string `json:"category"`
+		Nickname string `json:"nickname"`
+		Tier     string `json:"tier"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Кривой JSON")
+		return
+	}
+	req.Category = sanitizeString(req.Category)
+	req.Nickname = sanitizeString(req.Nickname)
+	req.Tier = sanitizeString(req.Tier)
+
+	if req.Category != "gp" && req.Category != "deco" {
+		sendError(w, http.StatusBadRequest, "Некорректная категория")
+		return
+	}
+	if req.Nickname == "" || len(req.Nickname) > 32 {
+		sendError(w, http.StatusBadRequest, "Некорректный ник")
+		return
+	}
+	validTiers := map[string]bool{"priority": true, "base": true, "reserve": true, "na": true}
+	if !validTiers[req.Tier] {
+		sendError(w, http.StatusBadRequest, "Некорректный тир")
+		return
+	}
+
+	ctx := r.Context()
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("staff")
+		doc, err := tx.Get(docRef)
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				return tx.Set(docRef, map[string]interface{}{
+					req.Category + "_tiers": []StaffTierEntry{{Nickname: req.Nickname, Tier: req.Tier}},
+				})
+			}
+			return err
+		}
+		var data struct {
+			Roles    []StaffRole     `json:"roles" firestore:"roles"`
+			GPTiers  []StaffTierEntry `json:"gp_tiers" firestore:"gp_tiers"`
+			DecoTiers []StaffTierEntry `json:"deco_tiers" firestore:"deco_tiers"`
+		}
+		if err := doc.DataTo(&data); err != nil {
+			return err
+		}
+
+		var tiers *[]StaffTierEntry
+		if req.Category == "gp" {
+			tiers = &data.GPTiers
+		} else {
+			tiers = &data.DecoTiers
+		}
+
+		found := false
+		for i, entry := range *tiers {
+			if entry.Nickname == req.Nickname {
+				(*tiers)[i].Tier = req.Tier
+				found = true
+				break
+			}
+		}
+		if !found {
+			*tiers = append(*tiers, StaffTierEntry{Nickname: req.Nickname, Tier: req.Tier})
+		}
+
+		return tx.Set(docRef, map[string]interface{}{
+			"roles":      data.Roles,
+			"gp_tiers":   data.GPTiers,
+			"deco_tiers": data.DecoTiers,
+		})
+	})
+
+	if err != nil {
+		log.Printf("[staff] set tier: %v", err)
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		return
+	}
+	auditLog(r.Context(), AuditEntry{
+		Action:  "staff.setTier",
+		AdminIP: getRealIP(r),
+		Details: map[string]interface{}{
+			"category": req.Category,
+			"nickname": req.Nickname,
+			"tier":     req.Tier,
+		},
+	})
+	writeJSON(w, map[string]bool{"success": true})
+}
+
 // ──────────────────────────────────────────────
 // VALIDATION
 // ──────────────────────────────────────────────
@@ -2031,7 +2166,9 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/staff/role":    rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleStaffRole))),
 		"/api/staff/remove":  rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleStaffRemove))),
 		"/api/staff/reorder": rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleReorderStaffRoles))),
-		"/api/projects":      rateLimitMiddleware(60)(handleGetProjects),
+		"/api/staff/tiers":    rateLimitMiddleware(60)(handleGetStaffTiers),
+		"/api/staff/tier":     rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleSetStaffTier))),
+		"/api/projects":       rateLimitMiddleware(60)(handleGetProjects),
 		"/api/projects/save": rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleSaveProjects))),
 		"/api/players":            rateLimitMiddleware(60)(handleGetPlayers),
 		"/api/players/save":       rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleSavePlayers))),

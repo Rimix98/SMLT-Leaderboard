@@ -62,6 +62,7 @@
                     <div class="admin-panel-content">
                         <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
                             <button class="btn btn-primary" data-action="show-add-role-modal">➕ Создать роль</button>
+                            <button class="btn btn-secondary edit-panel-toggle-btn" data-action="open-edit-panel">✏️ Редактировать</button>
                         </div>
                     </div>
                 </div>
@@ -71,6 +72,15 @@
                         <p style="color: var(--color-text-secondary); line-height: 1.7;">
                             Здесь отображаются стафф SMLT.
                         </p>
+                        <p style="color: var(--color-text-secondary); line-height: 1.7; margin-top: var(--spacing-sm);">
+                            На GP и DECO есть тиры:
+                        </p>
+                        <div class="tier-legend">
+                            <span class="tier-legend-item"><span class="tier-square" style="background: #00ffff;"></span> приоритет</span>
+                            <span class="tier-legend-item"><span class="tier-square" style="background: #6d0b0d;"></span> основа</span>
+                            <span class="tier-legend-item"><span class="tier-square" style="background: #540b6d;"></span> резерв</span>
+                            <span class="tier-legend-item"><span class="tier-square" style="background: #888888;"></span> N/A</span>
+                        </div>
                     </div>
                 </section>
 
@@ -80,8 +90,18 @@
                     <div class="loading-text">Загрузка состава...</div>
                 </div>
 
+                <div class="staff-tabs">
+                    <button class="staff-tab active" data-action="switch-staff-tab" data-tab="roles">Роли</button>
+                    <button class="staff-tab" data-action="switch-staff-tab" data-tab="gp">GP</button>
+                    <button class="staff-tab" data-action="switch-staff-tab" data-tab="deco">DECO</button>
+                </div>
+
                 <div id="staffRolesContainer" class="projects-grid">
                     <!-- Роли будут добавлены сюда через JS -->
+                </div>
+
+                <div id="staffTiersContainer" style="display: none;">
+                    <div id="staffTierContent"></div>
                 </div>
             </div>
         </main>
@@ -217,6 +237,35 @@
                 <button id="hostSubmitBtn" class="btn btn-primary" data-action="verify-host">Войти</button>
                 <div id="hostError" class="error-message" style="display: none;">Неверный пароль!</div>
             </div>
+            </div>
+        </div>
+
+        <!-- Панель редактирования -->
+        <div id="editPanelOverlay" class="edit-panel-overlay" data-action="close-edit-panel"></div>
+        <div id="editPanel" class="edit-panel">
+            <div class="edit-panel-header">
+                <span>✏️ Редактировать</span>
+                <button class="edit-panel-close" data-action="close-edit-panel">✕</button>
+            </div>
+            <div class="edit-panel-body">
+                <div class="form-group">
+                    <label for="editPlayerNickname">Ник игрока:</label>
+                    <input type="text" id="editPlayerNickname" class="form-input" placeholder="Nickname">
+                </div>
+                <div class="form-group">
+                    <label for="editPlayerDiscord">Discord (необязательно):</label>
+                    <input type="text" id="editPlayerDiscord" class="form-input" placeholder="Username#0000 or username">
+                </div>
+                <div class="form-group">
+                    <label for="editPlayerRole">Роль:</label>
+                    <select id="editPlayerRole" class="form-input"></select>
+                </div>
+                <button class="btn btn-primary" data-action="edit-add-player">➕ Добавить игрока</button>
+
+                <div class="edit-player-list">
+                    <h4>Игроки:</h4>
+                    <div id="editPlayerList"></div>
+                </div>
             </div>
         </div>
 
