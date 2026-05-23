@@ -1777,6 +1777,66 @@ func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"success": true})
 }
 
+func handleReorderStaffRoles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+	var req struct {
+		RoleIndex int    `json:"roleIndex"`
+		Direction string `json:"direction"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Кривой JSON")
+		return
+	}
+	ctx := r.Context()
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("staff")
+		doc, err := tx.Get(docRef)
+		if err != nil {
+			return err
+		}
+		var data struct {
+			Roles []StaffRole `json:"roles" firestore:"roles"`
+		}
+		if err := doc.DataTo(&data); err != nil {
+			return err
+		}
+		idx := req.RoleIndex
+		target := idx - 1
+		if req.Direction == "down" {
+			target = idx + 1
+		}
+		if target < 0 || target >= len(data.Roles) {
+			return errors.New("invalid move")
+		}
+		data.Roles[idx], data.Roles[target] = data.Roles[target], data.Roles[idx]
+		return tx.Set(docRef, data)
+	})
+	if err != nil {
+		log.Printf("[staff] reorder: %v", err)
+		if err.Error() == "invalid move" {
+			sendError(w, http.StatusBadRequest, "Некорректное перемещение")
+		} else {
+			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		}
+		return
+	}
+	auditLog(r.Context(), AuditEntry{
+		Action:  "staff.reorder",
+		AdminIP: getRealIP(r),
+		Details: map[string]interface{}{
+			"roleIndex": req.RoleIndex,
+			"direction": req.Direction,
+		},
+	})
+	writeJSON(w, map[string]bool{"success": true})
+}
+
 // ──────────────────────────────────────────────
 // VALIDATION
 // ──────────────────────────────────────────────
@@ -1973,6 +2033,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/staff/add":     rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleStaffAdd))),
 		"/api/staff/role":    rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleStaffRole))),
 		"/api/staff/remove":  rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleStaffRemove))),
+		"/api/staff/reorder": rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleReorderStaffRoles))),
 		"/api/projects":      rateLimitMiddleware(60)(handleGetProjects),
 		"/api/projects/save": rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleSaveProjects))),
 		"/api/players":            rateLimitMiddleware(60)(handleGetPlayers),

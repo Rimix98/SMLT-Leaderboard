@@ -2328,9 +2328,18 @@ function renderStaffRoles() {
 function moveRole(index, direction) {
     const target = direction === 'down' ? index + 1 : index - 1;
     if (target < 0 || target >= store.staffRoles.length) return;
+    const prev = [...store.staffRoles];
     [store.staffRoles[index], store.staffRoles[target]] = [store.staffRoles[target], store.staffRoles[index]];
     renderStaffRoles();
-    saveStaffRoles();
+    fetchWithAbort(`${BACKEND_URL}/staff/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ roleIndex: index, direction })
+    }, 'staff-reorder').catch(() => {
+        store.staffRoles = prev;
+        renderStaffRoles();
+    });
 }
 
 function moveProject(index, direction) {
