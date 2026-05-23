@@ -508,7 +508,10 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	ensureCaptcha()
 
-	captchaValid := captchaStore.Verify(req.CaptchaID, req.CaptchaValue, true)
+	if !captchaStore.Verify(req.CaptchaID, req.CaptchaValue, true) {
+		sendError(w, http.StatusUnauthorized, "Неверный код с картинки")
+		return
+	}
 
 	adminHash := os.Getenv("ADMIN_HASH")
 	if adminHash == "" {
@@ -523,9 +526,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	passwordValid := bcrypt.CompareHashAndPassword([]byte(adminHash), []byte(req.Password)) == nil
-
-	if !captchaValid || !passwordValid {
+	if err := bcrypt.CompareHashAndPassword([]byte(adminHash), []byte(req.Password)); err != nil {
 		sendError(w, http.StatusUnauthorized, "Неверный пароль")
 		return
 	}
