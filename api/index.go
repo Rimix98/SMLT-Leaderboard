@@ -415,7 +415,7 @@ func handleCaptcha(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"captchaId":    id,
-		"captchaImage": "data:image/png;base64," + b64s,
+		"captchaImage": b64s,
 	})
 }
 
