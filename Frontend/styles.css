@@ -1574,6 +1574,12 @@ a:hover {
 
 .role-color-picker {
     display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.color-picker-row {
+    display: flex;
     align-items: center;
     gap: var(--spacing-sm);
 }
@@ -1597,11 +1603,29 @@ a:hover {
     border: none;
 }
 
+.color-hex-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.color-hex-prefix {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+}
+
+.color-hex-input {
+    width: 90px !important;
+    font-family: monospace;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
 .role-color-presets {
     display: flex;
     gap: var(--spacing-xs);
     flex-wrap: wrap;
-    margin-top: var(--spacing-sm);
 }
 
 .color-preset {

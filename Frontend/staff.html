@@ -136,6 +136,7 @@
                     <button class="modal-close" data-action="close-add-role-modal">✕</button>
                 </div>
                 <div class="modal-body">
+                    <input type="hidden" id="editRoleIndex" value="-1">
                     <div class="form-group">
                         <label for="roleName">Название роли:</label>
                         <input type="text" id="roleName" class="form-input" placeholder="Например: Администрация">
@@ -143,7 +144,13 @@
                     <div class="form-group">
                         <label for="roleColor">Цвет роли:</label>
                         <div class="role-color-picker">
-                            <input type="color" id="roleColor" class="color-input" value="#3b82f6">
+                            <div class="color-picker-row">
+                                <input type="color" id="roleColor" class="color-input" value="#3b82f6">
+                                <div class="color-hex-input-wrapper">
+                                    <span class="color-hex-prefix">#</span>
+                                    <input type="text" id="roleColorHex" class="form-input color-hex-input" placeholder="f1c40f" maxlength="6">
+                                </div>
+                            </div>
                             <div class="role-color-presets">
                                 <span class="color-preset active" data-color="#3b82f6" style="background: #3b82f6;"></span>
                                 <span class="color-preset" data-color="#ef4444" style="background: #ef4444;"></span>
@@ -157,7 +164,7 @@
                     </div>
                     <div style="display: flex; gap: var(--spacing-sm); margin-top: var(--spacing-md);">
                         <button class="btn btn-secondary" data-action="close-add-role-modal">Отмена</button>
-                        <button class="btn btn-primary" data-action="create-role">Создать</button>
+                        <button class="btn btn-primary" id="createRoleBtn" data-action="create-role">Создать</button>
                     </div>
                 </div>
             </div>

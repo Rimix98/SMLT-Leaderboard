@@ -322,6 +322,10 @@ function mountDelegatedClicks() {
                 if (btn) deleteProject(Number(btn.dataset.projectIndex));
             },
             'show-add-role-modal': showAddRoleModal,
+            'show-edit-role-modal': () => {
+                const btn = e.target.closest('[data-action="show-edit-role-modal"]');
+                if (btn) showEditRoleModal(Number(btn.dataset.roleIndex));
+            },
             'close-add-role-modal': closeAddRoleModal,
             'create-role': createRole,
             'close-add-player-modal-staff': closeAddStaffPlayerModal,
@@ -711,7 +715,7 @@ async function loadGeoStats() {
 async function savePlayerNames(names) {
     const formattedPlayers = names.map(n => ({ name: n }));
 
-    const res = await fetchWithAbort(`${BACKEND_URL}/players`, {
+    const res = await fetchWithAbort(`${BACKEND_URL}/players/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -1554,8 +1558,8 @@ async function removePlayer(name) {
     if (!confirm(`Удалить игрока "${name}"?`)) return;
 
     try {
-        const res = await fetchWithAbort(`${BACKEND_URL}/players`, {
-            method: 'DELETE',
+        const res = await fetchWithAbort(`${BACKEND_URL}/players/delete`, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
             body: JSON.stringify({ name })
@@ -1930,6 +1934,8 @@ function initStaffEventListeners() {
             const color = preset.dataset.color;
             store.selectedRoleColor = color;
             document.getElementById('roleColor').value = color;
+            const hexInput = document.getElementById('roleColorHex');
+            if (hexInput) hexInput.value = color.replace('#', '');
             document.querySelectorAll('.color-preset').forEach(p => p.classList.remove('active'));
             preset.classList.add('active');
         });
@@ -1939,7 +1945,23 @@ function initStaffEventListeners() {
     if (colorInput) {
         colorInput.addEventListener('input', () => {
             store.selectedRoleColor = colorInput.value;
+            const hexInput = document.getElementById('roleColorHex');
+            if (hexInput) hexInput.value = colorInput.value.replace('#', '');
             document.querySelectorAll('.color-preset').forEach(p => p.classList.remove('active'));
+        });
+    }
+
+    const colorHexInput = document.getElementById('roleColorHex');
+    if (colorHexInput) {
+        colorHexInput.addEventListener('input', () => {
+            let val = colorHexInput.value.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
+            colorHexInput.value = val;
+            if (val.length === 6) {
+                const fullColor = '#' + val.toLowerCase();
+                store.selectedRoleColor = fullColor;
+                document.getElementById('roleColor').value = fullColor;
+                document.querySelectorAll('.color-preset').forEach(p => p.classList.remove('active'));
+            }
         });
     }
 
@@ -1948,7 +1970,12 @@ function initStaffEventListeners() {
         roleNameInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                createRole();
+                const editIndex = document.getElementById('editRoleIndex');
+                if (editIndex && parseInt(editIndex.value) >= 0) {
+                    updateRole();
+                } else {
+                    createRole();
+                }
             }
         });
     }
@@ -2099,6 +2126,11 @@ function renderStaffRoles() {
                         dataset: { action: 'show-add-staff-player-modal', roleIndex: String(roleIndex) }
                     }, ['➕ Добавить игрока']),
                     h('button', {
+                        className: 'btn btn-primary btn-sm',
+                        attrs: { type: 'button' },
+                        dataset: { action: 'show-edit-role-modal', roleIndex: String(roleIndex) }
+                    }, ['✏️ Редактировать']),
+                    h('button', {
                         className: 'btn btn-danger btn-sm',
                         attrs: { type: 'button' },
                         dataset: { action: 'delete-role', roleIndex: String(roleIndex) }
@@ -2115,11 +2147,38 @@ function renderStaffRoles() {
 function showAddRoleModal() {
     const modal = document.getElementById('addRoleModal');
     if (modal) {
+        document.getElementById('editRoleIndex').value = '-1';
         document.getElementById('roleName').value = '';
         document.getElementById('roleColor').value = store.selectedRoleColor || '#3b82f6';
+        const hexInput = document.getElementById('roleColorHex');
+        if (hexInput) hexInput.value = (store.selectedRoleColor || '#3b82f6').replace('#', '');
         document.querySelectorAll('.color-preset').forEach(p => {
             p.classList.toggle('active', p.dataset.color === (store.selectedRoleColor || '#3b82f6'));
         });
+        document.getElementById('addRoleModalTitle').textContent = '🆕 Новая роль';
+        document.getElementById('createRoleBtn').textContent = 'Создать';
+        modal.classList.add('active');
+        setTimeout(() => document.getElementById('roleName').focus(), 100);
+    }
+}
+
+function showEditRoleModal(roleIndex) {
+    const role = store.staffRoles[roleIndex];
+    if (!role) return;
+    const modal = document.getElementById('addRoleModal');
+    if (modal) {
+        document.getElementById('editRoleIndex').value = roleIndex;
+        document.getElementById('roleName').value = role.name;
+        const color = role.color || '#3b82f6';
+        document.getElementById('roleColor').value = color;
+        const hexInput = document.getElementById('roleColorHex');
+        if (hexInput) hexInput.value = color.replace('#', '');
+        store.selectedRoleColor = color;
+        document.querySelectorAll('.color-preset').forEach(p => {
+            p.classList.toggle('active', p.dataset.color === color);
+        });
+        document.getElementById('addRoleModalTitle').textContent = '✏️ Редактировать роль';
+        document.getElementById('createRoleBtn').textContent = 'Сохранить';
         modal.classList.add('active');
         setTimeout(() => document.getElementById('roleName').focus(), 100);
     }
@@ -2131,6 +2190,13 @@ function closeAddRoleModal() {
 }
 
 async function createRole() {
+    const editIndexInput = document.getElementById('editRoleIndex');
+    const editIndex = parseInt(editIndexInput?.value || '-1');
+    if (editIndex >= 0) {
+        await updateRole(editIndex);
+        return;
+    }
+
     const nameInput = document.getElementById('roleName');
     const name = nameInput.value.trim();
     if (!name) {
@@ -2162,6 +2228,48 @@ async function createRole() {
     } catch (e) {
         if (!isAbortError(e)) {
             console.error('Ошибка создания роли:', e);
+            showToast(e.message, 'error');
+            if (e.message.includes('401')) {
+                logoutHost();
+            }
+        }
+    }
+}
+
+async function updateRole(roleIndex) {
+    const role = store.staffRoles[roleIndex];
+    if (!role) return;
+
+    const nameInput = document.getElementById('roleName');
+    const name = nameInput.value.trim();
+    if (!name) {
+        showToast('Введите название роли', 'error');
+        return;
+    }
+
+    const color = document.getElementById('roleColor').value || '#3b82f6';
+
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ roleIndex, name, color })
+        }, 'update-role');
+
+        if (!res.ok) {
+            const err = await parseJsonResponse(res);
+            throw new Error(err.error || 'Ошибка обновления роли');
+        }
+
+        role.name = name;
+        role.color = color;
+        renderStaffRoles();
+        closeAddRoleModal();
+        showToast(`Роль «${name}» обновлена`, 'success');
+    } catch (e) {
+        if (!isAbortError(e)) {
+            console.error('Ошибка обновления роли:', e);
             showToast(e.message, 'error');
             if (e.message.includes('401')) {
                 logoutHost();

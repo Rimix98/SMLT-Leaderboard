@@ -131,7 +131,7 @@ var (
 	reDiscord      = regexp.MustCompile(`^[a-zA-Z0-9 _.\-#]+$`)
 	reVideoID      = regexp.MustCompile(`^[a-zA-Z0-9_-]{11}$`)
 	reRoleName     = regexp.MustCompile(`^[a-zA-Z0-9 _.\-]+$`)
-	reHexColor     = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+	reHexColor     = regexp.MustCompile(`^#?[0-9a-fA-F]{6}$`)
 )
 
 var defaultPlayerNames = []string{
@@ -1310,6 +1310,110 @@ func handleGetPlayers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, players)
 }
 
+func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+	var players []Player
+	if err := decodeRequestJSON(w, r, &players); err != nil {
+		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
+		return
+	}
+	for i, p := range players {
+		players[i].Name = sanitizeString(p.Name)
+		if len(p.Name) == 0 || len(p.Name) > 32 {
+			sendError(w, http.StatusBadRequest, "Некорректные данные игрока")
+			return
+		}
+	}
+	ctx := r.Context()
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("players")
+		return tx.Set(docRef, map[string]interface{}{"players": players})
+	})
+	if err != nil {
+		log.Printf("[players] save: %v", err)
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		return
+	}
+	auditLog(r.Context(), AuditEntry{
+		Action:  "players.save",
+		AdminIP: getRealIP(r),
+		Details: map[string]int{"count": len(players)},
+	})
+	writeJSON(w, map[string]bool{"success": true})
+}
+
+func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Кривой JSON")
+		return
+	}
+	req.Name = sanitizeString(req.Name)
+	if req.Name == "" {
+		sendError(w, http.StatusBadRequest, "Имя игрока обязательно")
+		return
+	}
+	ctx := r.Context()
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("players")
+		doc, err := tx.Get(docRef)
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				return errors.New("player not found")
+			}
+			return err
+		}
+		var data struct {
+			Players []Player `json:"players" firestore:"players"`
+		}
+		if err := doc.DataTo(&data); err != nil {
+			return err
+		}
+		found := false
+		for i, p := range data.Players {
+			if p.Name == req.Name {
+				data.Players = append(data.Players[:i], data.Players[i+1:]...)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return errors.New("player not found")
+		}
+		return tx.Set(docRef, map[string]interface{}{"players": data.Players})
+	})
+	if err != nil {
+		log.Printf("[players] delete: %v", err)
+		if err.Error() == "player not found" {
+			sendError(w, http.StatusNotFound, "Игрок не найден")
+		} else {
+			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		}
+		return
+	}
+	auditLog(r.Context(), AuditEntry{
+		Action:  "players.delete",
+		AdminIP: getRealIP(r),
+		Details: map[string]string{"name": req.Name},
+	})
+	writeJSON(w, map[string]bool{"success": true})
+}
+
 // ──────────────────────────────────────────────
 // HANDLER: STAFF
 // ──────────────────────────────────────────────
@@ -1436,6 +1540,8 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 	} else if !reHexColor.MatchString(req.Color) {
 		sendError(w, http.StatusBadRequest, "Некорректный цвет")
 		return
+	} else if !strings.HasPrefix(req.Color, "#") {
+		req.Color = "#" + req.Color
 	}
 
 	ctx := r.Context()
@@ -1525,14 +1631,81 @@ func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"success": true})
 }
 
+func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		methodNotAllowed(w, http.MethodPut)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+	var req struct {
+		RoleIndex int    `json:"roleIndex"`
+		Name      string `json:"name"`
+		Color     string `json:"color"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Кривой JSON")
+		return
+	}
+	req.Name = sanitizeString(req.Name)
+	req.Color = sanitizeString(req.Color)
+	if err := validateRoleName(req.Name); err != nil {
+		sendError(w, http.StatusBadRequest, "Некорректные данные")
+		return
+	}
+	if req.Color == "" {
+		req.Color = "#3b82f6"
+	} else if !reHexColor.MatchString(req.Color) {
+		sendError(w, http.StatusBadRequest, "Некорректный цвет")
+		return
+	} else if !strings.HasPrefix(req.Color, "#") {
+		req.Color = "#" + req.Color
+	}
+
+	ctx := r.Context()
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("staff")
+		doc, err := tx.Get(docRef)
+		if err != nil {
+			return err
+		}
+		var data struct {
+			Roles []StaffRole `json:"roles" firestore:"roles"`
+		}
+		if err := doc.DataTo(&data); err != nil {
+			return err
+		}
+		if req.RoleIndex < 0 || req.RoleIndex >= len(data.Roles) {
+			return errors.New("invalid role index")
+		}
+		data.Roles[req.RoleIndex].Name = req.Name
+		data.Roles[req.RoleIndex].Color = req.Color
+		return tx.Set(docRef, data)
+	})
+	if err != nil {
+		log.Printf("[staff] update role: %v", err)
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		return
+	}
+	auditLog(r.Context(), AuditEntry{
+		Action:  "staff.updateRole",
+		AdminIP: getRealIP(r),
+		Details: map[string]interface{}{"roleIndex": req.RoleIndex, "name": req.Name, "color": req.Color},
+	})
+	writeJSON(w, map[string]bool{"success": true})
+}
+
 func handleStaffRole(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		handleCreateStaffRole(w, r)
+	case http.MethodPut:
+		handleUpdateStaffRole(w, r)
 	case http.MethodDelete:
 		handleDeleteStaffRole(w, r)
 	default:
-		methodNotAllowed(w, "POST, DELETE")
+		methodNotAllowed(w, "POST, PUT, DELETE")
 	}
 }
 
@@ -1798,7 +1971,9 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/staff/remove":  rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleStaffRemove))),
 		"/api/projects":      rateLimitMiddleware(60)(handleGetProjects),
 		"/api/projects/save": rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleSaveProjects))),
-		"/api/players":       rateLimitMiddleware(60)(handleGetPlayers),
+		"/api/players":            rateLimitMiddleware(60)(handleGetPlayers),
+		"/api/players/save":       rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleSavePlayers))),
+		"/api/players/delete":     rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleDeletePlayer))),
 	}
 
 	if h, ok := mux[path]; ok {
