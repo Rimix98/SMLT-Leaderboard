@@ -1849,11 +1849,8 @@ func validateProjectID(id string) error {
 }
 
 func validateNickname(n string) error {
-	if len(n) < 2 || len(n) > 32 {
+	if len(n) < 1 || len(n) > 32 {
 		return errors.New("invalid nickname length")
-	}
-	if !reAlphanumeric.MatchString(n) {
-		return errors.New("invalid nickname characters")
 	}
 	return nil
 }
