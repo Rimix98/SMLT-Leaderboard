@@ -420,22 +420,14 @@ function updateThemeIcon(theme) {
 // ============================================
 
 async function initHostStatus() {
-    if (localStorage.getItem('smlt-host') === 'true') {
-        try {
-            const res = await fetchWithAbort(`${BACKEND_URL}/verify`, {
-                credentials: 'include'
-            }, 'auth-verify');
-            const data = await parseJsonResponse(res);
-            store.isHost = res.ok && data.success === true;
-            if (!store.isHost) {
-                localStorage.removeItem('smlt-host');
-            }
-        } catch (err) {
-            if (isAbortError(err)) return;
-            store.isHost = false;
-            localStorage.removeItem('smlt-host');
-        }
-    } else {
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/verify`, {
+            credentials: 'include'
+        }, 'auth-verify');
+        const data = await parseJsonResponse(res);
+        store.isHost = res.ok && data.success === true;
+    } catch (err) {
+        if (isAbortError(err)) return;
         store.isHost = false;
     }
 
@@ -483,7 +475,6 @@ async function verifyHost(inputPassword) {
 
         if (res.ok && data.success === true) {
             store.isHost = true;
-            localStorage.setItem('smlt-host', 'true');
 
             showToast('Доступ предоставлен! Вы вошли как хост.', 'success');
 
@@ -510,7 +501,6 @@ async function verifyHost(inputPassword) {
 }
 async function logoutHost() {
     store.isHost = false;
-    localStorage.removeItem('smlt-host');
     sessionStorage.removeItem('adminToken');
 
     try {

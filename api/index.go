@@ -23,6 +23,7 @@ import (
 	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/microcosm-cc/bluemonday"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
@@ -110,8 +111,7 @@ var (
 	reDiscord       = regexp.MustCompile(`^[a-zA-Z0-9 _.\-#]+$`)
 	reVideoID       = regexp.MustCompile(`^[a-zA-Z0-9_-]{11}$`)
 	reRoleName      = regexp.MustCompile(`^[a-zA-Z0-9 _.\-]+$`)
-	reStripHTML     = regexp.MustCompile(`<[^>]*>`)
-	reStripControl  = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F]`)
+
 )
 
 func init() {
@@ -206,15 +206,22 @@ func remoteAddrIP(r *http.Request) string {
 }
 
 func getRealIP(r *http.Request) string {
-	if trustProxy {
-		xff := r.Header.Get("X-Forwarded-For")
-		if xff != "" {
-			parts := strings.Split(xff, ",")
-			for _, part := range parts {
-				ip := net.ParseIP(strings.TrimSpace(part))
-				if ip != nil {
-					return ip.String()
-				}
+	if !trustProxy {
+		return remoteAddrIP(r)
+	}
+	xfvf := r.Header.Get("X-Vercel-Forwarded-For")
+	if xfvf != "" {
+		if ip := net.ParseIP(strings.TrimSpace(xfvf)); ip != nil {
+			return ip.String()
+		}
+	}
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff != "" {
+		parts := strings.Split(xff, ",")
+		for i := len(parts) - 1; i >= 0; i-- {
+			ip := net.ParseIP(strings.TrimSpace(parts[i]))
+			if ip != nil {
+				return ip.String()
 			}
 		}
 	}
@@ -237,9 +244,7 @@ func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{})
 }
 
 func sanitizeString(s string) string {
-	s = reStripHTML.ReplaceAllString(s, "")
-	s = reStripControl.ReplaceAllString(s, "")
-	return strings.TrimSpace(s)
+	return strings.TrimSpace(bluemonday.UGCPolicy().Sanitize(s))
 }
 
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -644,38 +649,51 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	players := playersForLeaderboard(ctx)
 
-	var wg sync.WaitGroup
+	type job struct {
+		name string
+	}
+
+	jobs := make(chan job, len(players))
 	var mu sync.Mutex
 	result := make([]FullPlayerData, 0, len(players))
-	sem := make(chan struct{}, 5)
+
+	var wg sync.WaitGroup
+	workerCount := 5
+	if len(players) < workerCount {
+		workerCount = len(players)
+	}
+
+	for w := 0; w < workerCount; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				entry := FullPlayerData{Name: j.name}
+
+				u1 := fmt.Sprintf("https://api.demonlist.org/leaderboard/user/list?search=%s&limit=1", url.QueryEscape(j.name))
+				if body, err := fetchAPIWithRetry(ctx, u1, 2); err == nil {
+					json.Unmarshal(body, &entry.Data)
+				}
+
+				userID := extractUserID(entry.Data, j.name)
+				if userID != "" {
+					u2 := fmt.Sprintf("https://api.demonlist.org/user/record/list?user_id=%s&limit=50", userID)
+					if body, err := fetchAPIWithRetry(ctx, u2, 2); err == nil {
+						json.Unmarshal(body, &entry.Records)
+					}
+				}
+
+				mu.Lock()
+				result = append(result, entry)
+				mu.Unlock()
+			}
+		}()
+	}
 
 	for _, p := range players {
-		wg.Add(1)
-		go func(name string) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			entry := FullPlayerData{Name: name}
-
-			u1 := fmt.Sprintf("https://api.demonlist.org/leaderboard/user/list?search=%s&limit=1", url.QueryEscape(name))
-			if body, err := fetchAPIWithRetry(ctx, u1, 2); err == nil {
-				json.Unmarshal(body, &entry.Data)
-			}
-
-			userID := extractUserID(entry.Data, name)
-			if userID != "" {
-				u2 := fmt.Sprintf("https://api.demonlist.org/user/record/list?user_id=%s&limit=50", userID)
-				if body, err := fetchAPIWithRetry(ctx, u2, 2); err == nil {
-					json.Unmarshal(body, &entry.Records)
-				}
-			}
-
-			mu.Lock()
-			result = append(result, entry)
-			mu.Unlock()
-		}(p.Name)
+		jobs <- job{name: p.Name}
 	}
+	close(jobs)
 
 	wg.Wait()
 	json.NewEncoder(w).Encode(result)
