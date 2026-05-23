@@ -836,13 +836,13 @@ async function savePlayerNames(names) {
 
 
 function getFlag(c) {
-    if (!c) return '';
+    if (!c) return '❌';
     const upper = c.toUpperCase();
     if (FLAGS[upper]) return FLAGS[upper];
     const lower = c.toLowerCase().trim().replace(/\s+/g, '-');
     const code = COUNTRY_TO_CODE[lower];
     if (code && FLAGS[code]) return FLAGS[code];
-    return '';
+    return '🌍';
 }
 
 function showToast(msg, type = 'error') {
