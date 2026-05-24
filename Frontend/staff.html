@@ -254,19 +254,7 @@
                     <label for="editPlayerRole">Роль:</label>
                     <select id="editPlayerRole" class="form-input"></select>
                 </div>
-                <div class="form-group">
-                    <label for="editPlayerTier">Тир:</label>
-                    <select id="editPlayerTier" class="form-input">
-                        <option value="na">N/A</option>
-                        <option value="priority">Приоритет</option>
-                        <option value="base">Основа</option>
-                        <option value="reserve">Резерв</option>
-                    </select>
-                </div>
-                <div style="display: flex; gap: var(--spacing-sm);">
-                    <button class="btn btn-primary" id="editPanelSubmitBtn" data-action="edit-add-player" style="flex:1">➕ Добавить игрока</button>
-                    <button class="btn btn-secondary" id="editPanelCancelBtn" data-action="cancel-edit-player" style="display:none; flex:0.5">Отмена</button>
-                </div>
+                <button class="btn btn-primary" id="editPanelSubmitBtn" data-action="edit-add-player">➕ Добавить игрока</button>
 
                 <div class="edit-player-list">
                     <h4>Игроки:</h4>
