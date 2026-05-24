@@ -414,6 +414,19 @@ function mountDelegatedClicks() {
             },
             'edit-save-player': editAddPlayer,
             'role-add-player': addPlayerFromRoleModal,
+            'role-modal-edit-player': () => {
+                const btn = e.target.closest('[data-action="role-modal-edit-player"]');
+                if (btn) roleModalEditPlayer(Number(btn.dataset.roleIndex), Number(btn.dataset.playerIndex));
+            },
+            'role-modal-save-player': roleModalSavePlayer,
+            'role-modal-move-player': () => {
+                const btn = e.target.closest('[data-action="role-modal-move-player"]');
+                if (btn) roleModalMovePlayer(Number(btn.dataset.roleIndex), Number(btn.dataset.playerIndex), btn.dataset.direction);
+            },
+            'role-modal-set-tier': () => {
+                const badge = e.target.closest('[data-action="role-modal-set-tier"]');
+                if (badge) setPlayerTier(badge.dataset.nickname);
+            },
             'role-modal-remove-player': () => {
                 const btn = e.target.closest('[data-action="role-modal-remove-player"]');
                 if (btn) {
@@ -2318,9 +2331,32 @@ function initStaffEventListeners() {
         });
     }
 
+    const roleAddPlayerNickname = document.getElementById('roleAddPlayerNickname');
+    if (roleAddPlayerNickname) {
+        roleAddPlayerNickname.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const btn = document.getElementById('roleAddPlayerBtn');
+                if (btn.dataset.action === 'role-modal-save-player') {
+                    roleModalSavePlayer();
+                } else {
+                    addPlayerFromRoleModal();
+                }
+            }
+        });
+    }
+
     const editPlayerSearch = document.getElementById('editPlayerSearch');
     if (editPlayerSearch) {
         editPlayerSearch.addEventListener('input', () => renderEditPlayerList());
+    }
+
+    const rolePlayerSearch = document.getElementById('rolePlayerSearch');
+    if (rolePlayerSearch) {
+        rolePlayerSearch.addEventListener('input', () => {
+            const roleIndex = parseInt(document.getElementById('editRoleIndex')?.value || '-1');
+            if (roleIndex >= 0) renderRoleModalPlayerList(roleIndex);
+        });
     }
 }
 
@@ -2517,9 +2553,6 @@ function showAddRoleModal() {
         document.getElementById('roleColor').value = store.selectedRoleColor || '#3b82f6';
         const hexInput = document.getElementById('roleColorHex');
         if (hexInput) hexInput.value = (store.selectedRoleColor || '#3b82f6').replace('#', '');
-        document.querySelectorAll('.color-preset').forEach(p => {
-            p.classList.toggle('active', p.dataset.color === (store.selectedRoleColor || '#3b82f6'));
-        });
         document.getElementById('addRoleModalTitle').textContent = '🆕 Новая роль';
         document.getElementById('createRoleBtn').textContent = 'Создать';
         const playerSection = document.getElementById('rolePlayerSection');
@@ -2535,21 +2568,23 @@ function showEditRoleModal(roleIndex) {
     const modal = document.getElementById('addRoleModal');
     if (modal) {
         document.getElementById('editRoleIndex').value = roleIndex;
+        document.getElementById('editRolePlayerIdx').value = '-1';
         document.getElementById('roleName').value = role.name;
         const color = role.color || '#3b82f6';
         document.getElementById('roleColor').value = color;
         const hexInput = document.getElementById('roleColorHex');
         if (hexInput) hexInput.value = color.replace('#', '');
         store.selectedRoleColor = color;
-        document.querySelectorAll('.color-preset').forEach(p => {
-            p.classList.toggle('active', p.dataset.color === color);
-        });
         document.getElementById('addRoleModalTitle').textContent = '✏️ Редактировать роль';
         document.getElementById('createRoleBtn').textContent = 'Сохранить';
         const playerSection = document.getElementById('rolePlayerSection');
         if (playerSection) playerSection.style.display = 'block';
         document.getElementById('roleAddPlayerNickname').value = '';
         document.getElementById('roleAddPlayerDiscord').value = '';
+        const searchInput = document.getElementById('rolePlayerSearch');
+        if (searchInput) searchInput.value = '';
+        const addBtn = document.getElementById('roleAddPlayerBtn');
+        if (addBtn) { addBtn.textContent = '➕ Добавить'; addBtn.dataset.action = 'role-add-player'; }
         renderRoleModalPlayerList(roleIndex);
         modal.classList.add('active');
         setTimeout(() => document.getElementById('roleName').focus(), 100);
@@ -2780,6 +2815,8 @@ async function removeStaffPlayer(roleIndex, playerIndex) {
             loadStaffTiers()
         ]);
         renderEditPlayerList();
+        const roleIdx = parseInt(document.getElementById('editRoleIndex')?.value || '-1');
+        if (roleIdx >= 0) renderRoleModalPlayerList(roleIdx);
         showToast(`Игрок «${escapeHtml(player.nickname)}» удалён из роли`, 'success');
     } catch (e) {
         if (!isAbortError(e)) {
@@ -2790,6 +2827,8 @@ async function removeStaffPlayer(roleIndex, playerIndex) {
             }
         }
     }
+
+    return true;
 }
 
 // ============================================
@@ -2850,6 +2889,8 @@ async function setPlayerTier(nickname) {
 
         await loadStaffTiers();
         renderEditPlayerList();
+        const roleIdx = parseInt(document.getElementById('editRoleIndex')?.value || '-1');
+        if (roleIdx >= 0) renderRoleModalPlayerList(roleIdx);
         showToast(`${escapeHtml(nickname)} → ${TIER_CONFIG[nextTier].label}`, 'success');
     } catch (e) {
         if (!isAbortError(e)) {
@@ -3017,6 +3058,9 @@ function renderRoleModalPlayerList(roleIndex) {
     const role = store.staffRoles[roleIndex];
     if (!role) return;
 
+    const searchInput = document.getElementById('rolePlayerSearch');
+    const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
     const players = role.players || [];
     if (players.length === 0) {
         container.appendChild(
@@ -3025,12 +3069,71 @@ function renderRoleModalPlayerList(roleIndex) {
         return;
     }
 
-    for (const p of players) {
-        const item = h('div', { className: 'edit-player-list-item' }, [
-            h('div', { className: 'player-info' }, [
-                h('span', { className: 'player-nickname' }, [escapeHtml(p.nickname)]),
-                ...(p.discord ? [h('span', { className: 'player-role-name' }, [escapeHtml(p.discord)])] : []),
-            ]),
+    let count = 0;
+    for (let pIdx = 0; pIdx < players.length; pIdx++) {
+        const p = players[pIdx];
+        if (query && !p.nickname.toLowerCase().includes(query)) continue;
+        count++;
+
+        const tier = getPlayerTier(p.nickname);
+        const cfg = TIER_CONFIG[tier];
+
+        const actions = [];
+
+        actions.push(
+            h('span', {
+                className: 'edit-player-tier-badge',
+                style: { background: cfg.color + '44', borderColor: cfg.color },
+                dataset: { action: 'role-modal-set-tier', nickname: p.nickname },
+                title: 'Нажмите, чтобы изменить тир'
+            }, [
+                h('span', { className: 'edit-player-tier-dot', style: { background: cfg.color } }, []),
+                h('span', {}, [cfg.label]),
+            ])
+        );
+
+        actions.push(
+            h('button', {
+                className: 'player-edit-btn',
+                attrs: {
+                    'data-action': 'role-modal-edit-player',
+                    'data-role-index': String(roleIndex),
+                    'data-player-index': String(pIdx),
+                    'title': 'Редактировать'
+                }
+            }, ['✏️'])
+        );
+
+        if (pIdx > 0) {
+            actions.push(
+                h('button', {
+                    className: 'player-edit-btn',
+                    attrs: {
+                        'data-action': 'role-modal-move-player',
+                        'data-role-index': String(roleIndex),
+                        'data-player-index': String(pIdx),
+                        'data-direction': 'up',
+                        'title': 'Переместить вверх'
+                    }
+                }, ['↑'])
+            );
+        }
+        if (pIdx < players.length - 1) {
+            actions.push(
+                h('button', {
+                    className: 'player-edit-btn',
+                    attrs: {
+                        'data-action': 'role-modal-move-player',
+                        'data-role-index': String(roleIndex),
+                        'data-player-index': String(pIdx),
+                        'data-direction': 'down',
+                        'title': 'Переместить вниз'
+                    }
+                }, ['↓'])
+            );
+        }
+
+        actions.push(
             h('button', {
                 className: 'player-remove-btn',
                 attrs: {
@@ -3039,9 +3142,98 @@ function renderRoleModalPlayerList(roleIndex) {
                     'data-nickname': p.nickname,
                     'title': 'Удалить игрока'
                 }
-            }, ['✕']),
+            }, ['✕'])
+        );
+
+        const item = h('div', { className: 'edit-player-list-item' }, [
+            h('div', { className: 'player-info' }, [
+                h('span', { className: 'player-nickname' }, [escapeHtml(p.nickname)]),
+                ...(p.discord ? [h('span', { className: 'player-role-name' }, [escapeHtml(p.discord)])] : []),
+            ]),
+            ...actions,
         ]);
         container.appendChild(item);
+    }
+
+    if (count === 0) {
+        container.appendChild(
+            h('span', { style: { color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)' } },
+                [query ? 'Ничего не найдено' : 'Нет игроков']
+            )
+        );
+    }
+}
+
+function roleModalEditPlayer(roleIndex, playerIndex) {
+    const player = store.staffRoles[roleIndex]?.players?.[playerIndex];
+    if (!player) return;
+
+    document.getElementById('editRolePlayerIdx').value = String(playerIndex);
+    document.getElementById('roleAddPlayerNickname').value = player.nickname;
+    document.getElementById('roleAddPlayerDiscord').value = player.discord || '';
+
+    const btn = document.getElementById('roleAddPlayerBtn');
+    btn.textContent = '💾 Сохранить';
+    btn.dataset.action = 'role-modal-save-player';
+}
+
+function roleModalCancelEdit() {
+    document.getElementById('editRolePlayerIdx').value = '-1';
+    document.getElementById('roleAddPlayerNickname').value = '';
+    document.getElementById('roleAddPlayerDiscord').value = '';
+    const btn = document.getElementById('roleAddPlayerBtn');
+    btn.textContent = '➕ Добавить';
+    btn.dataset.action = 'role-add-player';
+}
+
+async function roleModalMovePlayer(roleIndex, playerIndex, direction) {
+    const role = store.staffRoles[roleIndex];
+    if (!role || !role.players) return;
+
+    const targetIdx = direction === 'up' ? playerIndex - 1 : playerIndex + 1;
+    if (targetIdx < 0 || targetIdx >= role.players.length) return;
+
+    [role.players[playerIndex], role.players[targetIdx]] = [role.players[targetIdx], role.players[playerIndex]];
+
+    try {
+        await saveStaffRoles();
+        renderRoleModalPlayerList(roleIndex);
+    } catch (e) {
+        [role.players[playerIndex], role.players[targetIdx]] = [role.players[targetIdx], role.players[playerIndex]];
+        showToast(e.message, 'error');
+    }
+}
+
+async function roleModalSavePlayer() {
+    const roleIndex = parseInt(document.getElementById('editRoleIndex')?.value || '-1');
+    const playerIdx = parseInt(document.getElementById('editRolePlayerIdx')?.value || '-1');
+    if (roleIndex < 0 || playerIdx < 0) return;
+
+    const role = store.staffRoles[roleIndex];
+    if (!role || !role.players || !role.players[playerIdx]) return;
+
+    const nicknameInput = document.getElementById('roleAddPlayerNickname');
+    const discordInput = document.getElementById('roleAddPlayerDiscord');
+    const nickname = nicknameInput.value.trim();
+    if (!nickname) { showToast('Введите ник игрока', 'error'); return; }
+    const discord = discordInput.value.trim() || '';
+
+    const oldNickname = role.players[playerIdx].nickname;
+    role.players[playerIdx].nickname = nickname;
+    role.players[playerIdx].discord = discord;
+
+    try {
+        await saveStaffRoles();
+        if (oldNickname !== nickname) {
+            await setPlayerTierSilent(nickname, getPlayerTier(oldNickname));
+        }
+        roleModalCancelEdit();
+        renderRoleModalPlayerList(roleIndex);
+        showToast(`Игрок «${escapeHtml(nickname)}» обновлён`, 'success');
+    } catch (e) {
+        role.players[playerIdx].nickname = oldNickname;
+        role.players[playerIdx].discord = discord;
+        showToast(e.message, 'error');
     }
 }
 
@@ -3062,6 +3254,8 @@ async function addPlayerFromRoleModal() {
 
     const discord = discordInput?.value?.trim() || '';
     const role = store.staffRoles[roleIndex];
+
+    roleModalCancelEdit();
 
     try {
         const res = await fetchWithAbort(`${BACKEND_URL}/staff/add`, {
