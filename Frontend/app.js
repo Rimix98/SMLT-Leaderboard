@@ -408,6 +408,11 @@ function mountDelegatedClicks() {
                     }
                 }
             },
+            'edit-player-from-list': () => {
+                const btn = e.target.closest('[data-action="edit-player-from-list"]');
+                if (btn) editPlayerFromList(Number(btn.dataset.roleIndex), Number(btn.dataset.playerIndex));
+            },
+            'edit-save-player': editAddPlayer,
             'role-add-player': addPlayerFromRoleModal,
             'role-modal-remove-player': () => {
                 const btn = e.target.closest('[data-action="role-modal-remove-player"]');
@@ -1971,17 +1976,17 @@ function closeProjectModal() {
 
 function resetParticipantBuilder() {
     store.pendingProjectParticipants = [];
+    store._selectedParticipant = '';
     const preview = document.getElementById('participantsPreview');
     if (preview) preview.innerHTML = '';
-    const select = document.getElementById('participantPlayerSelect');
-    if (select) select.value = '';
+    const searchInput = document.getElementById('participantSearchInput');
+    if (searchInput) searchInput.value = '';
+    const results = document.getElementById('participantSearchResults');
+    if (results) results.innerHTML = '';
     document.querySelectorAll('#participantRoleTags .role-tag-btn').forEach(b => b.classList.remove('active'));
 }
 
 async function initParticipantBuilder() {
-    const select = document.getElementById('participantPlayerSelect');
-    if (!select) return;
-
     if (!store.staffRoles || store.staffRoles.length === 0) {
         try {
             const res = await fetchWithAbort(`${BACKEND_URL}/staff`, {}, 'staff-list-part');
@@ -2011,52 +2016,68 @@ async function initParticipantBuilder() {
         });
     }
 
-    const currentVal = select.value;
-    select.innerHTML = '<option value="">Выберите игрока...</option>';
-    const staffPlayers = [];
-    (store.staffRoles || []).forEach(role => {
-        (role.players || []).forEach(player => {
-            if (!staffPlayers.includes(player.nickname)) {
-                staffPlayers.push(player.nickname);
-            }
-        });
-    });
-    staffPlayers.sort((a, b) => a.localeCompare(b));
-    store._staffPlayerNames = staffPlayers;
-    staffPlayers.forEach(name => {
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.textContent = name;
-        select.appendChild(opt);
-    });
-    if (currentVal && staffPlayers.includes(currentVal)) select.value = currentVal;
     updateParticipantsPreview();
 
     const searchInput = document.getElementById('participantSearchInput');
-    if (searchInput) {
+    const resultsContainer = document.getElementById('participantSearchResults');
+    if (searchInput && resultsContainer) {
+        searchInput.value = '';
+        resultsContainer.innerHTML = '';
         searchInput.oninput = null;
         searchInput.oninput = function() {
             const q = this.value.toLowerCase().trim();
-            select.innerHTML = '<option value="">Выберите игрока...</option>';
-            const names = store._staffPlayerNames || [];
-            names.forEach(name => {
-                if (!q || name.toLowerCase().includes(q)) {
-                    const opt = document.createElement('option');
-                    opt.value = name;
-                    opt.textContent = name;
-                    select.appendChild(opt);
-                }
+            resultsContainer.innerHTML = '';
+            if (!q) { resultsContainer.style.display = 'none'; return; }
+
+            const matches = [];
+            (store.staffRoles || []).forEach(role => {
+                (role.players || []).forEach(player => {
+                    if (player.nickname.toLowerCase().includes(q) && !matches.some(m => m.nickname === player.nickname)) {
+                        matches.push({ nickname: player.nickname, role: role.name, color: role.color });
+                    }
+                });
+            });
+            matches.sort((a, b) => a.nickname.localeCompare(b.nickname));
+
+            if (matches.length === 0) {
+                resultsContainer.style.display = 'none';
+                return;
+            }
+
+            resultsContainer.style.display = 'block';
+            matches.forEach(m => {
+                const item = document.createElement('div');
+                item.className = 'participant-search-result-item';
+                if (m.color) item.style.borderLeftColor = m.color;
+                item.innerHTML = `<span class="psr-name">${escapeHtml(m.nickname)}</span> <span class="psr-role">${escapeHtml(m.role)}</span>`;
+                item.addEventListener('click', () => {
+                    document.querySelectorAll('.participant-search-result-item').forEach(el => el.classList.remove('selected'));
+                    item.classList.add('selected');
+                    store._selectedParticipant = m.nickname;
+                    resultsContainer.style.display = 'none';
+                    searchInput.value = m.nickname;
+                });
+                resultsContainer.appendChild(item);
             });
         };
+
+        searchInput.addEventListener('blur', () => {
+            setTimeout(() => { resultsContainer.style.display = 'none'; }, 150);
+        });
+        searchInput.addEventListener('focus', () => {
+            if (searchInput.value.trim()) {
+                searchInput.oninput();
+            }
+        });
     }
+
+    store._selectedParticipant = '';
 }
 
 function addProjectParticipant() {
-    const select = document.getElementById('participantPlayerSelect');
-    if (!select) return;
-    const name = select.value;
+    const name = store._selectedParticipant || document.getElementById('participantSearchInput')?.value?.trim();
     if (!name) {
-        showToast('Выберите игрока', 'error');
+        showToast('Введите или выберите игрока', 'error');
         return;
     }
     const activeRoles = [];
@@ -2068,7 +2089,11 @@ function addProjectParticipant() {
         entry = name + ' - ' + activeRoles.join(' ');
     }
     store.pendingProjectParticipants.push(entry);
-    select.value = '';
+    store._selectedParticipant = '';
+    const searchInput = document.getElementById('participantSearchInput');
+    if (searchInput) searchInput.value = '';
+    const results = document.getElementById('participantSearchResults');
+    if (results) results.innerHTML = '';
     document.querySelectorAll('#participantRoleTags .role-tag-btn').forEach(b => b.classList.remove('active'));
     updateParticipantsPreview();
 }
@@ -2241,26 +2266,12 @@ async function initStaffPage() {
 }
 
 function initStaffEventListeners() {
-    const colorPresets = document.querySelectorAll('.color-preset');
-    colorPresets.forEach(preset => {
-        preset.addEventListener('click', () => {
-            const color = preset.dataset.color;
-            store.selectedRoleColor = color;
-            document.getElementById('roleColor').value = color;
-            const hexInput = document.getElementById('roleColorHex');
-            if (hexInput) hexInput.value = color.replace('#', '');
-            document.querySelectorAll('.color-preset').forEach(p => p.classList.remove('active'));
-            preset.classList.add('active');
-        });
-    });
-
     const colorInput = document.getElementById('roleColor');
     if (colorInput) {
         colorInput.addEventListener('input', () => {
             store.selectedRoleColor = colorInput.value;
             const hexInput = document.getElementById('roleColorHex');
             if (hexInput) hexInput.value = colorInput.value.replace('#', '');
-            document.querySelectorAll('.color-preset').forEach(p => p.classList.remove('active'));
         });
     }
 
@@ -2273,7 +2284,6 @@ function initStaffEventListeners() {
                 const fullColor = '#' + val.toLowerCase();
                 store.selectedRoleColor = fullColor;
                 document.getElementById('roleColor').value = fullColor;
-                document.querySelectorAll('.color-preset').forEach(p => p.classList.remove('active'));
             }
         });
     }
@@ -2306,6 +2316,11 @@ function initStaffEventListeners() {
                 editAddPlayer();
             }
         });
+    }
+
+    const editPlayerSearch = document.getElementById('editPlayerSearch');
+    if (editPlayerSearch) {
+        editPlayerSearch.addEventListener('input', () => renderEditPlayerList());
     }
 }
 
@@ -2862,9 +2877,14 @@ function openEditPanel() {
     document.getElementById('editPanel').classList.add('open');
     document.body.style.overflow = 'hidden';
     populateEditRoleSelect();
+    document.getElementById('editPlayerKey').value = '';
+    const searchInput = document.getElementById('editPlayerSearch');
+    if (searchInput) searchInput.value = '';
     renderEditPlayerList();
     document.getElementById('editPlayerNickname').value = '';
     document.getElementById('editPlayerDiscord').value = '';
+    const btn = document.getElementById('editPanelSubmitBtn');
+    if (btn) { btn.textContent = '➕ Добавить игрока'; btn.dataset.action = 'edit-add-player'; }
     setTimeout(() => document.getElementById('editPlayerNickname').focus(), 100);
 }
 
@@ -2903,13 +2923,19 @@ function renderEditPlayerList() {
 
     if (!store.isHost) return;
 
+    const searchInput = document.getElementById('editPlayerSearch');
+    const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
     let totalPlayers = 0;
     for (const role of store.staffRoles) {
         const rolePlayers = role.players || [];
         for (const p of rolePlayers) {
+            if (query && !p.nickname.toLowerCase().includes(query)) continue;
             totalPlayers++;
             const tier = getPlayerTier(p.nickname);
             const cfg = TIER_CONFIG[tier];
+            const roleIndex = store.staffRoles.indexOf(role);
+            const playerIndex = role.players.indexOf(p);
             const item = h('div', { className: 'edit-player-list-item' }, [
                 h('div', { className: 'player-info' }, [
                     h('span', { className: 'player-nickname' }, [escapeHtml(p.nickname)]),
@@ -2925,10 +2951,19 @@ function renderEditPlayerList() {
                     h('span', {}, [cfg.label]),
                 ]),
                 h('button', {
+                    className: 'player-edit-btn',
+                    attrs: {
+                        'data-action': 'edit-player-from-list',
+                        'data-role-index': String(roleIndex),
+                        'data-player-index': String(playerIndex),
+                        'title': 'Редактировать игрока'
+                    }
+                }, ['✏️']),
+                h('button', {
                     className: 'player-remove-btn',
                     attrs: {
                         'data-action': 'edit-remove-player',
-                        'data-role-index': String(store.staffRoles.indexOf(role)),
+                        'data-role-index': String(roleIndex),
                         'data-nickname': p.nickname,
                         'title': 'Удалить игрока'
                     }
@@ -2941,10 +2976,37 @@ function renderEditPlayerList() {
     if (totalPlayers === 0) {
         container.appendChild(
             h('span', { style: { color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)' } },
-                ['Нет игроков']
+                [query ? 'Ничего не найдено' : 'Нет игроков']
             )
         );
     }
+}
+
+function editPlayerFromList(roleIndex, playerIndex) {
+    const role = store.staffRoles[roleIndex];
+    if (!role) return;
+    const player = role.players[playerIndex];
+    if (!player) return;
+
+    document.getElementById('editPlayerKey').value = roleIndex + ':' + playerIndex;
+    document.getElementById('editPlayerNickname').value = player.nickname;
+    document.getElementById('editPlayerDiscord').value = player.discord || '';
+    document.getElementById('editPlayerRole').value = String(roleIndex);
+
+    const btn = document.getElementById('editPanelSubmitBtn');
+    btn.textContent = '💾 Сохранить изменения';
+    btn.dataset.action = 'edit-save-player';
+}
+
+function cancelEditPlayer() {
+    document.getElementById('editPlayerKey').value = '';
+    document.getElementById('editPlayerNickname').value = '';
+    document.getElementById('editPlayerDiscord').value = '';
+    document.getElementById('editPlayerRole').value = '';
+    const btn = document.getElementById('editPanelSubmitBtn');
+    btn.textContent = '➕ Добавить игрока';
+    btn.dataset.action = 'edit-add-player';
+    renderEditPlayerList();
 }
 
 function renderRoleModalPlayerList(roleIndex) {
@@ -3033,6 +3095,7 @@ async function editAddPlayer() {
     const nicknameInput = document.getElementById('editPlayerNickname');
     const discordInput = document.getElementById('editPlayerDiscord');
     const roleSelect = document.getElementById('editPlayerRole');
+    const key = document.getElementById('editPlayerKey').value;
 
     const nickname = nicknameInput.value.trim();
     if (!nickname) {
@@ -3047,6 +3110,37 @@ async function editAddPlayer() {
     }
 
     const discord = discordInput.value.trim() || '';
+
+    if (key) {
+        const [oldRoleIdx, playerIdx] = key.split(':').map(Number);
+        const oldRole = store.staffRoles[oldRoleIdx];
+        const role = store.staffRoles[roleIndex];
+
+        if (oldRoleIdx !== roleIndex) {
+            if (oldRole && oldRole.players) {
+                oldRole.players.splice(playerIdx, 1);
+            }
+            if (!role.players) role.players = [];
+            role.players.push({ nickname, discord });
+        } else {
+            if (role.players && role.players[playerIdx]) {
+                role.players[playerIdx].nickname = nickname;
+                role.players[playerIdx].discord = discord;
+            }
+        }
+
+        try {
+            await saveStaffRoles();
+            await loadStaffTiers();
+            cancelEditPlayer();
+            renderEditPlayerList();
+            showToast(`Игрок «${escapeHtml(nickname)}» обновлён`, 'success');
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+        return;
+    }
+
     const role = store.staffRoles[roleIndex];
 
     try {

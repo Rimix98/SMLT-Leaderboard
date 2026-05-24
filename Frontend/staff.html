@@ -164,19 +164,9 @@
                                     <input type="text" id="roleColorHex" class="form-input color-hex-input" placeholder="f1c40f" maxlength="6">
                                 </div>
                             </div>
-                            <div class="role-color-presets">
-                                <span class="color-preset active" data-color="#3b82f6" style="background: #3b82f6;"></span>
-                                <span class="color-preset" data-color="#ef4444" style="background: #ef4444;"></span>
-                                <span class="color-preset" data-color="#22c55e" style="background: #22c55e;"></span>
-                                <span class="color-preset" data-color="#eab308" style="background: #eab308;"></span>
-                                <span class="color-preset" data-color="#a855f7" style="background: #a855f7;"></span>
-                                <span class="color-preset" data-color="#6366f1" style="background: #6366f1;"></span>
-                                <span class="color-preset" data-color="#ec4899" style="background: #ec4899;"></span>
-                            </div>
                         </div>
                     </div>
                     <div id="rolePlayerSection" class="form-group" style="display: none; border-top: 1px solid var(--color-border); padding-top: var(--spacing-md); margin-top: var(--spacing-md);">
-                        <label>Игроки роли:</label>
                         <div id="rolePlayerList" style="margin-bottom: var(--spacing-md);"></div>
                         <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
                             <input type="text" id="roleAddPlayerNickname" class="form-input" placeholder="Ник игрока" style="flex: 1; min-width: 120px;">
@@ -251,6 +241,7 @@
                 <button class="edit-panel-close" data-action="close-edit-panel">✕</button>
             </div>
             <div class="edit-panel-body">
+                <input type="hidden" id="editPlayerKey" value="">
                 <div class="form-group">
                     <label for="editPlayerNickname">Ник игрока:</label>
                     <input type="text" id="editPlayerNickname" class="form-input" placeholder="Nickname">
@@ -263,10 +254,11 @@
                     <label for="editPlayerRole">Роль:</label>
                     <select id="editPlayerRole" class="form-input"></select>
                 </div>
-                <button class="btn btn-primary" data-action="edit-add-player">➕ Добавить игрока</button>
+                <button class="btn btn-primary" id="editPanelSubmitBtn" data-action="edit-add-player">➕ Добавить игрока</button>
 
                 <div class="edit-player-list">
                     <h4>Игроки:</h4>
+                    <input type="text" id="editPlayerSearch" class="form-input" placeholder="🔍 Поиск игрока..." style="margin-bottom: var(--spacing-sm);">
                     <div id="editPlayerList"></div>
                 </div>
             </div>

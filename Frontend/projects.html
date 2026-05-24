@@ -211,12 +211,12 @@
                     <label>Участники:</label>
                     <div class="participant-builder">
                         <div class="participant-add-row">
-                            <input type="text" id="participantSearchInput" class="form-input" placeholder="🔍 Поиск игрока...">
-                            <select id="participantPlayerSelect" class="form-input">
-                                <option value="">Выберите игрока...</option>
-                            </select>
+                            <div class="participant-search-wrapper">
+                                <input type="text" id="participantSearchInput" class="form-input" placeholder="🔍 Поиск игрока..." autocomplete="off">
+                                <div id="participantSearchResults" class="participant-search-results"></div>
+                            </div>
                             <div class="participant-role-tags" id="participantRoleTags"></div>
-                            <button type="button" class="btn btn-primary btn-sm" id="addParticipantBtn" data-action="add-project-participant">➕</button>
+                            <button type="button" class="btn btn-primary btn-sm" id="addParticipantBtn" data-action="add-project-participant">➕ Добавить</button>
                         </div>
                         <div id="participantsPreview" class="participants-preview"></div>
                         <textarea id="projectParticipants" style="display:none;"></textarea>
