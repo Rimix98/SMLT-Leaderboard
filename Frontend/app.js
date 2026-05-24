@@ -503,14 +503,6 @@ function initEventListeners() {
         });
     }
 
-    document.querySelectorAll('.modal-overlay:not(#addRoleModal)').forEach(overlay => {
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                overlay.classList.remove('active');
-            }
-        });
-    });
-
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
