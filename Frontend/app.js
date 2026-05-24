@@ -2861,8 +2861,8 @@ async function removeStaffPlayer(roleIndex, playerIndex) {
 
 const TIER_CONFIG = {
     priority: { label: 'Приоритет', color: '#00ffff' },
-    base: { label: 'Основа', color: '#6d0b0d' },
-    reserve: { label: 'Резерв', color: '#540b6d' },
+    base: { label: 'Основа', color: '#540b6d' },
+    reserve: { label: 'Резерв', color: '#6d0b0d' },
     na: { label: 'N/A', color: '#888888' },
 };
 
