@@ -168,7 +168,11 @@
                     </div>
                     <div id="rolePlayerSection" class="form-group" style="display: none; border-top: 1px solid var(--color-border); padding-top: var(--spacing-md); margin-top: var(--spacing-md);">
                         <input type="hidden" id="editRolePlayerIdx" value="-1">
-                        <input type="text" id="rolePlayerSearch" class="form-input" placeholder="🔍 Поиск участника..." style="margin-bottom: var(--spacing-sm);">
+                        <div style="display: flex; gap: var(--spacing-xs); margin-bottom: var(--spacing-sm); flex-wrap: wrap;">
+                            <input type="text" id="rolePlayerSearch" class="form-input" placeholder="🔍 Поиск участника..." style="flex:1; min-width:100px;">
+                            <button class="btn btn-secondary btn-sm" data-action="role-modal-sort-tiers">📊 Сорт. по тирам</button>
+                            <button class="btn btn-secondary btn-sm" id="roleToggleTiersBtn" data-action="role-modal-toggle-tiers">🎯 Тир: вкл</button>
+                        </div>
                         <div id="rolePlayerList" style="margin-bottom: var(--spacing-md);"></div>
                         <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
                             <input type="text" id="roleAddPlayerNickname" class="form-input" placeholder="Ник игрока" style="flex: 1; min-width: 120px;">

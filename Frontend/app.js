@@ -423,9 +423,17 @@ function mountDelegatedClicks() {
                 const btn = e.target.closest('[data-action="role-modal-move-player"]');
                 if (btn) roleModalMovePlayer(Number(btn.dataset.roleIndex), Number(btn.dataset.playerIndex), btn.dataset.direction);
             },
-            'role-modal-set-tier': () => {
-                const badge = e.target.closest('[data-action="role-modal-set-tier"]');
-                if (badge) setPlayerTier(badge.dataset.nickname);
+            'role-modal-set-tier-direct': () => {
+                const el = e.target.closest('[data-action="role-modal-set-tier-direct"]');
+                if (el) setPlayerTierDirect(el.dataset.nickname, el.dataset.tier);
+            },
+            'role-modal-sort-tiers': () => {
+                const roleIndex = parseInt(document.getElementById('editRoleIndex')?.value || '-1');
+                if (roleIndex >= 0) roleModalSortByTiers(roleIndex);
+            },
+            'role-modal-toggle-tiers': () => {
+                const roleIndex = parseInt(document.getElementById('editRoleIndex')?.value || '-1');
+                if (roleIndex >= 0) roleModalToggleTiers(roleIndex);
             },
             'role-modal-remove-player': () => {
                 const btn = e.target.closest('[data-action="role-modal-remove-player"]');
@@ -2456,6 +2464,18 @@ function renderStaffRoles() {
                     ...(player.discord ? [h('span', { className: 'staff-player-discord-inline' }, [escapeHtml(player.discord)])] : []),
                 ];
 
+                if (role.tiersEnabled !== false) {
+                    const tier = getPlayerTier(player.nickname);
+                    const cfg = TIER_CONFIG[tier];
+                    tagParts.push(
+                        h('span', {
+                            className: 'staff-tier-dot',
+                            style: { background: cfg.color },
+                            title: cfg.label
+                        }, [])
+                    );
+                }
+
                 if (store.isHost) {
                     tagParts.push(
                         h('button', {
@@ -2471,7 +2491,9 @@ function renderStaffRoles() {
                 }
 
                 participantsList.appendChild(
-                    h('span', { className: 'participant-tag staff-player-tag' }, tagParts)
+                    h('div', { className: 'staff-player-row' }, [
+                        h('span', { className: 'participant-tag staff-player-tag' }, tagParts)
+                    ])
                 );
             });
         }
@@ -2585,6 +2607,8 @@ function showEditRoleModal(roleIndex) {
         if (searchInput) searchInput.value = '';
         const addBtn = document.getElementById('roleAddPlayerBtn');
         if (addBtn) { addBtn.textContent = '➕ Добавить'; addBtn.dataset.action = 'role-add-player'; }
+        const toggleBtn = document.getElementById('roleToggleTiersBtn');
+        if (toggleBtn) toggleBtn.textContent = role.tiersEnabled !== false ? '🎯 Тир: вкл' : '🎯 Тир: выкл';
         renderRoleModalPlayerList(roleIndex);
         modal.classList.add('active');
         setTimeout(() => document.getElementById('roleName').focus(), 100);
@@ -2908,6 +2932,74 @@ function getPlayerTier(nickname) {
     return entry ? entry.tier : 'na';
 }
 
+async function setPlayerTierSilent(nickname, tier) {
+    if (!store.isHost) return;
+    try {
+        await fetchWithAbort(`${BACKEND_URL}/staff/tier`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ category: 'gp', nickname, tier })
+        }, 'set-tier-silent');
+    } catch (e) {
+        if (!isAbortError(e)) {
+            console.error('Ошибка установки тира:', e);
+            if (e.message.includes('401')) logoutHost();
+        }
+    }
+}
+
+async function setPlayerTierDirect(nickname, tier) {
+    if (!store.isHost) return;
+    await setPlayerTierSilent(nickname, tier);
+    await loadStaffTiers();
+    renderStaffRoles();
+    const roleIdx = parseInt(document.getElementById('editRoleIndex')?.value || '-1');
+    if (roleIdx >= 0) renderRoleModalPlayerList(roleIdx);
+}
+
+async function roleModalSortByTiers(roleIndex) {
+    const role = store.staffRoles[roleIndex];
+    if (!role || !role.players) return;
+
+    const tierOrder = { priority: 0, base: 1, reserve: 2, na: 3 };
+    role.players.sort((a, b) => {
+        const ta = tierOrder[getPlayerTier(a.nickname)] ?? 3;
+        const tb = tierOrder[getPlayerTier(b.nickname)] ?? 3;
+        if (ta !== tb) return ta - tb;
+        return a.nickname.localeCompare(b.nickname);
+    });
+
+    await roleModalSavePlayers(roleIndex);
+    renderRoleModalPlayerList(roleIndex);
+    showToast('Участники отсортированы по тирам', 'success');
+}
+
+async function roleModalToggleTiers(roleIndex) {
+    const role = store.staffRoles[roleIndex];
+    if (!role) return;
+
+    role.tiersEnabled = role.tiersEnabled === false ? true : false;
+
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ roleIndex, name: role.name, color: role.color, tiersEnabled: role.tiersEnabled })
+        }, 'role-toggle-tiers');
+        if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка'); }
+        await loadStaffRoles();
+        const btn = document.getElementById('roleToggleTiersBtn');
+        if (btn) btn.textContent = role.tiersEnabled ? '🎯 Тир: вкл' : '🎯 Тир: выкл';
+        renderRoleModalPlayerList(roleIndex);
+        showToast(`Тиры для роли «${escapeHtml(role.name)}» ${role.tiersEnabled ? 'включены' : 'выключены'}`, 'success');
+    } catch (e) {
+        role.tiersEnabled = !role.tiersEnabled;
+        showToast(e.message, 'error');
+    }
+}
+
 // ============================================
 // ПАНЕЛЬ РЕДАКТИРОВАНИЯ
 // ============================================
@@ -2982,15 +3074,20 @@ function renderEditPlayerList() {
                     h('span', { className: 'player-nickname' }, [escapeHtml(p.nickname)]),
                     h('span', { className: 'player-role-name' }, [escapeHtml(role.name)]),
                 ]),
-                h('span', {
-                    className: 'edit-player-tier-badge',
-                    style: { background: cfg.color + '44', borderColor: cfg.color },
-                    dataset: { action: 'edit-set-player-tier', nickname: p.nickname },
-                    title: 'Нажмите, чтобы изменить тир'
-                }, [
-                    h('span', { className: 'edit-player-tier-dot', style: { background: cfg.color } }, []),
-                    h('span', {}, [cfg.label]),
-                ]),
+                ...Object.entries(TIER_CONFIG).map(([key, cfg]) => {
+                    const isActive = getPlayerTier(p.nickname) === key;
+                    return h('span', {
+                        className: 'role-tier-square',
+                        style: {
+                            background: cfg.color,
+                            opacity: isActive ? '1' : '0.25',
+                            outline: isActive ? '2px solid var(--color-text-primary)' : 'none',
+                            outlineOffset: '1px'
+                        },
+                        dataset: { action: 'role-modal-set-tier-direct', nickname: p.nickname, tier: key },
+                        title: cfg.label
+                    }, []);
+                }),
                 h('button', {
                     className: 'player-edit-btn',
                     attrs: {
@@ -3061,6 +3158,8 @@ function renderRoleModalPlayerList(roleIndex) {
     const searchInput = document.getElementById('rolePlayerSearch');
     const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
 
+    const tiersEnabled = role.tiersEnabled !== false;
+
     const players = role.players || [];
     if (players.length === 0) {
         container.appendChild(
@@ -3075,22 +3174,26 @@ function renderRoleModalPlayerList(roleIndex) {
         if (query && !p.nickname.toLowerCase().includes(query)) continue;
         count++;
 
-        const tier = getPlayerTier(p.nickname);
-        const cfg = TIER_CONFIG[tier];
-
         const actions = [];
 
-        actions.push(
-            h('span', {
-                className: 'edit-player-tier-badge',
-                style: { background: cfg.color + '44', borderColor: cfg.color },
-                dataset: { action: 'role-modal-set-tier', nickname: p.nickname },
-                title: 'Нажмите, чтобы изменить тир'
-            }, [
-                h('span', { className: 'edit-player-tier-dot', style: { background: cfg.color } }, []),
-                h('span', {}, [cfg.label]),
-            ])
-        );
+        if (tiersEnabled) {
+            Object.entries(TIER_CONFIG).forEach(([key, cfg]) => {
+                const isActive = getPlayerTier(p.nickname) === key;
+                actions.push(
+                    h('span', {
+                        className: 'role-tier-square',
+                        style: {
+                            background: cfg.color,
+                            opacity: isActive ? '1' : '0.25',
+                            outline: isActive ? '2px solid var(--color-text-primary)' : 'none',
+                            outlineOffset: '1px'
+                        },
+                        dataset: { action: 'role-modal-set-tier-direct', nickname: p.nickname, tier: key },
+                        title: cfg.label
+                    }, [])
+                );
+            });
+        }
 
         actions.push(
             h('button', {
@@ -3186,6 +3289,23 @@ function roleModalCancelEdit() {
     btn.dataset.action = 'role-add-player';
 }
 
+async function roleModalSavePlayers(roleIndex) {
+    const role = store.staffRoles[roleIndex];
+    if (!role) return;
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ roleIndex, name: role.name, color: role.color, players: role.players })
+        }, 'role-save-players');
+        if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка сохранения'); }
+        await loadStaffRoles();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
 async function roleModalMovePlayer(roleIndex, playerIndex, direction) {
     const role = store.staffRoles[roleIndex];
     if (!role || !role.players) return;
@@ -3195,13 +3315,8 @@ async function roleModalMovePlayer(roleIndex, playerIndex, direction) {
 
     [role.players[playerIndex], role.players[targetIdx]] = [role.players[targetIdx], role.players[playerIndex]];
 
-    try {
-        await saveStaffRoles();
-        renderRoleModalPlayerList(roleIndex);
-    } catch (e) {
-        [role.players[playerIndex], role.players[targetIdx]] = [role.players[targetIdx], role.players[playerIndex]];
-        showToast(e.message, 'error');
-    }
+    await roleModalSavePlayers(roleIndex);
+    renderRoleModalPlayerList(roleIndex);
 }
 
 async function roleModalSavePlayer() {
@@ -3223,10 +3338,17 @@ async function roleModalSavePlayer() {
     role.players[playerIdx].discord = discord;
 
     try {
-        await saveStaffRoles();
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ roleIndex, name: role.name, color: role.color, players: role.players })
+        }, 'role-save-player-edit');
+        if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка сохранения'); }
         if (oldNickname !== nickname) {
             await setPlayerTierSilent(nickname, getPlayerTier(oldNickname));
         }
+        await loadStaffRoles();
         roleModalCancelEdit();
         renderRoleModalPlayerList(roleIndex);
         showToast(`Игрок «${escapeHtml(nickname)}» обновлён`, 'success');

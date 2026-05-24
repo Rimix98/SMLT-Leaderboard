@@ -44,9 +44,10 @@ type StaffPlayer struct {
 }
 
 type StaffRole struct {
-	Name    string        `json:"name" firestore:"name"`
-	Color   string        `json:"color" firestore:"color"`
-	Players []StaffPlayer `json:"players" firestore:"players"`
+	Name         string        `json:"name" firestore:"name"`
+	Color        string        `json:"color" firestore:"color"`
+	Players      []StaffPlayer `json:"players" firestore:"players"`
+	TiersEnabled bool          `json:"tiersEnabled" firestore:"tiersEnabled"`
 }
 
 type StaffTierEntry struct {
@@ -1649,9 +1650,11 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		RoleIndex int    `json:"roleIndex"`
-		Name      string `json:"name"`
-		Color     string `json:"color"`
+		RoleIndex    int           `json:"roleIndex"`
+		Name         string        `json:"name"`
+		Color        string        `json:"color"`
+		Players      []StaffPlayer `json:"players"`
+		TiersEnabled *bool         `json:"tiersEnabled"`
 	}
 	if err := decodeRequestJSON(w, r, &req); err != nil {
 		sendError(w, http.StatusBadRequest, "Кривой JSON")
@@ -1690,6 +1693,12 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 		}
 		data.Roles[req.RoleIndex].Name = req.Name
 		data.Roles[req.RoleIndex].Color = req.Color
+		if req.Players != nil {
+			data.Roles[req.RoleIndex].Players = req.Players
+		}
+		if req.TiersEnabled != nil {
+			data.Roles[req.RoleIndex].TiersEnabled = *req.TiersEnabled
+		}
 		return tx.Set(docRef, data)
 	})
 	if err != nil {
