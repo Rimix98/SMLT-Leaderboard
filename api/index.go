@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -416,10 +417,47 @@ func (u *upstashLimiter) getKey(ctx context.Context, key string) (int, error) {
 	return strconv.Atoi(*gr.Result)
 }
 
+func (u *upstashLimiter) ping(ctx context.Context) error {
+	cmd := url.PathEscape("PING")
+	reqURL := fmt.Sprintf("%s/%s", u.url, cmd)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth("default", u.token)
+	resp, err := u.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	var result struct {
+		Result *string `json:"result"`
+		Error  *string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return err
+	}
+	if result.Error != nil && *result.Error != "" {
+		return fmt.Errorf("upstash ping: %s", *result.Error)
+	}
+	return nil
+}
+
 func initRateLimiter() {
 	rlOnce.Do(func() {
 		ul := newUpstashLimiter()
 		if ul != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := ul.ping(ctx); err != nil {
+				log.Printf("[ratelimit] Upstash Redis connection failed: %v, falling back to memory limiter", err)
+				ml := newMemoryLimiter()
+				globalRateLimiter = ml
+				rlStop = ml.stop
+				log.Println("[ratelimit] using in-memory limiter (fallback)")
+				return
+			}
 			globalRateLimiter = ul
 			log.Println("[ratelimit] using Upstash Redis limiter")
 		} else {
@@ -1500,7 +1538,7 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 		}
 		player := StaffPlayer{Nickname: req.Nickname, Discord: req.Discord}
 		data.Roles[req.RoleIndex].Players = append(data.Roles[req.RoleIndex].Players, player)
-		return tx.Set(docRef, data)
+		return tx.Set(docRef, data, firestore.MergeAll)
 	})
 
 	if err != nil {
@@ -1574,7 +1612,7 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		data.Roles = append(data.Roles, newRole)
-		return tx.Set(docRef, data)
+		return tx.Set(docRef, data, firestore.MergeAll)
 	})
 	if err != nil {
 		log.Printf("[staff] create role: %v", err)
@@ -1626,7 +1664,7 @@ func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 			return errors.New("invalid role index")
 		}
 		data.Roles = append(data.Roles[:req.RoleIndex], data.Roles[req.RoleIndex+1:]...)
-		return tx.Set(docRef, data)
+		return tx.Set(docRef, data, firestore.MergeAll)
 	})
 	if err != nil {
 		log.Printf("[staff] delete role: %v", err)
@@ -1699,7 +1737,7 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 		if req.TiersEnabled != nil {
 			data.Roles[req.RoleIndex].TiersEnabled = *req.TiersEnabled
 		}
-		return tx.Set(docRef, data)
+		return tx.Set(docRef, data, firestore.MergeAll)
 	})
 	if err != nil {
 		log.Printf("[staff] update role: %v", err)
@@ -1773,7 +1811,7 @@ func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 		if !found {
 			return errors.New("player not found")
 		}
-		return tx.Set(docRef, data)
+		return tx.Set(docRef, data, firestore.MergeAll)
 	})
 	if err != nil {
 		log.Printf("[staff] remove player: %v", err)
@@ -1829,7 +1867,7 @@ func handleReorderStaffRoles(w http.ResponseWriter, r *http.Request) {
 			return errors.New("invalid move")
 		}
 		data.Roles[idx], data.Roles[target] = data.Roles[target], data.Roles[idx]
-		return tx.Set(docRef, data)
+		return tx.Set(docRef, data, firestore.MergeAll)
 	})
 	if err != nil {
 		log.Printf("[staff] reorder: %v", err)
@@ -2133,6 +2171,12 @@ func auditLog(ctx context.Context, entry AuditEntry) {
 // ──────────────────────────────────────────────
 
 func Handler(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Printf("[panic] %v\n%s", rec, debug.Stack())
+			sendError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
+		}
+	}()
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
