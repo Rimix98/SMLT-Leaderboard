@@ -303,10 +303,21 @@ function mountDelegatedClicks() {
         else if (delBtn) deleteProject(Number(delBtn.dataset.projectIndex));
     });
 
+    let pointerDownEl = null;
+    document.addEventListener('pointerdown', (e) => {
+        pointerDownEl = e.target;
+    }, true);
     document.addEventListener('click', (e) => {
         const actionEl = e.target.closest('[data-action]');
         if (!actionEl) return;
         const action = actionEl.dataset.action;
+
+        if (action === 'close-edit-panel') {
+            const panel = document.getElementById('editPanel');
+            if (panel && panel.contains(pointerDownEl) && pointerDownEl !== actionEl) {
+                return;
+            }
+        }
 
         if (action === 'stop-propagation') {
             e.stopPropagation();
@@ -2208,9 +2219,9 @@ async function saveProject() {
 
     try {
         await saveProjects(store.projects);
+        await loadProjects();
         showToast(idx === -1 ? 'Проект добавлен!' : 'Проект обновлён!', 'success');
         closeProjectModal();
-        renderProjects();
     } catch (e) {
         if (isAbortError(e)) return;
         if (idx === -1) {
@@ -2233,7 +2244,7 @@ async function deleteProject(idx) {
     const removed = store.projects.splice(idx, 1);
     try {
         await saveProjects(store.projects);
-        renderProjects();
+        await loadProjects();
         showToast('Проект удалён', 'success');
     } catch (e) {
         if (isAbortError(e)) return;
