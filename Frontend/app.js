@@ -303,20 +303,13 @@ function mountDelegatedClicks() {
         else if (delBtn) deleteProject(Number(delBtn.dataset.projectIndex));
     });
 
-    let pointerDownEl = null;
-    document.addEventListener('pointerdown', (e) => {
-        pointerDownEl = e.target;
-    }, true);
     document.addEventListener('click', (e) => {
         const actionEl = e.target.closest('[data-action]');
         if (!actionEl) return;
         const action = actionEl.dataset.action;
 
         if (action === 'close-edit-panel') {
-            const panel = document.getElementById('editPanel');
-            if (panel && panel.contains(pointerDownEl) && pointerDownEl !== actionEl) {
-                return;
-            }
+            if (!actionEl.classList.contains('edit-panel-close')) return;
         }
 
         if (action === 'stop-propagation') {
