@@ -1528,7 +1528,9 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		var data struct {
-			Roles []StaffRole `json:"roles" firestore:"roles"`
+			Roles     []StaffRole      `json:"roles" firestore:"roles"`
+			GPTiers   []StaffTierEntry `json:"gp_tiers" firestore:"gp_tiers"`
+			DecoTiers []StaffTierEntry `json:"deco_tiers" firestore:"deco_tiers"`
 		}
 		if err := doc.DataTo(&data); err != nil {
 			return err
@@ -1538,7 +1540,7 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 		}
 		player := StaffPlayer{Nickname: req.Nickname, Discord: req.Discord}
 		data.Roles[req.RoleIndex].Players = append(data.Roles[req.RoleIndex].Players, player)
-		return tx.Set(docRef, data, firestore.MergeAll)
+		return tx.Set(docRef, data)
 	})
 
 	if err != nil {
@@ -1598,7 +1600,9 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 		docRef := fsClient.Collection("config").Doc("staff")
 		doc, err := tx.Get(docRef)
 		var data struct {
-			Roles []StaffRole `json:"roles" firestore:"roles"`
+			Roles     []StaffRole      `json:"roles" firestore:"roles"`
+			GPTiers   []StaffTierEntry `json:"gp_tiers" firestore:"gp_tiers"`
+			DecoTiers []StaffTierEntry `json:"deco_tiers" firestore:"deco_tiers"`
 		}
 		if err != nil {
 			if status.Code(err) == codes.NotFound {
@@ -1612,7 +1616,7 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		data.Roles = append(data.Roles, newRole)
-		return tx.Set(docRef, data, firestore.MergeAll)
+		return tx.Set(docRef, data)
 	})
 	if err != nil {
 		log.Printf("[staff] create role: %v", err)
@@ -1655,7 +1659,9 @@ func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		var data struct {
-			Roles []StaffRole `json:"roles" firestore:"roles"`
+			Roles     []StaffRole      `json:"roles" firestore:"roles"`
+			GPTiers   []StaffTierEntry `json:"gp_tiers" firestore:"gp_tiers"`
+			DecoTiers []StaffTierEntry `json:"deco_tiers" firestore:"deco_tiers"`
 		}
 		if err := doc.DataTo(&data); err != nil {
 			return err
@@ -1664,7 +1670,7 @@ func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 			return errors.New("invalid role index")
 		}
 		data.Roles = append(data.Roles[:req.RoleIndex], data.Roles[req.RoleIndex+1:]...)
-		return tx.Set(docRef, data, firestore.MergeAll)
+		return tx.Set(docRef, data)
 	})
 	if err != nil {
 		log.Printf("[staff] delete role: %v", err)
@@ -1721,7 +1727,9 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		var data struct {
-			Roles []StaffRole `json:"roles" firestore:"roles"`
+			Roles     []StaffRole      `json:"roles" firestore:"roles"`
+			GPTiers   []StaffTierEntry `json:"gp_tiers" firestore:"gp_tiers"`
+			DecoTiers []StaffTierEntry `json:"deco_tiers" firestore:"deco_tiers"`
 		}
 		if err := doc.DataTo(&data); err != nil {
 			return err
@@ -1737,7 +1745,7 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 		if req.TiersEnabled != nil {
 			data.Roles[req.RoleIndex].TiersEnabled = *req.TiersEnabled
 		}
-		return tx.Set(docRef, data, firestore.MergeAll)
+		return tx.Set(docRef, data)
 	})
 	if err != nil {
 		log.Printf("[staff] update role: %v", err)
@@ -1791,7 +1799,9 @@ func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		var data struct {
-			Roles []StaffRole `json:"roles" firestore:"roles"`
+			Roles     []StaffRole      `json:"roles" firestore:"roles"`
+			GPTiers   []StaffTierEntry `json:"gp_tiers" firestore:"gp_tiers"`
+			DecoTiers []StaffTierEntry `json:"deco_tiers" firestore:"deco_tiers"`
 		}
 		if err := doc.DataTo(&data); err != nil {
 			return err
@@ -1811,7 +1821,7 @@ func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 		if !found {
 			return errors.New("player not found")
 		}
-		return tx.Set(docRef, data, firestore.MergeAll)
+		return tx.Set(docRef, data)
 	})
 	if err != nil {
 		log.Printf("[staff] remove player: %v", err)
@@ -1853,7 +1863,9 @@ func handleReorderStaffRoles(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		var data struct {
-			Roles []StaffRole `json:"roles" firestore:"roles"`
+			Roles     []StaffRole      `json:"roles" firestore:"roles"`
+			GPTiers   []StaffTierEntry `json:"gp_tiers" firestore:"gp_tiers"`
+			DecoTiers []StaffTierEntry `json:"deco_tiers" firestore:"deco_tiers"`
 		}
 		if err := doc.DataTo(&data); err != nil {
 			return err
@@ -1867,7 +1879,7 @@ func handleReorderStaffRoles(w http.ResponseWriter, r *http.Request) {
 			return errors.New("invalid move")
 		}
 		data.Roles[idx], data.Roles[target] = data.Roles[target], data.Roles[idx]
-		return tx.Set(docRef, data, firestore.MergeAll)
+		return tx.Set(docRef, data)
 	})
 	if err != nil {
 		log.Printf("[staff] reorder: %v", err)
