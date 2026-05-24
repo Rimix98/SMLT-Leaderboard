@@ -75,10 +75,10 @@ type FullPlayerData struct {
 }
 
 type AuditEntry struct {
-	Action      string      `json:"action" firestore:"action"`
-	AdminIPHash string      `json:"adminIpHash" firestore:"adminIpHash"`
-	Details     interface{} `json:"details" firestore:"details"`
-	CreatedAt   time.Time   `json:"createdAt" firestore:"createdAt"`
+	Action    string      `json:"action" firestore:"action"`
+	AdminIP   string      `json:"adminIp" firestore:"adminIp"`
+	Details   interface{} `json:"details" firestore:"details"`
+	CreatedAt time.Time   `json:"createdAt" firestore:"createdAt"`
 }
 
 type jwtKey struct {
@@ -156,12 +156,6 @@ var errRateLimitExceeded = fmt.Errorf("rate limit exceeded")
 
 func init() {
 	trustProxy = os.Getenv("TRUST_PROXY") == "true" || os.Getenv("VERCEL") == "1"
-	required := []string{"JWT_SECRET", "FIREBASE_CREDENTIALS", "ADMIN_HASH"}
-	for _, key := range required {
-		if os.Getenv(key) == "" {
-			log.Printf("[init] WARNING: required env %q not set — functionality will be degraded", key)
-		}
-	}
 	initFirestore()
 	initRateLimiter()
 	initRateLimitSalt()
@@ -172,7 +166,8 @@ func initRateLimitSalt() {
 	saltOnce.Do(func() {
 		buf := make([]byte, 32)
 		if _, err := rand.Read(buf); err != nil {
-			log.Fatalf("[crypto] failed to generate rate limit salt: %v", err)
+			rateLimitSalt = fmt.Sprintf("%x", time.Now().UnixNano())
+			return
 		}
 		rateLimitSalt = hex.EncodeToString(buf)
 	})
@@ -224,31 +219,8 @@ func initFirestore() {
 		if err != nil {
 			fsErr = err
 			log.Printf("[firestore] connect: %v", err)
-			return
 		}
-		setupTTLPolicies(ctx, fsClient)
 	})
-}
-
-func setupTTLPolicies(ctx context.Context, client *firestore.Client) {
-	ttlCollections := []struct {
-		name  string
-		field string
-	}{
-		{"captcha", "expiresAt"},
-		{"token_blacklist", "expiresAt"},
-		{"rate_limits", "resetAt"},
-		{"audit_log", "createdAt"},
-	}
-	for _, c := range ttlCollections {
-		_, err := client.Collection(c.name).Doc("_ttl_config").Set(ctx, map[string]interface{}{
-			"ttlField": c.field,
-			"note":     "TTL must be enabled via Google Cloud Console or gcloud CLI on field " + c.field,
-		})
-		if err != nil {
-			log.Printf("[firestore] ttl note for %s: %v", c.name, err)
-		}
-	}
 }
 
 // ──────────────────────────────────────────────
@@ -519,11 +491,13 @@ func (s *firestoreCaptchaStore) Verify(id, answer string, clear bool) bool {
 
 func ensureCaptcha() {
 	captchaOnce.Do(func() {
-		if fsClient == nil {
-			log.Fatalf("[captcha] Firestore unavailable — captcha requires Firestore in serverless deployments")
+		if fsClient != nil {
+			log.Println("[captcha] using firestore store")
+			captchaStore = &firestoreCaptchaStore{client: fsClient}
+		} else {
+			log.Println("[captcha] using default memory store")
+			captchaStore = base64Captcha.DefaultMemStore
 		}
-		log.Println("[captcha] using firestore store")
-		captchaStore = &firestoreCaptchaStore{client: fsClient}
 		captchaInst = base64Captcha.NewCaptcha(
 			base64Captcha.NewDriverDigit(80, 240, 5, 0.7, 80),
 			captchaStore,
@@ -640,7 +614,7 @@ func writeJSON(w http.ResponseWriter, v interface{}) {
 
 func setSecureCookie(w http.ResponseWriter, name, value string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "__Host-" + name,
+		Name:     name,
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
@@ -652,7 +626,7 @@ func setSecureCookie(w http.ResponseWriter, name, value string, maxAge int) {
 
 func clearCookie(w http.ResponseWriter, name string) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "__Host-" + name,
+		Name:     name,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
@@ -661,15 +635,6 @@ func clearCookie(w http.ResponseWriter, name string) {
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 	})
-}
-
-func sanitizeForLog(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r < 32 && r != '\t' {
-			return -1
-		}
-		return r
-	}, s)
 }
 
 func requestPath(r *http.Request) string {
@@ -724,7 +689,7 @@ func verifyTokenVersion(ctx context.Context, claims *jwt.MapClaims) error {
 		}
 	}
 	if fsClient == nil {
-		return errors.New("cannot verify token version: firestore unavailable")
+		return nil
 	}
 	doc, err := fsClient.Collection("config").Doc("auth").Get(ctx)
 	if err != nil {
@@ -751,7 +716,7 @@ func verifyTokenVersion(ctx context.Context, claims *jwt.MapClaims) error {
 
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("__Host-auth_token")
+		cookie, err := r.Cookie("auth_token")
 		if err != nil {
 			sendError(w, http.StatusUnauthorized, "Нет доступа")
 			return
@@ -792,7 +757,7 @@ func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		headerToken := r.Header.Get("X-CSRF-Token")
-		cookie, err := r.Cookie("__Host-csrf_token")
+		cookie, err := r.Cookie("csrf_token")
 		if err != nil || cookie.Value == "" || headerToken == "" || headerToken != cookie.Value {
 			sendError(w, http.StatusForbidden, "Ошибка CSRF: неверный токен")
 			return
@@ -807,8 +772,6 @@ func checkRateLimit(w http.ResponseWriter, r *http.Request, max int) bool {
 	ok, err := globalRateLimiter.allow(r.Context(), key, max, time.Minute)
 	if err != nil {
 		log.Printf("[ratelimit] error: %v", err)
-		sendError(w, http.StatusServiceUnavailable, "Rate limiter unavailable")
-		return false
 	}
 	if !ok {
 		sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
@@ -848,8 +811,6 @@ func checkLoginRateLimit(w http.ResponseWriter, r *http.Request) bool {
 	ok, err := globalRateLimiter.allow(r.Context(), key, maxLoginAttempts, time.Minute)
 	if err != nil {
 		log.Printf("[ratelimit] login error: %v", err)
-		sendError(w, http.StatusServiceUnavailable, "Сервис временно недоступен")
-		return false
 	}
 	if !ok {
 		sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
@@ -953,7 +914,7 @@ func handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
 // ──────────────────────────────────────────────
 
 func handleVerify(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("__Host-auth_token")
+	cookie, err := r.Cookie("auth_token")
 	if err != nil {
 		writeJSON(w, map[string]bool{"success": false})
 		return
@@ -1018,7 +979,7 @@ func getCurrentTokenVersion(ctx context.Context) int64 {
 func generateJTI() string {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
-		log.Fatalf("[crypto] failed to generate JTI: %v", err)
+		return fmt.Sprintf("%x", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(buf)
 }
@@ -1089,8 +1050,7 @@ func isTokenBlacklisted(ctx context.Context, jti string) bool {
 	}
 	doc, err := fsClient.Collection("token_blacklist").Doc(jti).Get(ctx)
 	if err != nil {
-		log.Printf("[auth] blacklist check error: %v", err)
-		return true
+		return false
 	}
 	return doc.Exists()
 }
@@ -1117,7 +1077,7 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w, http.MethodPost)
 		return
 	}
-	if cookie, err := r.Cookie("__Host-auth_token"); err == nil {
+	if cookie, err := r.Cookie("auth_token"); err == nil {
 		claims := &jwt.MapClaims{}
 		if _, parseErr := jwt.ParseWithClaims(cookie.Value, claims, func(t *jwt.Token) (interface{}, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -1221,7 +1181,7 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "projects.save",
-		AdminIPHash: hashIP(getRealIP(r)),
+		AdminIP: getRealIP(r),
 		Details: map[string]int{"count": len(projectList)},
 	})
 	writeJSON(w, map[string]bool{"success": true})
@@ -1387,7 +1347,7 @@ func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "players.save",
-		AdminIPHash: hashIP(getRealIP(r)),
+		AdminIP: getRealIP(r),
 		Details: map[string]int{"count": len(players)},
 	})
 	writeJSON(w, map[string]bool{"success": true})
@@ -1453,7 +1413,7 @@ func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "players.delete",
-		AdminIPHash: hashIP(getRealIP(r)),
+		AdminIP: getRealIP(r),
 		Details: map[string]string{"name": req.Name},
 	})
 	writeJSON(w, map[string]bool{"success": true})
@@ -1549,7 +1509,7 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.add",
-		AdminIPHash: hashIP(getRealIP(r)),
+		AdminIP: getRealIP(r),
 		Details: map[string]interface{}{
 			"roleIndex": req.RoleIndex,
 			"nickname":  req.Nickname,
@@ -1622,7 +1582,7 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.createRole",
-		AdminIPHash: hashIP(getRealIP(r)),
+		AdminIP: getRealIP(r),
 		Details: map[string]string{"name": req.Name, "color": req.Color},
 	})
 	writeJSON(w, map[string]interface{}{
@@ -1674,7 +1634,7 @@ func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.deleteRole",
-		AdminIPHash: hashIP(getRealIP(r)),
+		AdminIP: getRealIP(r),
 		Details: map[string]int{"roleIndex": req.RoleIndex},
 	})
 	writeJSON(w, map[string]bool{"success": true})
@@ -1739,7 +1699,7 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.updateRole",
-		AdminIPHash: hashIP(getRealIP(r)),
+		AdminIP: getRealIP(r),
 		Details: map[string]interface{}{"roleIndex": req.RoleIndex, "name": req.Name, "color": req.Color},
 	})
 	writeJSON(w, map[string]bool{"success": true})
@@ -1813,7 +1773,7 @@ func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.removePlayer",
-		AdminIPHash: hashIP(getRealIP(r)),
+		AdminIP: getRealIP(r),
 		Details: map[string]interface{}{
 			"roleIndex": req.RoleIndex,
 			"nickname":  req.Nickname,
@@ -1873,7 +1833,7 @@ func handleReorderStaffRoles(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.reorder",
-		AdminIPHash: hashIP(getRealIP(r)),
+		AdminIP: getRealIP(r),
 		Details: map[string]interface{}{
 			"roleIndex": req.RoleIndex,
 			"direction": req.Direction,
@@ -2002,7 +1962,7 @@ func handleSetStaffTier(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.setTier",
-		AdminIPHash: hashIP(getRealIP(r)),
+		AdminIP: getRealIP(r),
 		Details: map[string]interface{}{
 			"category": req.Category,
 			"nickname": req.Nickname,
@@ -2170,7 +2130,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-XSS-Protection", "1; mode=block")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://flagcdn.com; frame-src https://www.youtube.com; object-src 'none'; base-uri 'none'; form-action 'self'")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://www.youtube.com; object-src 'none'; base-uri 'none'; form-action 'self'")
 
 	origin := r.Header.Get("Origin")
 	if origin != "" {
