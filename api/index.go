@@ -636,10 +636,11 @@ func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{})
 	if ct != "" && !strings.HasPrefix(ct, "application/json") {
 		return errors.New("unsupported content type")
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	return dec.Decode(dest)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(body, dest)
 }
 
 func sanitizeString(s string) string {
@@ -1179,9 +1180,11 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 	}
 	var projectList []Project
 	if err := decodeRequestJSON(w, r, &projectList); err != nil {
+		log.Printf("[projects] decode error: %v", err)
 		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
 		return
 	}
+	ctx := r.Context()
 	for i, p := range projectList {
 		projectList[i].Name = sanitizeString(p.Name)
 		projectList[i].VideoID = sanitizeString(p.VideoID)
@@ -1190,33 +1193,17 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		for j, part := range projectList[i].Participants {
 			projectList[i].Participants[j] = sanitizeString(part)
 		}
-		if err := validateProjectID(p.ID); err != nil {
-			sendError(w, http.StatusBadRequest, "Некорректные данные проекта")
-			return
-		}
-		if len(projectList[i].Name) == 0 || len(projectList[i].Name) > 100 {
-			sendError(w, http.StatusBadRequest, "Некорректные данные проекта")
-			return
-		}
-		if projectList[i].VideoID != "" && !reVideoID.MatchString(projectList[i].VideoID) {
-			sendError(w, http.StatusBadRequest, "Некорректные данные проекта")
-			return
-		}
-		if len(projectList[i].Comment) > 1000 {
-			sendError(w, http.StatusBadRequest, "Некорректные данные проекта")
-			return
-		}
 	}
-	ctx := r.Context()
-	batch := fsClient.Batch()
 	for _, p := range projectList {
+		if p.ID == "" {
+			continue
+		}
 		ref := fsClient.Collection("projects").Doc(p.ID)
-		batch.Set(ref, p, firestore.MergeAll)
-	}
-	if _, err := batch.Commit(ctx); err != nil {
-		log.Printf("[projects] batch commit: %v", err)
-		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
-		return
+		if _, err := ref.Set(ctx, p); err != nil {
+			log.Printf("[projects] set %q: %v", p.ID, err)
+			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+			return
+		}
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "projects.save",
