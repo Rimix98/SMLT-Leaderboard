@@ -1194,10 +1194,13 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 			projectList[i].Participants[j] = sanitizeString(part)
 		}
 	}
+
+	ids := make(map[string]bool)
 	for _, p := range projectList {
 		if p.ID == "" {
 			continue
 		}
+		ids[p.ID] = true
 		ref := fsClient.Collection("projects").Doc(p.ID)
 		if _, err := ref.Set(ctx, p); err != nil {
 			log.Printf("[projects] set %q: %v", p.ID, err)
@@ -1205,6 +1208,24 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	iter := fsClient.Collection("projects").Documents(ctx)
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			log.Printf("[projects] delete iter: %v", err)
+			break
+		}
+		if !ids[doc.Ref.ID] {
+			if _, err := doc.Ref.Delete(ctx); err != nil {
+				log.Printf("[projects] delete %q: %v", doc.Ref.ID, err)
+			}
+		}
+	}
+
 	auditLog(r.Context(), AuditEntry{
 		Action:  "projects.save",
 		AdminIP: getRealIP(r),
@@ -1895,16 +1916,37 @@ func handleGetStaffTiers(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
-	var data struct {
-		GP   []StaffTierEntry `json:"gp" firestore:"gp_tiers"`
-		DECO []StaffTierEntry `json:"deco" firestore:"deco_tiers"`
-	}
-	if err := doc.DataTo(&data); err != nil {
+	var raw map[string]interface{}
+	if err := doc.DataTo(&raw); err != nil {
 		log.Printf("[staff] tiers DataTo error: %v", err)
-		data.GP = []StaffTierEntry{}
-		data.DECO = []StaffTierEntry{}
+		writeJSON(w, map[string]interface{}{"gp": []StaffTierEntry{}, "deco": []StaffTierEntry{}})
+		return
 	}
-	writeJSON(w, data)
+	gpTiers := []StaffTierEntry{}
+	decoTiers := []StaffTierEntry{}
+	if gpRaw, ok := raw["gp_tiers"]; ok {
+		if gpArr, ok := gpRaw.([]interface{}); ok {
+			for _, item := range gpArr {
+				if m, ok := item.(map[string]interface{}); ok {
+					nickname, _ := m["nickname"].(string)
+					tier, _ := m["tier"].(string)
+					gpTiers = append(gpTiers, StaffTierEntry{Nickname: nickname, Tier: tier})
+				}
+			}
+		}
+	}
+	if decoRaw, ok := raw["deco_tiers"]; ok {
+		if decoArr, ok := decoRaw.([]interface{}); ok {
+			for _, item := range decoArr {
+				if m, ok := item.(map[string]interface{}); ok {
+					nickname, _ := m["nickname"].(string)
+					tier, _ := m["tier"].(string)
+					decoTiers = append(decoTiers, StaffTierEntry{Nickname: nickname, Tier: tier})
+				}
+			}
+		}
+	}
+	writeJSON(w, map[string]interface{}{"gp": gpTiers, "deco": decoTiers})
 }
 
 func handleSetStaffTier(w http.ResponseWriter, r *http.Request) {
@@ -1983,10 +2025,8 @@ func handleSetStaffTier(w http.ResponseWriter, r *http.Request) {
 		}
 
 		return tx.Set(docRef, map[string]interface{}{
-			"roles":      data.Roles,
-			"gp_tiers":   data.GPTiers,
-			"deco_tiers": data.DecoTiers,
-		})
+			req.Category + "_tiers": *tiers,
+		}, firestore.Merge(firestore.FieldPath{req.Category + "_tiers"}))
 	})
 
 	if err != nil {
