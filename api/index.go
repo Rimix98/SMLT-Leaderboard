@@ -162,6 +162,7 @@ func init() {
 			log.Printf("[init] WARNING: required env %q not set — functionality will be degraded", key)
 		}
 	}
+	initFirestore()
 	initRateLimiter()
 	initRateLimitSalt()
 	initJWTSecrets()
@@ -206,8 +207,7 @@ func initJWTSecrets() {
 
 func initFirestore() {
 	fsOnce.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		creds := os.Getenv("FIREBASE_CREDENTIALS")
 		if creds == "" {
 			fsErr = errors.New("FIREBASE_CREDENTIALS not set")
@@ -226,7 +226,7 @@ func initFirestore() {
 			log.Printf("[firestore] connect: %v", err)
 			return
 		}
-		go setupTTLPolicies(context.Background(), fsClient)
+		setupTTLPolicies(ctx, fsClient)
 	})
 }
 
@@ -519,7 +519,6 @@ func (s *firestoreCaptchaStore) Verify(id, answer string, clear bool) bool {
 
 func ensureCaptcha() {
 	captchaOnce.Do(func() {
-		initFirestore()
 		if fsClient == nil {
 			log.Fatalf("[captcha] Firestore unavailable — captcha requires Firestore in serverless deployments")
 		}
@@ -682,7 +681,6 @@ func requestPath(r *http.Request) string {
 }
 
 func requireFirestore(w http.ResponseWriter) bool {
-	initFirestore()
 	if fsErr != nil || fsClient == nil {
 		sendError(w, http.StatusServiceUnavailable, "База данных недоступна")
 		return false
@@ -725,7 +723,6 @@ func verifyTokenVersion(ctx context.Context, claims *jwt.MapClaims) error {
 			return nil
 		}
 	}
-	initFirestore()
 	if fsClient == nil {
 		return errors.New("cannot verify token version: firestore unavailable")
 	}
@@ -985,7 +982,6 @@ func handleVerify(w http.ResponseWriter, r *http.Request) {
 // ──────────────────────────────────────────────
 
 func getCurrentTokenVersion(ctx context.Context) int64 {
-	initFirestore()
 	if fsClient == nil {
 		return 1
 	}
@@ -1088,7 +1084,6 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func isTokenBlacklisted(ctx context.Context, jti string) bool {
-	initFirestore()
 	if fsClient == nil || jti == "" {
 		return false
 	}
@@ -1101,7 +1096,6 @@ func isTokenBlacklisted(ctx context.Context, jti string) bool {
 }
 
 func blacklistToken(ctx context.Context, jti string) {
-	initFirestore()
 	if fsClient == nil || jti == "" {
 		return
 	}
@@ -2096,7 +2090,6 @@ func defaultPlayersList() []Player {
 }
 
 func playersForLeaderboard(ctx context.Context) []Player {
-	initFirestore()
 	if fsClient != nil {
 		players, err := loadPlayersFromFirestore(ctx)
 		if err == nil && len(players) > 0 {
