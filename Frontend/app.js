@@ -413,6 +413,7 @@ function mountDelegatedClicks() {
                 if (btn) editPlayerFromList(Number(btn.dataset.roleIndex), Number(btn.dataset.playerIndex));
             },
             'edit-save-player': editAddPlayer,
+            'cancel-edit-player': (e) => { cancelEditPlayer(); },
             'role-add-player': addPlayerFromRoleModal,
             'role-modal-remove-player': () => {
                 const btn = e.target.closest('[data-action="role-modal-remove-player"]');
@@ -2828,6 +2829,23 @@ function getNextTier(current) {
     return TIER_CYCLE[idx + 1];
 }
 
+async function setPlayerTierSilent(nickname, tier) {
+    if (!store.isHost) return;
+    try {
+        await fetchWithAbort(`${BACKEND_URL}/staff/tier`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ category: 'gp', nickname, tier })
+        }, 'set-tier-silent');
+    } catch (e) {
+        if (!isAbortError(e)) {
+            console.error('Ошибка установки тира:', e);
+            if (e.message.includes('401')) logoutHost();
+        }
+    }
+}
+
 async function setPlayerTier(nickname) {
     if (!store.isHost) return;
 
@@ -2883,8 +2901,11 @@ function openEditPanel() {
     renderEditPlayerList();
     document.getElementById('editPlayerNickname').value = '';
     document.getElementById('editPlayerDiscord').value = '';
+    document.getElementById('editPlayerTier').value = 'na';
     const btn = document.getElementById('editPanelSubmitBtn');
     if (btn) { btn.textContent = '➕ Добавить игрока'; btn.dataset.action = 'edit-add-player'; }
+    const cancelBtn = document.getElementById('editPanelCancelBtn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
     setTimeout(() => document.getElementById('editPlayerNickname').focus(), 100);
 }
 
@@ -2992,10 +3013,13 @@ function editPlayerFromList(roleIndex, playerIndex) {
     document.getElementById('editPlayerNickname').value = player.nickname;
     document.getElementById('editPlayerDiscord').value = player.discord || '';
     document.getElementById('editPlayerRole').value = String(roleIndex);
+    document.getElementById('editPlayerTier').value = getPlayerTier(player.nickname);
 
     const btn = document.getElementById('editPanelSubmitBtn');
     btn.textContent = '💾 Сохранить изменения';
     btn.dataset.action = 'edit-save-player';
+    const cancelBtn = document.getElementById('editPanelCancelBtn');
+    if (cancelBtn) cancelBtn.style.display = '';
 }
 
 function cancelEditPlayer() {
@@ -3003,9 +3027,12 @@ function cancelEditPlayer() {
     document.getElementById('editPlayerNickname').value = '';
     document.getElementById('editPlayerDiscord').value = '';
     document.getElementById('editPlayerRole').value = '';
+    document.getElementById('editPlayerTier').value = 'na';
     const btn = document.getElementById('editPanelSubmitBtn');
     btn.textContent = '➕ Добавить игрока';
     btn.dataset.action = 'edit-add-player';
+    const cancelBtn = document.getElementById('editPanelCancelBtn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
     renderEditPlayerList();
 }
 
@@ -3115,6 +3142,7 @@ async function editAddPlayer() {
         const [oldRoleIdx, playerIdx] = key.split(':').map(Number);
         const oldRole = store.staffRoles[oldRoleIdx];
         const role = store.staffRoles[roleIndex];
+        const tier = document.getElementById('editPlayerTier').value;
 
         if (oldRoleIdx !== roleIndex) {
             if (oldRole && oldRole.players) {
@@ -3131,6 +3159,7 @@ async function editAddPlayer() {
 
         try {
             await saveStaffRoles();
+            await setPlayerTierSilent(nickname, tier);
             await loadStaffTiers();
             cancelEditPlayer();
             renderEditPlayerList();
