@@ -2000,7 +2000,12 @@ function resetParticipantBuilder() {
     if (searchInput) searchInput.value = '';
     const results = document.getElementById('participantSearchResults');
     if (results) results.innerHTML = '';
-    document.querySelectorAll('#participantRoleTags .role-tag-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#participantRoleTags .role-tag-btn').forEach(b => {
+        b.classList.remove('active');
+        b.style.background = '';
+        b.style.color = b.dataset.color || 'var(--color-text-secondary)';
+        b.style.borderColor = b.dataset.color || 'var(--color-border)';
+    });
 }
 
 async function initParticipantBuilder() {
@@ -2111,7 +2116,12 @@ function addProjectParticipant() {
     if (searchInput) searchInput.value = '';
     const results = document.getElementById('participantSearchResults');
     if (results) results.innerHTML = '';
-    document.querySelectorAll('#participantRoleTags .role-tag-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#participantRoleTags .role-tag-btn').forEach(b => {
+        b.classList.remove('active');
+        b.style.background = '';
+        b.style.color = b.dataset.color || 'var(--color-text-secondary)';
+        b.style.borderColor = b.dataset.color || 'var(--color-border)';
+    });
     updateParticipantsPreview();
 }
 
