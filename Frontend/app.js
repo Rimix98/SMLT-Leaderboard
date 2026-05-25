@@ -775,6 +775,7 @@ function updateAdminControls() {
     adminElements.forEach(el => {
         el.style.display = store.isHost ? '' : 'none';
     });
+    document.body.classList.toggle('host-active', store.isHost);
 
     if (document.getElementById('staffRolesContainer')) {
         renderStaffRoles();
@@ -1132,7 +1133,6 @@ function ensureLeaderboardShell(table) {
         h('div', { className: 'cell cell-player' }, ['Игрок']),
         h('div', { className: 'cell cell-points' }, ['Очки']),
         h('div', { className: 'cell cell-records' }, ['Hardest']),
-        h('div', { className: 'cell cell-actions' }, ['']),
     ]);
     const body = h('div', { className: 'js-leaderboard-body' });
     store._leaderboard.body = body;
@@ -1156,12 +1156,10 @@ function createPlayerRow(index, p) {
                 h('span', { className: 'player-name' }, [p.name]),
                 h('span', { className: 'player-score' }, [`${score} pts · #${rank}`]),
             ]),
+            h('button', { className: 'btn btn-danger btn-xs player-delete-btn', attrs: { type: 'button' }, dataset: { removePlayer: '', playerName: p.name } }, ['✕']),
         ]),
         h('div', { className: 'cell cell-points' }, [score]),
         h('div', { className: 'cell cell-records' }, [hardest]),
-        h('div', { className: 'cell cell-actions' }, [
-            h('button', { className: 'btn btn-danger btn-xs', attrs: { type: 'button' }, dataset: { removePlayer: '', playerName: p.name } }, ['✕']),
-        ]),
     ]);
 }
 
@@ -1171,7 +1169,7 @@ function updatePlayerRow(row, index, p) {
     const score = p.score ? p.score.toFixed(2) : '—';
     const rank = p.rank || '—';
     const hardest = p.hardest?.level?.name || '—';
-    const [cellPos, cellPlayer, cellPoints, cellRec, cellActions] = row.children;
+    const [cellPos, cellPlayer, cellPoints, cellRec] = row.children;
     cellPos.className = `cell cell-position ${rc}`;
     cellPos.textContent = String(index + 1);
     const flagSpan = cellPlayer.querySelector('.player-flag');
@@ -1181,10 +1179,8 @@ function updatePlayerRow(row, index, p) {
     cellPlayer.querySelector('.player-score').textContent = `${score} pts · #${rank}`;
     cellPoints.textContent = score;
     cellRec.textContent = hardest;
-    if (cellActions) {
-        const btn = cellActions.querySelector('[data-remove-player]');
-        if (btn) btn.dataset.playerName = p.name;
-    }
+    const delBtn = cellPlayer.querySelector('[data-remove-player]');
+    if (delBtn) delBtn.dataset.playerName = p.name;
 }
 
 function renderPlayers() {

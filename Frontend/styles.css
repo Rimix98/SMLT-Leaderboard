@@ -763,9 +763,14 @@ a:hover {
     color: var(--color-text-muted);
 }
 
-.cell-actions {
-    text-align: center;
-    min-width: 40px;
+.player-delete-btn {
+    display: none;
+    margin-left: var(--spacing-sm);
+    flex-shrink: 0;
+}
+
+.host-active .player-delete-btn {
+    display: inline-flex;
 }
 
 .cell-points,
