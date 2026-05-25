@@ -79,27 +79,30 @@ async function fetchWithAbort(url, options = {}, key = null) {
         }
     };
 
-    let headers = buildHeaders();
-    let res = await fetch(url, { ...options, headers, signal: controller.signal });
+    try {
+        let headers = buildHeaders();
+        let res = await fetch(url, { ...options, headers, signal: controller.signal });
 
-    if (!res.ok && res.status === 404 && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase())) {
-        const cloned = res.clone();
-        const text = await cloned.text().catch(() => '');
-        if (text.includes('Роут не найден')) {
-            adminKnockKey = '';
-            const knocked = await doAdminKnock();
-            if (knocked) {
-                headers = buildHeaders();
-                const controller2 = new AbortController();
-                const timeoutId2 = setTimeout(() => controller2.abort(), timeoutMs);
-                res = await fetch(url, { ...options, headers, signal: controller2.signal });
-                clearTimeout(timeoutId2);
+        if (!res.ok && res.status === 404 && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase())) {
+            const cloned = res.clone();
+            const text = await cloned.text().catch(() => '');
+            if (text.includes('Роут не найден')) {
+                adminKnockKey = '';
+                const knocked = await doAdminKnock();
+                if (knocked) {
+                    headers = buildHeaders();
+                    const controller2 = new AbortController();
+                    const timeoutId2 = setTimeout(() => controller2.abort(), timeoutMs);
+                    res = await fetch(url, { ...options, headers, signal: controller2.signal });
+                    clearTimeout(timeoutId2);
+                }
             }
         }
-    }
 
-    cleanup();
-    return res;
+        return res;
+    } finally {
+        cleanup();
+    }
 }
 
 function isAbortError(err) {
@@ -300,7 +303,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadProjects();
     }
     if (document.getElementById('staffRolesContainer')) {
-        initStaffPage();
+        initStaffPage().catch(e => console.error('initStaffPage error:', e));
     }
 });
 
@@ -2486,6 +2489,7 @@ async function loadStaffRoles() {
     try {
         const res = await fetchWithAbort(`${BACKEND_URL}/staff`, {}, 'staff-list');
         if (!res.ok) {
+            console.warn('GET /api/staff вернул', res.status);
             store.staffRoles = [];
         } else {
             const data = await res.json();
