@@ -1807,13 +1807,21 @@ async function getProjects() {
 }
 
 async function saveProjects(data) {
-    const res = await fetchWithAbort(`${BACKEND_URL}/projects/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(data)
-    }, 'projects-save');
-    if (!res.ok) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+        if (!adminKnockKey) {
+            await doAdminKnock();
+        }
+        const res = await fetchWithAbort(`${BACKEND_URL}/projects/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(data)
+        }, 'projects-save');
+        if (res.ok) return;
+        if (res.status === 404 && attempt === 0) {
+            adminKnockKey = '';
+            continue;
+        }
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Ошибка сохранения (возможно, сессия истекла)');
     }
