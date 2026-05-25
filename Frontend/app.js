@@ -1181,7 +1181,7 @@ function createPlayerRow(index, p) {
                 h('span', { className: 'player-name' }, [p.name]),
                 h('span', { className: 'player-score' }, [`${score} pts · #${rank}`]),
             ]),
-            h('button', { className: 'btn btn-danger btn-xs player-delete-btn', attrs: { type: 'button' }, dataset: { removePlayer: '', playerName: p.name } }, ['✕']),
+            h('button', { className: 'btn btn-danger btn-xs player-delete-btn', attrs: { type: 'button' }, dataset: { action: 'remove-player', removePlayer: '', playerName: p.name } }, ['✕']),
         ]),
         h('div', { className: 'cell cell-points' }, [score]),
         h('div', { className: 'cell cell-records' }, [hardest]),
