@@ -309,6 +309,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function mountDelegatedClicks() {
     document.getElementById('leaderboardTable')?.addEventListener('click', (e) => {
+        if (e.target.closest('[data-remove-player]')) return;
         const row = e.target.closest('[data-profile-index]');
         if (row) showProfile(Number(row.dataset.profileIndex));
     });
