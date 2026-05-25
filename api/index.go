@@ -130,7 +130,83 @@ var (
 	captchaOnce  sync.Once
 
 	tokenVerCache sync.Map
+
+	adminKnockStore *adminKnockStoreT
+	adminKnockOnce  sync.Once
 )
+
+type adminKnockEntry struct {
+	key       string
+	expiresAt time.Time
+}
+
+type adminKnockStoreT struct {
+	mu     sync.Mutex
+	store  map[string]*adminKnockEntry
+	stopCh chan struct{}
+}
+
+func newAdminKnockStore() *adminKnockStoreT {
+	s := &adminKnockStoreT{
+		store:  make(map[string]*adminKnockEntry),
+		stopCh: make(chan struct{}),
+	}
+	go s.cleanup()
+	return s
+}
+
+func (s *adminKnockStoreT) stop() {
+	close(s.stopCh)
+}
+
+func (s *adminKnockStoreT) cleanup() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now()
+			s.mu.Lock()
+			for ip, e := range s.store {
+				if now.After(e.expiresAt) {
+					delete(s.store, ip)
+				}
+			}
+			s.mu.Unlock()
+		case <-s.stopCh:
+			return
+		}
+	}
+}
+
+func (s *adminKnockStoreT) set(ip, key string, ttl time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.store[ip] = &adminKnockEntry{
+		key:       key,
+		expiresAt: time.Now().Add(ttl),
+	}
+}
+
+func (s *adminKnockStoreT) get(ip string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.store[ip]
+	if !ok {
+		return "", false
+	}
+	if time.Now().After(e.expiresAt) {
+		delete(s.store, ip)
+		return "", false
+	}
+	return e.key, true
+}
+
+func (s *adminKnockStoreT) delete(ip string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.store, ip)
+}
 
 var (
 	reProjectID    = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,50}$`)
@@ -162,6 +238,13 @@ func init() {
 	initRateLimiter()
 	initRateLimitSalt()
 	initJWTSecrets()
+	initAdminKnock()
+}
+
+func initAdminKnock() {
+	adminKnockOnce.Do(func() {
+		adminKnockStore = newAdminKnockStore()
+	})
 }
 
 func initRateLimitSalt() {
@@ -910,6 +993,57 @@ func checkFirestoreLoginLimit(w http.ResponseWriter, r *http.Request, key string
 		return false
 	}
 	return true
+}
+
+// ──────────────────────────────────────────────
+// ADMIN KNOCK MIDDLEWARE
+// ──────────────────────────────────────────────
+
+const adminKnockTTL = 15 * time.Minute
+
+func generateAdminKey() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+func knockMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ip := getRealIP(r)
+		headerKey := r.Header.Get("X-Admin-Path-Key")
+		if headerKey == "" {
+			sendError(w, http.StatusNotFound, "Роут не найден")
+			return
+		}
+		storedKey, ok := adminKnockStore.get(ip)
+		if !ok || subtle.ConstantTimeCompare([]byte(headerKey), []byte(storedKey)) != 1 {
+			sendError(w, http.StatusNotFound, "Роут не найден")
+			return
+		}
+		next.ServeHTTP(w, r)
+	}
+}
+
+func handleAdminKnock(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	key, err := generateAdminKey()
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка генерации ключа")
+		return
+	}
+	ip := getRealIP(r)
+	adminKnockStore.set(ip, key, adminKnockTTL)
+	log.Printf("[knock] admin key issued for IP %s (TTL=%v)", ip, adminKnockTTL)
+	writeJSON(w, map[string]interface{}{
+		"key":        key,
+		"ttl":        int(adminKnockTTL.Seconds()),
+		"expires_in": adminKnockTTL.String(),
+	})
 }
 
 // ──────────────────────────────────────────────
@@ -2223,7 +2357,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token, X-Requested-With")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token, X-Requested-With, X-Admin-Path-Key")
 			w.Header().Set("Access-Control-Max-Age", "86400")
 		}
 	}
@@ -2235,24 +2369,25 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	path := requestPath(r)
 	mux := map[string]http.HandlerFunc{
-		"/api/captcha":       rateLimitMiddleware(30)(handleCaptcha),
-		"/api/login":         rateLimitLoginMiddleware(handleLogin),
-		"/api/logout":        rateLimitLoginMiddleware(handleLogout),
-		"/api/verify":        rateLimitMiddleware(60)(handleVerify),
-		"/api/csrf-token":    rateLimitMiddleware(30)(handleGetCSRFToken),
-		"/api/leaderboard":   rateLimitMiddleware(30)(handleLeaderboard),
-		"/api/staff":         rateLimitMiddleware(60)(handleGetStaff),
-		"/api/staff/add":     rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleStaffAdd))),
-		"/api/staff/role":    rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleStaffRole))),
-		"/api/staff/remove":  rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleStaffRemove))),
-		"/api/staff/reorder": rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleReorderStaffRoles))),
-		"/api/staff/tiers":    rateLimitMiddleware(60)(handleGetStaffTiers),
-		"/api/staff/tier":     rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleSetStaffTier))),
-		"/api/projects":       rateLimitMiddleware(60)(handleGetProjects),
-		"/api/projects/save": rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleSaveProjects))),
-		"/api/players":            rateLimitMiddleware(60)(handleGetPlayers),
-		"/api/players/save":       rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleSavePlayers))),
-		"/api/players/delete":     rateLimitMiddleware(30)(authMiddleware(csrfMiddleware(handleDeletePlayer))),
+		"/api/captcha":            rateLimitMiddleware(30)(handleCaptcha),
+		"/api/login":              rateLimitLoginMiddleware(handleLogin),
+		"/api/logout":             rateLimitLoginMiddleware(handleLogout),
+		"/api/verify":             rateLimitMiddleware(60)(handleVerify),
+		"/api/csrf-token":         rateLimitMiddleware(30)(handleGetCSRFToken),
+		"/api/leaderboard":        rateLimitMiddleware(30)(handleLeaderboard),
+		"/api/staff":              rateLimitMiddleware(60)(handleGetStaff),
+		"/api/knock-knock-admin":  rateLimitMiddleware(10)(authMiddleware(handleAdminKnock)),
+		"/api/staff/add":          rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd)))),
+		"/api/staff/role":         rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRole)))),
+		"/api/staff/remove":       rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRemove)))),
+		"/api/staff/reorder":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleReorderStaffRoles)))),
+		"/api/staff/tiers":         rateLimitMiddleware(60)(handleGetStaffTiers),
+		"/api/staff/tier":          rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSetStaffTier)))),
+		"/api/projects":            rateLimitMiddleware(60)(handleGetProjects),
+		"/api/projects/save":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveProjects)))),
+		"/api/players":             rateLimitMiddleware(60)(handleGetPlayers),
+		"/api/players/save":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSavePlayers)))),
+		"/api/players/delete":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),
 	}
 
 	if h, ok := mux[path]; ok {

@@ -1788,8 +1788,20 @@ async function saveProjects(data) {
     }
 }
 
+function sortProjectsByOrder() {
+    const order = loadProjectOrder();
+    if (order.length === 0) return;
+    const map = {};
+    store.projects.forEach((p, i) => { map[p.id] = i; });
+    const validOrder = order.filter(id => id in map);
+    const unsorted = store.projects.filter(p => !validOrder.includes(p.id));
+    const sorted = validOrder.map(id => store.projects[map[id]]);
+    store.projects = [...sorted, ...unsorted];
+}
+
 async function loadProjects() {
     store.projects = await getProjects();
+    sortProjectsByOrder();
     renderProjects();
 }
 
@@ -1989,6 +2001,7 @@ function showAddProjectModal() {
 function closeProjectModal() {
     const modal = document.getElementById('projectModal');
     if (modal) modal.classList.remove('active');
+    resetParticipantBuilder();
 }
 
 function resetParticipantBuilder() {
@@ -2193,12 +2206,37 @@ function editProject(idx) {
     setTimeout(initParticipantBuilder, 50);
 }
 
+function generateProjectId() {
+    return 'proj_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+function loadProjectOrder() {
+    try {
+        const raw = localStorage.getItem('smlt-project-order');
+        return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+}
+
+function saveProjectOrder(order) {
+    localStorage.setItem('smlt-project-order', JSON.stringify(order));
+}
+
+function syncProjectOrder() {
+    const order = store.projects.map(p => p.id).filter(Boolean);
+    saveProjectOrder(order);
+}
+
 async function saveProject() {
     const idx = parseInt(document.getElementById('projectIndex').value);
+    let projectId = document.getElementById('projectId').value.trim();
+    if (idx === -1 && !projectId) {
+        projectId = generateProjectId();
+        document.getElementById('projectId').value = projectId;
+    }
     const project = {
         name: document.getElementById('projectName').value.trim(),
         videoId: extractVideoId(document.getElementById('projectVideo').value.trim()),
-        id: document.getElementById('projectId').value.trim(),
+        id: projectId,
         comment: document.getElementById('projectComment').value.trim(),
         status: document.getElementById('projectStatus').value,
         verifier: document.getElementById('projectVerifier').value.trim(),
@@ -2213,6 +2251,7 @@ async function saveProject() {
     }
 
     try {
+        syncProjectOrder();
         await saveProjects(store.projects);
         await loadProjects();
         showToast(idx === -1 ? 'Проект добавлен!' : 'Проект обновлён!', 'success');
@@ -2237,6 +2276,7 @@ async function deleteProject(idx) {
     if (!confirm('Удалить этот проект?')) return;
 
     const removed = store.projects.splice(idx, 1);
+    syncProjectOrder();
     try {
         await saveProjects(store.projects);
         await loadProjects();
@@ -2244,6 +2284,7 @@ async function deleteProject(idx) {
     } catch (e) {
         if (isAbortError(e)) return;
         store.projects.splice(idx, 0, removed[0]);
+        syncProjectOrder();
         showToast(e.message, 'error');
     }
 }
@@ -2565,9 +2606,11 @@ function moveProject(index, direction) {
     const target = direction === 'down' ? index + 1 : index - 1;
     if (target < 0 || target >= store.projects.length) return;
     [store.projects[index], store.projects[target]] = [store.projects[target], store.projects[index]];
+    syncProjectOrder();
     renderProjects();
     saveProjects(store.projects).catch(e => {
         [store.projects[index], store.projects[target]] = [store.projects[target], store.projects[index]];
+        syncProjectOrder();
         renderProjects();
         showToast(e.message, 'error');
     });
