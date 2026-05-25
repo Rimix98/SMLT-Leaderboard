@@ -906,21 +906,18 @@ async function loadGeoStats() {
 async function savePlayerNames(names) {
     const formattedPlayers = names.map(n => ({ name: n }));
 
-    for (let attempt = 0; attempt < 2; attempt++) {
-        if (!adminKnockKey) {
-            await doAdminKnock();
-        }
-        const res = await fetchWithAbort(`${BACKEND_URL}/players/save`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify(formattedPlayers)
-        }, 'players-save');
-        if (res.ok) return;
-        if (res.status === 404 && attempt === 0) {
-            adminKnockKey = '';
-            continue;
-        }
+    if (!adminKnockKey) {
+        await doAdminKnock();
+    }
+
+    const res = await fetchWithAbort(`${BACKEND_URL}/players/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(formattedPlayers)
+    }, 'players-save');
+
+    if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Ошибка сохранения игроков (возможно, сессия истекла)');
     }
@@ -1807,39 +1804,31 @@ async function removePlayer(name) {
 
     if (!confirm(`Удалить игрока "${name}"?`)) return;
 
-    for (let attempt = 0; attempt < 2; attempt++) {
-        if (!adminKnockKey) {
-            await doAdminKnock();
-        }
-        try {
-            const res = await fetchWithAbort(`${BACKEND_URL}/players/delete`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ name })
-            }, 'players-delete');
-            if (res.ok) {
-                await loadAllPlayers();
-                showToast(`Игрок "${name}" удалён`, 'success');
-                return;
-            }
-            if (res.status === 404 && attempt === 0) {
-                adminKnockKey = '';
-                continue;
-            }
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.error || 'Ошибка удаления игрока');
-        } catch (e) {
-            if (isAbortError(e)) return;
-            if (attempt === 0 && e.message === 'Роут не найден') {
-                adminKnockKey = '';
-                continue;
-            }
-            showToast(e.message, 'error');
-            if (e.message.includes('сессия') || e.message.includes('401') || e.message.includes('доступ')) {
-                logoutHost();
-            }
+    if (!adminKnockKey) {
+        await doAdminKnock();
+    }
+
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/players/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ name })
+        }, 'players-delete');
+
+        if (res.ok) {
+            await loadAllPlayers();
+            showToast(`Игрок "${name}" удалён`, 'success');
             return;
+        }
+
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Ошибка удаления игрока');
+    } catch (e) {
+        if (isAbortError(e)) return;
+        showToast(e.message, 'error');
+        if (e.message.includes('сессия') || e.message.includes('401') || e.message.includes('доступ')) {
+            logoutHost();
         }
     }
 }
@@ -1862,21 +1851,18 @@ async function getProjects() {
 }
 
 async function saveProjects(data) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-        if (!adminKnockKey) {
-            await doAdminKnock();
-        }
-        const res = await fetchWithAbort(`${BACKEND_URL}/projects/save`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify(data)
-        }, 'projects-save');
-        if (res.ok) return;
-        if (res.status === 404 && attempt === 0) {
-            adminKnockKey = '';
-            continue;
-        }
+    if (!adminKnockKey) {
+        await doAdminKnock();
+    }
+
+    const res = await fetchWithAbort(`${BACKEND_URL}/projects/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(data)
+    }, 'projects-save');
+
+    if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Ошибка сохранения (возможно, сессия истекла)');
     }

@@ -131,9 +131,16 @@ var (
 
 	tokenVerCache sync.Map
 
-	adminKnockStore *adminKnockStoreT
+	adminKnockStore knockStore
 	adminKnockOnce  sync.Once
 )
+
+type knockStore interface {
+	get(ip string) (string, bool)
+	set(ip, key string, ttl time.Duration)
+	delete(ip string)
+	stop()
+}
 
 type adminKnockEntry struct {
 	key       string
@@ -208,6 +215,57 @@ func (s *adminKnockStoreT) delete(ip string) {
 	delete(s.store, ip)
 }
 
+type firestoreKnockStore struct{}
+
+func (s *firestoreKnockStore) get(ip string) (string, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	docRef := fsClient.Collection("admin_knocks").Doc(ipToDocID(ip))
+	doc, err := docRef.Get(ctx)
+	if err != nil {
+		return "", false
+	}
+	var entry struct {
+		Key       string    `firestore:"key"`
+		ExpiresAt time.Time `firestore:"expiresAt"`
+	}
+	if err := doc.DataTo(&entry); err != nil {
+		return "", false
+	}
+	if time.Now().After(entry.ExpiresAt) {
+		docRef.Delete(context.Background())
+		return "", false
+	}
+	return entry.Key, true
+}
+
+func (s *firestoreKnockStore) set(ip, key string, ttl time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := fsClient.Collection("admin_knocks").Doc(ipToDocID(ip)).Set(ctx, map[string]interface{}{
+		"key":       key,
+		"expiresAt": time.Now().Add(ttl),
+	})
+	if err != nil {
+		log.Printf("[knock] firestore set: %v", err)
+	}
+}
+
+func (s *firestoreKnockStore) delete(ip string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := fsClient.Collection("admin_knocks").Doc(ipToDocID(ip)).Delete(ctx)
+	if err != nil {
+		log.Printf("[knock] firestore delete: %v", err)
+	}
+}
+
+func (s *firestoreKnockStore) stop() {}
+
+func ipToDocID(ip string) string {
+	return strings.NewReplacer(".", "-", ":", "-").Replace(ip)
+}
+
 var (
 	reProjectID    = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,50}$`)
 	reAlphanumeric = regexp.MustCompile(`^[\p{L}0-9 _.\-]+$`)
@@ -243,7 +301,13 @@ func init() {
 
 func initAdminKnock() {
 	adminKnockOnce.Do(func() {
-		adminKnockStore = newAdminKnockStore()
+		if fsClient != nil {
+			log.Println("[knock] using firestore store")
+			adminKnockStore = &firestoreKnockStore{}
+		} else {
+			log.Println("[knock] using memory store")
+			adminKnockStore = newAdminKnockStore()
+		}
 	})
 }
 
