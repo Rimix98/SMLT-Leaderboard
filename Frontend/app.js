@@ -820,7 +820,7 @@ const DEFAULT_PLAYER_NAMES = [
     "npoctou_gamer", "NopanicGD", "CandyCloud22", "Vakum", "Daggit",
     "Loran", "tapxyhh", "SerGio", "Fanim59", "prostoymofficial",
     "toxik blaze", "NatrixGMD", "toxatort", "SpaceRS", "yeahme",
-    "Спини", "Linqwq", "RossceorpGD", "69liqu69", "ColossalOrange"
+    "Спини", "Linqwq", "RossceorpGD", "69liqu69"
 ];
 
 async function getPlayerNames() {
