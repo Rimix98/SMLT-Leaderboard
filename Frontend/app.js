@@ -50,6 +50,8 @@ const BACKEND_URL = '/api';
 
 const pendingRequests = new Map();
 let captchaId = '';
+let adminKnockKey = '';
+let adminKnockRefreshTimer = null;
 
 function fetchWithAbort(url, options = {}, key = null) {
     if (key && pendingRequests.has(key)) {
@@ -63,8 +65,9 @@ function fetchWithAbort(url, options = {}, key = null) {
         'X-Requested-With': 'XMLHttpRequest'
     };
 
-    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase()) && csrfToken) {
-        headers['X-CSRF-Token'] = csrfToken;
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase())) {
+        if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+        if (adminKnockKey) headers['X-Admin-Path-Key'] = adminKnockKey;
     }
 
     const timeoutMs = options.timeout || 30000;
@@ -661,6 +664,27 @@ function closeHostModal() {
     }
 }
 
+async function doAdminKnock() {
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/knock-knock-admin`, {
+            method: 'POST',
+            credentials: 'include'
+        }, 'admin-knock');
+        if (!res.ok) return false;
+        const data = await parseJsonResponse(res);
+        if (data && data.key) {
+            adminKnockKey = data.key;
+            if (adminKnockRefreshTimer) clearTimeout(adminKnockRefreshTimer);
+            const ttl = (data.ttl || 900) * 1000;
+            adminKnockRefreshTimer = setTimeout(() => doAdminKnock(), ttl - 60000);
+            return true;
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
+
 async function verifyHost(inputPassword) {
     const captchaInput = document.getElementById('captchaInput');
 
@@ -680,6 +704,8 @@ async function verifyHost(inputPassword) {
 
         if (res.ok && data.success === true) {
             store.isHost = true;
+
+            await doAdminKnock();
 
             showToast('Доступ предоставлен! Вы вошли как хост.', 'success');
 
@@ -708,6 +734,11 @@ async function verifyHost(inputPassword) {
 }
 async function logoutHost() {
     store.isHost = false;
+    adminKnockKey = '';
+    if (adminKnockRefreshTimer) {
+        clearTimeout(adminKnockRefreshTimer);
+        adminKnockRefreshTimer = null;
+    }
 
     try {
         await fetchWithAbort(`${BACKEND_URL}/logout`, {
