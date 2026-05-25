@@ -456,6 +456,12 @@ a:hover {
     background-color: #16a34a;
 }
 
+.btn-xs {
+    padding: 2px 6px;
+    font-size: 11px;
+    line-height: 1;
+}
+
 .btn-sm {
     padding: var(--spacing-xs) var(--spacing-sm);
     font-size: var(--font-size-xs);
@@ -755,6 +761,11 @@ a:hover {
 .player-score {
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
+}
+
+.cell-actions {
+    text-align: center;
+    min-width: 40px;
 }
 
 .cell-points,
