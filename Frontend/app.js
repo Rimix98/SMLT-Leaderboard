@@ -820,7 +820,7 @@ const DEFAULT_PLAYER_NAMES = [
     "npoctou_gamer", "NopanicGD", "CandyCloud22", "Vakum", "Daggit",
     "Loran", "tapxyhh", "SerGio", "Fanim59", "prostoymofficial",
     "toxik blaze", "NatrixGMD", "toxatort", "SpaceRS", "yeahme",
-    "Спини", "Linqwq", "RossceorpGD", "69liqu69"
+    "Спини", "Linqwq", "RossceorpGD", "69liqu69", "ColossalOrange"
 ];
 
 async function getPlayerNames() {
@@ -1851,18 +1851,21 @@ async function getProjects() {
 }
 
 async function saveProjects(data) {
-    if (!adminKnockKey) {
-        await doAdminKnock();
-    }
-
-    const res = await fetchWithAbort(`${BACKEND_URL}/projects/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(data)
-    }, 'projects-save');
-
-    if (!res.ok) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+        if (!adminKnockKey) {
+            await doAdminKnock();
+        }
+        const res = await fetchWithAbort(`${BACKEND_URL}/projects/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(data)
+        }, 'projects-save');
+        if (res.ok) return;
+        if (res.status === 404 && attempt === 0) {
+            adminKnockKey = '';
+            continue;
+        }
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Ошибка сохранения (возможно, сессия истекла)');
     }
