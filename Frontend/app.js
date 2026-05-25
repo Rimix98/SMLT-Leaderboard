@@ -53,32 +53,53 @@ let captchaId = '';
 let adminKnockKey = '';
 let adminKnockRefreshTimer = null;
 
-function fetchWithAbort(url, options = {}, key = null) {
+async function fetchWithAbort(url, options = {}, key = null) {
     if (key && pendingRequests.has(key)) {
         pendingRequests.get(key).abort();
     }
     const controller = new AbortController();
     if (key) pendingRequests.set(key, controller);
 
-    const headers = {
-        ...options.headers,
-        'X-Requested-With': 'XMLHttpRequest'
+    const buildHeaders = () => {
+        const h = { ...options.headers, 'X-Requested-With': 'XMLHttpRequest' };
+        if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase())) {
+            if (csrfToken) h['X-CSRF-Token'] = csrfToken;
+            if (adminKnockKey) h['X-Admin-Path-Key'] = adminKnockKey;
+        }
+        return h;
     };
-
-    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase())) {
-        if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
-        if (adminKnockKey) headers['X-Admin-Path-Key'] = adminKnockKey;
-    }
 
     const timeoutMs = options.timeout || 30000;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    return fetch(url, { ...options, headers, signal: controller.signal }).finally(() => {
+    const cleanup = () => {
         clearTimeout(timeoutId);
         if (key && pendingRequests.get(key) === controller) {
             pendingRequests.delete(key);
         }
-    });
+    };
+
+    let headers = buildHeaders();
+    let res = await fetch(url, { ...options, headers, signal: controller.signal });
+
+    if (!res.ok && res.status === 404 && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase())) {
+        const cloned = res.clone();
+        const text = await cloned.text().catch(() => '');
+        if (text.includes('Роут не найден')) {
+            adminKnockKey = '';
+            const knocked = await doAdminKnock();
+            if (knocked) {
+                headers = buildHeaders();
+                const controller2 = new AbortController();
+                const timeoutId2 = setTimeout(() => controller2.abort(), timeoutMs);
+                res = await fetch(url, { ...options, headers, signal: controller2.signal });
+                clearTimeout(timeoutId2);
+            }
+        }
+    }
+
+    cleanup();
+    return res;
 }
 
 function isAbortError(err) {
