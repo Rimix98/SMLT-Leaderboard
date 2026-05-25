@@ -655,6 +655,9 @@ async function initHostStatus() {
         }, 'auth-verify');
         const data = await parseJsonResponse(res);
         store.isHost = res.ok && data.success === true;
+        if (store.isHost) {
+            await doAdminKnock();
+        }
     } catch (err) {
         if (isAbortError(err)) return;
         store.isHost = false;
@@ -903,13 +906,21 @@ async function loadGeoStats() {
 async function savePlayerNames(names) {
     const formattedPlayers = names.map(n => ({ name: n }));
 
-    const res = await fetchWithAbort(`${BACKEND_URL}/players/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(formattedPlayers)
-    }, 'players-save');
-    if (!res.ok) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+        if (!adminKnockKey) {
+            await doAdminKnock();
+        }
+        const res = await fetchWithAbort(`${BACKEND_URL}/players/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(formattedPlayers)
+        }, 'players-save');
+        if (res.ok) return;
+        if (res.status === 404 && attempt === 0) {
+            adminKnockKey = '';
+            continue;
+        }
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Ошибка сохранения игроков (возможно, сессия истекла)');
     }
@@ -1796,24 +1807,39 @@ async function removePlayer(name) {
 
     if (!confirm(`Удалить игрока "${name}"?`)) return;
 
-    try {
-        const res = await fetchWithAbort(`${BACKEND_URL}/players/delete`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ name })
-        }, 'players-delete');
-        if (!res.ok) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+        if (!adminKnockKey) {
+            await doAdminKnock();
+        }
+        try {
+            const res = await fetchWithAbort(`${BACKEND_URL}/players/delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ name })
+            }, 'players-delete');
+            if (res.ok) {
+                await loadAllPlayers();
+                showToast(`Игрок "${name}" удалён`, 'success');
+                return;
+            }
+            if (res.status === 404 && attempt === 0) {
+                adminKnockKey = '';
+                continue;
+            }
             const err = await res.json().catch(() => ({}));
             throw new Error(err.error || 'Ошибка удаления игрока');
-        }
-        await loadAllPlayers();
-        showToast(`Игрок "${name}" удалён`, 'success');
-    } catch (e) {
-        if (isAbortError(e)) return;
-        showToast(e.message, 'error');
-        if (e.message.includes('сессия') || e.message.includes('401') || e.message.includes('доступ')) {
-            logoutHost();
+        } catch (e) {
+            if (isAbortError(e)) return;
+            if (attempt === 0 && e.message === 'Роут не найден') {
+                adminKnockKey = '';
+                continue;
+            }
+            showToast(e.message, 'error');
+            if (e.message.includes('сессия') || e.message.includes('401') || e.message.includes('доступ')) {
+                logoutHost();
+            }
+            return;
         }
     }
 }
