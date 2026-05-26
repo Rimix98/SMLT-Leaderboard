@@ -1393,12 +1393,22 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ids := make(map[string]bool)
+	seen := make(map[string]bool)
 	for _, p := range projectList {
 		if p.ID == "" {
 			continue
 		}
-		ids[p.ID] = true
+		if err := validateProjectID(p.ID); err != nil {
+			log.Printf("[projects] invalid id %q: %v", p.ID, err)
+			sendError(w, http.StatusBadRequest, "Некорректный ID проекта: "+p.ID)
+			return
+		}
+		if seen[p.ID] {
+			log.Printf("[projects] duplicate id %q", p.ID)
+			sendError(w, http.StatusBadRequest, "ID проекта уже существует: "+p.ID)
+			return
+		}
+		seen[p.ID] = true
 		ref := fsClient.Collection("projects").Doc(p.ID)
 		if _, err := ref.Set(ctx, p); err != nil {
 			log.Printf("[projects] set %q: %v", p.ID, err)
@@ -1417,7 +1427,7 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[projects] delete iter: %v", err)
 			break
 		}
-		if !ids[doc.Ref.ID] {
+		if !seen[doc.Ref.ID] {
 			if _, err := doc.Ref.Delete(ctx); err != nil {
 				log.Printf("[projects] delete %q: %v", doc.Ref.ID, err)
 			}
