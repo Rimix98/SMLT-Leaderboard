@@ -2333,6 +2333,13 @@ async function saveProject() {
         participants: Array.isArray(store.pendingProjectParticipants) ? store.pendingProjectParticipants.filter(Boolean) : []
     };
 
+    // Check for duplicate ID
+    const isDuplicate = store.projects.some((p, i) => i !== idx && p.id === projectId);
+    if (isDuplicate) {
+        showToast('Проект с таким ID уже существует!', 'error');
+        return;
+    }
+
     const oldProject = idx === -1 ? null : { ...store.projects[idx] };
     if (idx === -1) {
         store.projects.push(project);
