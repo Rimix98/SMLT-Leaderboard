@@ -14,7 +14,11 @@ export default defineConfig({
         leaderboard: resolve(__dirname, 'leaderboard.html'),
         projects: resolve(__dirname, 'projects.html'),
         staff: resolve(__dirname, 'staff.html'),
-      }
-    }
-  }
+      },
+    },
+    cssCodeSplit: false,
+  },
+  css: {
+    preprocessorOptions: {},
+  },
 })

@@ -1,8 +1,7 @@
 <script setup>
 import { ref, onMounted, provide } from 'vue'
 import { store, toggleTheme } from '../store'
-import { initHostStatus, logoutHost } from '../api/auth'
-import { initCaptcha, verifyHost } from '../api/auth'
+import { initHostStatus, initCaptcha, verifyHost, logoutHost } from '../api/auth'
 import { refreshCsrfToken } from '../api/utils'
 
 defineProps({ page: { type: String, default: '' } })
@@ -135,3 +134,7 @@ provide('closeInfoModal', closeInfoModal)
     </div>
   </Teleport>
 </template>
+
+<style>
+@import '../../styles.css';
+</style>
