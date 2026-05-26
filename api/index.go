@@ -2454,6 +2454,21 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := requestPath(r)
+
+	if path == "/api/debug" {
+		keys := []string{}
+		for _, e := range os.Environ() {
+			if strings.HasPrefix(e, "FIRE") || strings.HasPrefix(e, "GOOG") || e == "VERCEL=1" || e == "VERCEL_ENV=production" {
+				keys = append(keys, strings.SplitN(e, "=", 2)[0]+"=SET")
+			}
+		}
+		writeJSON(w, map[string]interface{}{
+			"env_keys": keys,
+			"creds_len": len(os.Getenv("FIREBASE_CREDENTIALS")),
+		})
+		return
+	}
+
 	mux := map[string]http.HandlerFunc{
 		"/api/captcha":            rateLimitMiddleware(30)(handleCaptcha),
 		"/api/login":              rateLimitLoginMiddleware(handleLogin),
