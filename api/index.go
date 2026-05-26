@@ -352,9 +352,9 @@ func initJWTSecrets() {
 func initFirestore() {
 	fsOnce.Do(func() {
 		ctx := context.Background()
-		creds := os.Getenv("FIREBASE_CREDENTIALS")
+		creds := os.Getenv("FIRESTORE_CREDENTIALS")
 		if creds == "" {
-			fsErr = errors.New("FIREBASE_CREDENTIALS not set")
+			fsErr = errors.New("FIRESTORE_CREDENTIALS not set")
 			log.Printf("[firestore] %v", fsErr)
 			return
 		}
