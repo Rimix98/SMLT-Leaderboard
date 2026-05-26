@@ -834,11 +834,7 @@ func requestPath(r *http.Request) string {
 
 func requireFirestore(w http.ResponseWriter) bool {
 	if fsErr != nil || fsClient == nil {
-		msg := "База данных недоступна"
-		if fsErr != nil {
-			msg += ": " + fsErr.Error()
-		}
-		sendError(w, http.StatusServiceUnavailable, msg)
+		sendError(w, http.StatusServiceUnavailable, "База данных недоступна")
 		return false
 	}
 	return true
