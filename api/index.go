@@ -2475,21 +2475,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/players":             rateLimitMiddleware(60)(handleGetPlayers),
 		"/api/players/save":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSavePlayers)))),
 		"/api/players/delete":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),
-		"/api/debug": func(w http.ResponseWriter, r *http.Request) {
-			keys := []string{}
-			for _, e := range os.Environ() {
-				parts := strings.SplitN(e, "=", 2)
-				keys = append(keys, parts[0])
-			}
-			writeJSON(w, map[string]interface{}{
-				"path":       path,
-				"url_path":   r.URL.Path,
-				"req_uri":    r.RequestURI,
-				"env_keys":   keys,
-				"creds_set":  os.Getenv("FIREBASE_CREDENTIALS") != "",
-				"creds_len":  len(os.Getenv("FIREBASE_CREDENTIALS")),
-			})
-		},
+	},
 	}
 
 	h, ok := mux[path]
