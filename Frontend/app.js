@@ -1866,6 +1866,13 @@ async function saveProjects(data) {
             adminKnockKey = '';
             continue;
         }
+        // NEW LOGIC: Handle 403 Forbidden specifically for CSRF token issues
+        if (res.status === 403 && attempt === 0) {
+            console.warn('Received 403 Forbidden, attempting to refresh CSRF token and retry.');
+            csrfToken = ''; // Clear existing token to force a refresh
+            await refreshCsrfToken();
+            continue; // Retry the request with the refreshed CSRF token
+        }
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Ошибка сохранения (возможно, сессия истекла)');
     }
