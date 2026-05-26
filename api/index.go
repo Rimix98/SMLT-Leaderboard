@@ -2455,20 +2455,6 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	path := requestPath(r)
 
-	if path == "/api/debug" {
-		keys := []string{}
-		for _, e := range os.Environ() {
-			if strings.HasPrefix(e, "FIRE") || strings.HasPrefix(e, "GOOG") || e == "VERCEL=1" || e == "VERCEL_ENV=production" {
-				keys = append(keys, strings.SplitN(e, "=", 2)[0]+"=SET")
-			}
-		}
-		writeJSON(w, map[string]interface{}{
-			"env_keys": keys,
-			"creds_len": len(os.Getenv("FIREBASE_CREDENTIALS")),
-		})
-		return
-	}
-
 	mux := map[string]http.HandlerFunc{
 		"/api/captcha":            rateLimitMiddleware(30)(handleCaptcha),
 		"/api/login":              rateLimitLoginMiddleware(handleLogin),
@@ -2489,14 +2475,29 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/players":             rateLimitMiddleware(60)(handleGetPlayers),
 		"/api/players/save":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSavePlayers)))),
 		"/api/players/delete":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),
+		"/api/debug": func(w http.ResponseWriter, r *http.Request) {
+			keys := []string{}
+			for _, e := range os.Environ() {
+				parts := strings.SplitN(e, "=", 2)
+				keys = append(keys, parts[0])
+			}
+			writeJSON(w, map[string]interface{}{
+				"path":       path,
+				"url_path":   r.URL.Path,
+				"req_uri":    r.RequestURI,
+				"env_keys":   keys,
+				"creds_set":  os.Getenv("FIREBASE_CREDENTIALS") != "",
+				"creds_len":  len(os.Getenv("FIREBASE_CREDENTIALS")),
+			})
+		},
 	}
 
-	if h, ok := mux[path]; ok {
-		gzipMiddleware(h)(w, r)
-		return
+	h, ok := mux[path]
+	if !ok {
+		path = strings.TrimSuffix(path, "/")
+		h, ok = mux[path]
 	}
-	path = strings.TrimSuffix(path, "/")
-	if h, ok := mux[path]; ok {
+	if ok {
 		gzipMiddleware(h)(w, r)
 		return
 	}
