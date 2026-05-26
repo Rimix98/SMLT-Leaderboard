@@ -1882,8 +1882,12 @@ function sortProjectsByOrder() {
     const order = loadProjectOrder();
     if (order.length === 0) return;
     const map = {};
-    store.projects.forEach((p, i) => { map[p.id] = i; });
-    const validOrder = order.filter(id => id in map);
+    const multi = new Set();
+    store.projects.forEach((p, i) => {
+        if (p.id in map) multi.add(p.id);
+        map[p.id] = i;
+    });
+    const validOrder = order.filter(id => id in map && !multi.has(id));
     const unsorted = store.projects.filter(p => !validOrder.includes(p.id));
     const sorted = validOrder.map(id => store.projects[map[id]]);
     store.projects = [...sorted, ...unsorted];
@@ -2333,11 +2337,13 @@ async function saveProject() {
         participants: Array.isArray(store.pendingProjectParticipants) ? store.pendingProjectParticipants.filter(Boolean) : []
     };
 
-    // Check for duplicate ID
-    const isDuplicate = store.projects.some((p, i) => i !== idx && p.id === projectId);
-    if (isDuplicate) {
-        showToast('Проект с таким ID уже существует!', 'error');
-        return;
+    // Check for duplicate ID (allow multiple with "-")
+    if (projectId !== '-') {
+        const isDuplicate = store.projects.some((p, i) => i !== idx && p.id === projectId);
+        if (isDuplicate) {
+            showToast('Проект с таким ID уже существует!', 'error');
+            return;
+        }
     }
 
     const oldProject = idx === -1 ? null : { ...store.projects[idx] };

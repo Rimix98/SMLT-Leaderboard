@@ -1398,20 +1398,32 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		if p.ID == "" {
 			continue
 		}
-		if err := validateProjectID(p.ID); err != nil {
-			log.Printf("[projects] invalid id %q: %v", p.ID, err)
-			sendError(w, http.StatusBadRequest, "Некорректный ID проекта: "+p.ID)
-			return
+		var docID string
+		if p.ID == "-" {
+			b := make([]byte, 8)
+			if _, err := rand.Read(b); err != nil {
+				log.Printf("[projects] rand error: %v", err)
+				sendError(w, http.StatusInternalServerError, "Ошибка генерации ID")
+				return
+			}
+			docID = fmt.Sprintf("-%x", b)
+		} else {
+			if err := validateProjectID(p.ID); err != nil {
+				log.Printf("[projects] invalid id %q: %v", p.ID, err)
+				sendError(w, http.StatusBadRequest, "Некорректный ID проекта: "+p.ID)
+				return
+			}
+			if seen[p.ID] {
+				log.Printf("[projects] duplicate id %q", p.ID)
+				sendError(w, http.StatusBadRequest, "ID проекта уже существует: "+p.ID)
+				return
+			}
+			docID = p.ID
 		}
-		if seen[p.ID] {
-			log.Printf("[projects] duplicate id %q", p.ID)
-			sendError(w, http.StatusBadRequest, "ID проекта уже существует: "+p.ID)
-			return
-		}
-		seen[p.ID] = true
-		ref := fsClient.Collection("projects").Doc(p.ID)
+		seen[docID] = true
+		ref := fsClient.Collection("projects").Doc(docID)
 		if _, err := ref.Set(ctx, p); err != nil {
-			log.Printf("[projects] set %q: %v", p.ID, err)
+			log.Printf("[projects] set %q: %v", docID, err)
 			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 			return
 		}
