@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="ru">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -12,166 +11,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="stylesheet" href="styles.css">
-    <script>
-  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
-</script>
-<script defer src="/_vercel/insights/script.js"></script>
+    <script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
+    <script defer src="/_vercel/insights/script.js"></script>
 </head>
-
 <body class="home-page">
-    <div id="app">
-
-        <!-- Кнопка смены темы -->
-        <button class="theme-toggle" id="themeToggle" title="Сменить тему">
-            <span class="theme-icon">🌙</span>
-        </button>
-
-        <!-- Кнопка хоста -->
-        <button class="host-btn host-btn-left" id="hostBtn" title="Войти как хост">
-            <span>Хост</span>
-        </button>
-
-        <header class="app-header">
-            <div class="header-content">
-                <div class="header-brand">
-                    <div class="header-title">
-                        <h1>SMLT</h1>
-                        <span class="header-subtitle">Discord Community</span>
-                    </div>
-                </div>
-                <nav class="header-nav">
-                    <a href="index.html" class="nav-link active">Главная</a>
-                    <a href="leaderboard.html" class="nav-link">Лидерборд</a>
-                    <a href="projects.html" class="nav-link">Проекты</a>
-                    <a href="staff.html" class="nav-link">Стафф</a>
-                </nav>
-            </div>
-        </header>
-
-        <main class="app-main home-page">
-            <div class="container">
-                <!-- Главный баннер -->
-                <section class="hero-section">
-                    <div class="hero-content">
-                        <h2 class="hero-title">Что такое SMLT?</h2>
-                        <p class="hero-description">
-                            SMLT - это дискорд сервер, где происходят разные ивенты, например коллабы, турниры,
-                            прохождения уровней по частям, и даже игры в майнкрафте.
-                        </p>
-                        <p class="hero-description">
-                            Все участники сервера - участники SMLT, независимо от его скилла.
-                            Идея нашего сервера - <strong style="color: #4a9eff;">удовольствие</strong>.
-                        </p>
-                    </div>
-                </section>
-
-                <!-- Кнопки навигации -->
-                <section class="nav-buttons">
-                    <a href="leaderboard.html" class="nav-card">
-                        <span class="nav-card-icon">🏆</span>
-                        <span class="nav-card-title">Лидерборд</span>
-                        <span class="nav-card-desc">Лучшие слееры SMLT</span>
-                    </a>
-                    <a href="projects.html" class="nav-card">
-                        <span class="nav-card-icon">📁</span>
-                        <span class="nav-card-title">Проекты SMLT</span>
-                        <span class="nav-card-desc">Коллабы SMLT</span>
-                    </a>
-                    <a href="staff.html" class="nav-card">
-                        <span class="nav-card-icon">👥</span>
-                        <span class="nav-card-title">Стафф SMLT</span>
-                        <span class="nav-card-desc">Состав команды</span>
-                    </a>
-                </section>
-
-                <!-- Информация -->
-                <section class="info-section">
-                    <div class="info-card">
-                        <h3 class="info-title">📋 Информация</h3>
-                        <div class="info-content">
-                            <div class="info-item">
-                                <span class="info-label">Discord сервер</span>
-                                <a href="https://discord.gg/VK56W7ZzdA" target="_blank"
-                                    class="info-value" style="color: var(--color-secondary);">discord.gg/VK56W7ZzdA</a>
-                            </div>
-                            <div class="info-item">
-                                <span class="info-label">Админ</span>
-                                <div class="info-value">
-                                    Discord: <span class="highlight">@.samoletik</span><br>
-                                    Telegram: <span class="highlight">@samoltik</span>
-                                </div>
-                            </div>
-                            <div class="info-item security">
-                                <span class="info-label">🔒 За безопасность и бекенд отвечал</span>
-                                <div style="font-weight: 500;">Discord: <span class="highlight">@rimix.98</span><br>
-                                    Telegram: <span class="highlight">@Rimix980</span></div>
-                                
-                            </div>
-                        </div>
-                    </div>
-                </section>
-            </div>
-        </main>
-
-
-    </div>
-
-    <!-- Модальное окно информации -->
-    <div id="infoModal" class="modal-overlay">
-        <div class="modal" style="max-width: 480px;">
-            <div class="modal-header">
-                <div class="modal-title">📋 Информация</div>
-                <button class="modal-close">✕</button>
-            </div>
-            <div class="modal-body">
-                <div style="display: flex; flex-direction: column; gap: var(--spacing-md);">
-                    <div style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
-                        <div style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">Discord Server</div>
-                        <a href="https://discord.gg/VK56W7ZzdA" target="_blank" style="color: var(--color-secondary); font-weight: 600;">discord.gg/VK56W7ZzdA</a>
-                    </div>
-                    <div style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md);">
-                        <div style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">Admin</div>
-                        <div style="font-weight: 500;">Discord: <span style="color: var(--color-secondary);">@.samoletik</span></div>
-                        <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span style="color: var(--color-secondary);">@samoltik</span></div>
-                    </div>
-                    <div style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md); border-left: 3px solid var(--color-success);">
-                        <div style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">🔒 За безопасность и бекенд отвечал</div>
-                        <div style="font-weight: 500;">Discord: <span style="color: var(--color-secondary);">@rimix.98</span></div>
-                        <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span style="color: var(--color-secondary);">@Rimix980</span></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Модальное окно входа хоста -->
-    <div id="hostModal" class="modal-overlay">
-        <div class="modal">
-            <div class="modal-header">
-                <div class="modal-title">🔐 Вход хоста</div>
-                <button class="modal-close">✕</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="hostPassword">Введите пароль:</label>
-                    <input type="password" id="hostPassword" class="form-input" placeholder="Пароль">
-                </div>
-                <div class="form-group">
-                    <div class="captcha-row">
-                        <img id="captcha-img" class="captcha-image" alt="Капча" src="">
-                        <button type="button" id="captchaRefreshBtn" class="btn btn-secondary" title="Обновить капчу">🔄</button>
-                    </div>
-                    <input type="text" id="captchaInput" class="form-input" placeholder="Код с картинки" maxlength="6" autocomplete="off">
-                </div>
-                <button id="hostSubmitBtn" class="btn btn-primary">Войти</button>
-                <div id="hostError" class="error-message" style="display: none;">Неверный пароль!</div>
-            </div>
-        </div>
-    </div>
-
-    <div id="toastContainer"></div>
-
-    <script src="app.js"></script>
+    <div id="app"></div>
+    <script type="module" src="/src/main.home.js"></script>
 </body>
-
 </html>

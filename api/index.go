@@ -2475,7 +2475,6 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/players":             rateLimitMiddleware(60)(handleGetPlayers),
 		"/api/players/save":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSavePlayers)))),
 		"/api/players/delete":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),
-	},
 	}
 
 	h, ok := mux[path]

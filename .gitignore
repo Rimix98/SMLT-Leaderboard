@@ -15,3 +15,5 @@ Secret/
 *.dylib
 *.log
 __debug_bin
+node_modules/
+Frontend/node_modules/
