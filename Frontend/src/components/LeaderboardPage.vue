@@ -23,6 +23,21 @@ import {
 
 const activeTab = ref('players')
 const playerSearch = ref('')
+const leaderboardLoading = ref(true)
+const leaderboardError = ref(false)
+
+async function loadLeaderboard() {
+  leaderboardLoading.value = true
+  leaderboardError.value = false
+  try {
+    await loadAllPlayers()
+    if (store.players.length === 0) throw new Error('no data')
+  } catch {
+    leaderboardError.value = true
+  } finally {
+    leaderboardLoading.value = false
+  }
+}
 
 const totalPoints = computed(() => store.players.reduce((sum, p) => sum + (p.score || 0), 0))
 
@@ -63,8 +78,12 @@ const displayedLevels = computed(() => getFilteredLevels())
 onMounted(async () => {
   initTheme()
   await refreshCsrfToken()
-  loadAllPlayers()
+  loadLeaderboard()
 })
+
+function retryLoad() {
+  loadLeaderboard()
+}
 </script>
 
 <template>
@@ -83,57 +102,70 @@ onMounted(async () => {
 
   <main class="app-main">
     <div class="container">
-      <div v-if="store.isHost" class="admin-panel">
-        <div class="admin-panel-header">👑 Управление игроками</div>
-        <div class="admin-panel-content">
-          <button class="btn btn-primary" @click="showAddPlayerModal">➕ Добавить игрока</button>
-        </div>
+
+      <div v-if="leaderboardLoading" class="loading-state">
+        <div class="bar-spinner"></div>
+        <div class="loading-text">Загрузка лидерборда...</div>
       </div>
 
-      <div class="demonlist-tabs">
-        <div class="demonlist-tab-header">
-          <button class="demonlist-tab-btn" :class="{ active: activeTab === 'players' }" @click="activeTab = 'players'">🏆 Топ игроков</button>
-          <button class="demonlist-tab-btn" :class="{ active: activeTab === 'levels' }" @click="activeTab = 'levels'">📔 Топ уровней</button>
+      <div v-else-if="leaderboardError" class="loading-state">
+        <div class="error-icon">⚠️</div>
+        <div class="error-text">Не удалось загрузить лидерборд</div>
+        <button class="btn btn-primary" style="margin-top:var(--spacing-md)" @click="retryLoad">🔄 Повторить попытку</button>
+      </div>
+
+      <template v-else>
+        <div v-if="store.isHost" class="admin-panel">
+          <div class="admin-panel-header">👑 Управление игроками</div>
+          <div class="admin-panel-content">
+            <button class="btn btn-primary" @click="showAddPlayerModal">➕ Добавить игрока</button>
+          </div>
         </div>
 
-        <div v-show="activeTab === 'players'">
-          <div class="leaderboard-section">
-            <div class="leaderboard-header">
-              <h2>🏆 Топ игроков</h2>
-              <div class="leaderboard-controls">
-                <input type="text" class="search-input" placeholder="🔍 Поиск по нику..." v-model="playerSearch" @input="filterPlayers(playerSearch)">
-                <div class="leaderboard-stats">{{ store.players.length }} игроков</div>
-              </div>
-            </div>
-            <div class="leaderboard-table" id="leaderboardTable">
-              <div class="table-header">
-                <div class="cell cell-position">#</div>
-                <div class="cell cell-player">Игрок</div>
-                <div class="cell cell-points">Очки</div>
-                <div class="cell cell-records">Hardest</div>
-              </div>
-              <div v-for="(p, index) in store.players" :key="p.id ?? index" class="player-row" @click="showProfile(index)">
-                <div class="cell cell-position" :class="index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other'">
-                  {{ index + 1 }}
+        <div class="demonlist-tabs">
+          <div class="demonlist-tab-header">
+            <button class="demonlist-tab-btn" :class="{ active: activeTab === 'players' }" @click="activeTab = 'players'">🏆 Топ игроков</button>
+            <button class="demonlist-tab-btn" :class="{ active: activeTab === 'levels' }" @click="activeTab = 'levels'">📔 Топ уровней</button>
+          </div>
+
+          <div v-show="activeTab === 'players'">
+            <div class="leaderboard-section">
+              <div class="leaderboard-header">
+                <h2>🏆 Топ игроков</h2>
+                <div class="leaderboard-controls">
+                  <input type="text" class="search-input" placeholder="🔍 Поиск по нику..." v-model="playerSearch" @input="filterPlayers(playerSearch)">
+                  <div class="leaderboard-stats">{{ store.players.length }} игроков</div>
                 </div>
-                <div class="cell cell-player">
-                  <span class="player-flag" v-html="getFlagHTML(p.nationality)"></span>
-                  <div class="player-info">
-                    <span class="player-name">{{ p.name }}</span>
-                    <span class="player-score">{{ (p.score || 0).toFixed(2) }} pts · #{{ p.rank || '—' }}</span>
+              </div>
+              <div class="leaderboard-table" id="leaderboardTable">
+                <div class="table-header">
+                  <div class="cell cell-position">#</div>
+                  <div class="cell cell-player">Игрок</div>
+                  <div class="cell cell-points">Очки</div>
+                  <div class="cell cell-records">Hardest</div>
+                </div>
+                <div v-for="(p, index) in store.players" :key="p.id ?? index" class="player-row" @click="showProfile(index)">
+                  <div class="cell cell-position" :class="index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other'">
+                    {{ index + 1 }}
                   </div>
-                  <button v-if="store.isHost" class="btn btn-danger btn-xs player-delete-btn" @click.stop="removePlayer(p.name)">✕</button>
+                  <div class="cell cell-player">
+                    <span class="player-flag" v-html="getFlagHTML(p.nationality)"></span>
+                    <div class="player-info">
+                      <span class="player-name">{{ p.name }}</span>
+                      <span class="player-score">{{ (p.score || 0).toFixed(2) }} pts · #{{ p.rank || '—' }}</span>
+                    </div>
+                    <button v-if="store.isHost" class="btn btn-danger btn-xs player-delete-btn" @click.stop="removePlayer(p.name)">✕</button>
+                  </div>
+                  <div class="cell cell-points">{{ (p.score || 0).toFixed(2) }}</div>
+                  <div class="cell cell-records">{{ p.hardest?.level?.name || '—' }}</div>
                 </div>
-                <div class="cell cell-points">{{ (p.score || 0).toFixed(2) }}</div>
-                <div class="cell cell-records">{{ p.hardest?.level?.name || '—' }}</div>
-              </div>
-              <div v-if="store.players.length === 0" class="empty-state">
-                <div class="empty-state-icon">🏆</div>
-                <p>Игроки не найдены</p>
+                <div v-if="store.players.length === 0" class="empty-state">
+                  <div class="empty-state-icon">🏆</div>
+                  <p>Игроки не найдены</p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
         <div v-show="activeTab === 'levels'">
           <div class="leaderboard-section">
@@ -212,6 +244,7 @@ onMounted(async () => {
           </div>
         </div>
       </div>
+      </template>
     </div>
   </main>
 

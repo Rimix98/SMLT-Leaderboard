@@ -1372,6 +1372,31 @@ a:hover {
     margin-top: var(--spacing-sm);
 }
 
+.bar-spinner {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: conic-gradient(var(--color-secondary) 0deg 90deg, transparent 90deg 360deg);
+    animation: barSpin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    mask: radial-gradient(circle closest-side, transparent 65%, black 66%);
+    -webkit-mask: radial-gradient(circle closest-side, transparent 65%, black 66%);
+}
+
+.error-icon {
+    font-size: 3rem;
+}
+
+.error-text {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    color: var(--color-error);
+    text-align: center;
+}
+
+@keyframes barSpin {
+    to { transform: rotate(360deg); }
+}
+
 .progress-bar {
     width: 200px;
     height: 4px;
