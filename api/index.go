@@ -783,6 +783,7 @@ func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{})
 	if ct != "" && !strings.HasPrefix(ct, "application/json") {
 		return errors.New("unsupported content type")
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return err
@@ -946,7 +947,7 @@ func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		headerToken := r.Header.Get("X-CSRF-Token")
 		cookie, err := r.Cookie("csrf_token")
 		if err != nil || cookie.Value == "" || headerToken == "" || headerToken != cookie.Value {
-			sendError(w, http.StatusForbidden, "Ошибка CSRF: неверный токен")
+			sendError(w, http.StatusForbidden, "Доступ запрещен")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -1241,7 +1242,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	ensureCaptcha()
 	if !captchaStore.Verify(req.CaptchaID, req.CaptchaValue, true) {
-		sendError(w, http.StatusUnauthorized, "Неверный код с картинки")
+		sendError(w, http.StatusUnauthorized, "Неверные учетные данные")
 		return
 	}
 	adminHash := os.Getenv("ADMIN_HASH")
@@ -1256,7 +1257,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(adminHash), []byte(req.Password)); err != nil {
-		sendError(w, http.StatusUnauthorized, "Неверный пароль")
+		sendError(w, http.StatusUnauthorized, "Неверные учетные данные")
 		return
 	}
 	tokenVersion := getCurrentTokenVersion(r.Context())
@@ -1410,12 +1411,12 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		} else {
 			if err := validateProjectID(p.ID); err != nil {
 				log.Printf("[projects] invalid id %q: %v", p.ID, err)
-				sendError(w, http.StatusBadRequest, "Некорректный ID проекта: "+p.ID)
+				sendError(w, http.StatusBadRequest, "Некорректный ID проекта")
 				return
 			}
 			if seen[p.ID] {
 				log.Printf("[projects] duplicate id %q", p.ID)
-				sendError(w, http.StatusBadRequest, "ID проекта уже существует: "+p.ID)
+				sendError(w, http.StatusBadRequest, "ID проекта уже существует")
 				return
 			}
 			docID = p.ID
@@ -2430,7 +2431,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-XSS-Protection", "1; mode=block")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://www.youtube.com; object-src 'none'; base-uri 'none'; form-action 'self'")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-src https://www.youtube.com; object-src 'none'; base-uri 'none'; form-action 'self'")
 
 	origin := r.Header.Get("Origin")
 	if origin != "" {

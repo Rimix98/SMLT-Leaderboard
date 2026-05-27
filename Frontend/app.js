@@ -2178,7 +2178,15 @@ async function initParticipantBuilder() {
                 const item = document.createElement('div');
                 item.className = 'participant-search-result-item';
                 if (m.color) item.style.borderLeftColor = m.color;
-                item.innerHTML = `<span class="psr-name">${escapeHtml(m.nickname)}</span> <span class="psr-role">${escapeHtml(m.role)}</span>`;
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'psr-name';
+                nameSpan.textContent = m.nickname;
+                const roleSpan = document.createElement('span');
+                roleSpan.className = 'psr-role';
+                roleSpan.textContent = m.role;
+                item.appendChild(nameSpan);
+                item.appendChild(document.createTextNode(' '));
+                item.appendChild(roleSpan);
                 item.addEventListener('click', () => {
                     document.querySelectorAll('.participant-search-result-item').forEach(el => el.classList.remove('selected'));
                     item.classList.add('selected');

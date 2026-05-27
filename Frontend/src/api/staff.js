@@ -280,10 +280,42 @@ export function showEditRoleModal(roleIndex) {
   }
 }
 
+function escapeAttr(s) {
+  if (!s) return ''
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function createTierSquare(key, cfg, nickname) {
+  const isActive = getPlayerTier(nickname) === key
+  const el = document.createElement('span')
+  el.className = 'role-tier-square'
+  el.style.background = cfg.color
+  el.style.opacity = isActive ? '1' : '0.25'
+  if (isActive) {
+    el.style.outline = '2px solid var(--color-text-primary)'
+    el.style.outlineOffset = '1px'
+  }
+  el.dataset.action = 'role-modal-set-tier-direct'
+  el.dataset.nickname = nickname
+  el.dataset.tier = key
+  el.title = cfg.label
+  return el
+}
+
+function createActionButton(text, className, attrs) {
+  const btn = document.createElement('button')
+  btn.className = className
+  btn.textContent = text
+  for (const [k, v] of Object.entries(attrs)) {
+    btn.setAttribute(k, String(v))
+  }
+  return btn
+}
+
 export function renderRoleModalPlayerList(roleIndex) {
   const container = document.getElementById('rolePlayerList')
   if (!container) return
-  container.innerHTML = ''
+  while (container.firstChild) container.firstChild.remove()
 
   const role = store.staffRoles[roleIndex]
   if (!role) return
@@ -294,7 +326,11 @@ export function renderRoleModalPlayerList(roleIndex) {
   const tiersEnabled = role.tiersEnabled !== false
   const players = role.players || []
   if (players.length === 0) {
-    container.innerHTML = '<span style="color:var(--color-text-muted);font-size:var(--font-size-xs)">Нет игроков</span>'
+    const span = document.createElement('span')
+    span.style.color = 'var(--color-text-muted)'
+    span.style.fontSize = 'var(--font-size-xs)'
+    span.textContent = 'Нет игроков'
+    container.appendChild(span)
     return
   }
 
@@ -304,26 +340,76 @@ export function renderRoleModalPlayerList(roleIndex) {
     if (query && !p.nickname.toLowerCase().includes(query)) continue
     count++
 
-    let actionsHTML = ''
-    if (tiersEnabled) {
-      Object.entries(TIER_CONFIG).forEach(([key, cfg]) => {
-        const isActive = getPlayerTier(p.nickname) === key
-        actionsHTML += `<span class="role-tier-square" style="background:${cfg.color};opacity:${isActive ? 1 : 0.25};outline:${isActive ? '2px solid var(--color-text-primary)' : 'none'};outlineOffset:1px" data-action="role-modal-set-tier-direct" data-nickname="${p.nickname}" data-tier="${key}" title="${cfg.label}"></span>`
-      })
-    }
-    actionsHTML += `<button class="player-edit-btn" data-action="role-modal-edit-player" data-role-index="${roleIndex}" data-player-index="${pIdx}" title="Редактировать">✏️</button>`
-    if (pIdx > 0) actionsHTML += `<button class="player-edit-btn" data-action="role-modal-move-player" data-role-index="${roleIndex}" data-player-index="${pIdx}" data-direction="up" title="Вверх">↑</button>`
-    if (pIdx < players.length - 1) actionsHTML += `<button class="player-edit-btn" data-action="role-modal-move-player" data-role-index="${roleIndex}" data-player-index="${pIdx}" data-direction="down" title="Вниз">↓</button>`
-    actionsHTML += `<button class="player-remove-btn" data-action="role-modal-remove-player" data-role-index="${roleIndex}" data-nickname="${p.nickname}" title="Удалить">✕</button>`
-
     const item = document.createElement('div')
     item.className = 'edit-player-list-item'
-    item.innerHTML = `<div class="player-info"><span class="player-nickname">${p.nickname}</span>${p.discord ? `<span class="player-role-name">${p.discord}</span>` : ''}</div>${actionsHTML}`
+
+    const infoDiv = document.createElement('div')
+    infoDiv.className = 'player-info'
+
+    const nickSpan = document.createElement('span')
+    nickSpan.className = 'player-nickname'
+    nickSpan.textContent = p.nickname
+    infoDiv.appendChild(nickSpan)
+
+    if (p.discord) {
+      const discSpan = document.createElement('span')
+      discSpan.className = 'player-role-name'
+      discSpan.textContent = p.discord
+      infoDiv.appendChild(discSpan)
+    }
+
+    item.appendChild(infoDiv)
+
+    if (tiersEnabled) {
+      Object.entries(TIER_CONFIG).forEach(([key, cfg]) => {
+        item.appendChild(createTierSquare(key, cfg, p.nickname))
+      })
+    }
+
+    item.appendChild(createActionButton('✏️', 'player-edit-btn', {
+      'data-action': 'role-modal-edit-player',
+      'data-role-index': roleIndex,
+      'data-player-index': pIdx,
+      'title': 'Редактировать'
+    }))
+
+    if (pIdx > 0) {
+      item.appendChild(createActionButton('↑', 'player-edit-btn', {
+        'data-action': 'role-modal-move-player',
+        'data-role-index': roleIndex,
+        'data-player-index': pIdx,
+        'data-direction': 'up',
+        'title': 'Вверх'
+      }))
+    }
+
+    if (pIdx < players.length - 1) {
+      item.appendChild(createActionButton('↓', 'player-edit-btn', {
+        'data-action': 'role-modal-move-player',
+        'data-role-index': roleIndex,
+        'data-player-index': pIdx,
+        'data-direction': 'down',
+        'title': 'Вниз'
+      }))
+    }
+
+    item.appendChild(createActionButton('✕', 'player-remove-btn', {
+      'data-action': 'role-modal-remove-player',
+      'data-role-index': roleIndex,
+      'data-nickname': p.nickname,
+      'title': 'Удалить'
+    }))
+
     container.appendChild(item)
   }
 
   if (count === 0) {
-    container.innerHTML = `<span style="color:var(--color-text-muted);font-size:var(--font-size-xs)">${query ? 'Ничего не найдено' : 'Нет игроков'}</span>`
+    while (container.firstChild) container.firstChild.remove()
+    const span = document.createElement('span')
+    span.style.color = 'var(--color-text-muted)'
+    span.style.fontSize = 'var(--font-size-xs)'
+    span.textContent = query ? 'Ничего не найдено' : 'Нет игроков'
+    container.appendChild(span)
   }
 }
 
@@ -440,7 +526,7 @@ function populateEditRoleSelect() {
 function renderEditPlayerList() {
   const container = document.getElementById('editPlayerList')
   if (!container || !store.isHost) return
-  container.innerHTML = ''
+  while (container.firstChild) container.firstChild.remove()
   const searchInput = document.getElementById('editPlayerSearch')
   const query = searchInput ? searchInput.value.toLowerCase().trim() : ''
 
@@ -450,32 +536,71 @@ function renderEditPlayerList() {
     for (const p of rolePlayers) {
       if (query && !p.nickname.toLowerCase().includes(query)) continue
       totalPlayers++
-      const tier = getPlayerTier(p.nickname)
       const roleIndex = store.staffRoles.indexOf(role)
       const playerIndex = role.players.indexOf(p)
 
-      let tierHTML = ''
-      Object.entries(TIER_CONFIG).forEach(([key, cfg]) => {
-        const isActive = getPlayerTier(p.nickname) === key
-        tierHTML += `<span class="role-tier-square" style="background:${cfg.color};opacity:${isActive ? 1 : 0.25};outline:${isActive ? '2px solid var(--color-text-primary)' : 'none'};outlineOffset:1px" data-action="role-modal-set-tier-direct" data-nickname="${p.nickname}" data-tier="${key}" title="${cfg.label}"></span>`
-      })
-
       const item = document.createElement('div')
       item.className = 'edit-player-list-item'
-      item.innerHTML = `
-        <div class="player-info">
-          <span class="player-nickname">${p.nickname}</span>
-          <span class="player-role-name">${role.name}</span>
-        </div>
-        ${tierHTML}
-        <button class="player-edit-btn" data-action="edit-player-from-list" data-role-index="${roleIndex}" data-player-index="${playerIndex}" title="Редактировать">✏️</button>
-        <button class="player-remove-btn" data-action="edit-remove-player" data-role-index="${roleIndex}" data-nickname="${p.nickname}" title="Удалить игрока">✕</button>
-      `
+
+      const infoDiv = document.createElement('div')
+      infoDiv.className = 'player-info'
+
+      const nickSpan = document.createElement('span')
+      nickSpan.className = 'player-nickname'
+      nickSpan.textContent = p.nickname
+      infoDiv.appendChild(nickSpan)
+
+      const roleSpan = document.createElement('span')
+      roleSpan.className = 'player-role-name'
+      roleSpan.textContent = role.name
+      infoDiv.appendChild(roleSpan)
+
+      item.appendChild(infoDiv)
+
+      Object.entries(TIER_CONFIG).forEach(([key, cfg]) => {
+        const isActive = getPlayerTier(p.nickname) === key
+        const el = document.createElement('span')
+        el.className = 'role-tier-square'
+        el.style.background = cfg.color
+        el.style.opacity = isActive ? '1' : '0.25'
+        if (isActive) {
+          el.style.outline = '2px solid var(--color-text-primary)'
+          el.style.outlineOffset = '1px'
+        }
+        el.dataset.action = 'role-modal-set-tier-direct'
+        el.dataset.nickname = p.nickname
+        el.dataset.tier = key
+        el.title = cfg.label
+        item.appendChild(el)
+      })
+
+      const editBtn = document.createElement('button')
+      editBtn.className = 'player-edit-btn'
+      editBtn.textContent = '✏️'
+      editBtn.dataset.action = 'edit-player-from-list'
+      editBtn.dataset.roleIndex = String(roleIndex)
+      editBtn.dataset.playerIndex = String(playerIndex)
+      editBtn.title = 'Редактировать'
+      item.appendChild(editBtn)
+
+      const removeBtn = document.createElement('button')
+      removeBtn.className = 'player-remove-btn'
+      removeBtn.textContent = '✕'
+      removeBtn.dataset.action = 'edit-remove-player'
+      removeBtn.dataset.roleIndex = String(roleIndex)
+      removeBtn.dataset.nickname = p.nickname
+      removeBtn.title = 'Удалить игрока'
+      item.appendChild(removeBtn)
+
       container.appendChild(item)
     }
   }
   if (totalPlayers === 0) {
-    container.innerHTML = `<span style="color:var(--color-text-muted);font-size:var(--font-size-xs)">${query ? 'Ничего не найдено' : 'Нет игроков'}</span>`
+    const span = document.createElement('span')
+    span.style.color = 'var(--color-text-muted)'
+    span.style.fontSize = 'var(--font-size-xs)'
+    span.textContent = query ? 'Ничего не найдено' : 'Нет игроков'
+    container.appendChild(span)
   }
 }
 

@@ -2,5 +2,28 @@
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api" },
     { "source": "/((?!api).*)", "destination": "/Frontend/dist/$1" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)\\.(html|js|css)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' https://va.vercel-scripts.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://flagcdn.com; frame-src https://www.youtube.com; connect-src 'self' https://api.demonlist.org; object-src 'none'; base-uri 'none'; form-action 'self'"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    }
   ]
 }
