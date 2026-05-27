@@ -106,12 +106,16 @@ body.home-page {
 
 body.home-page .nav-card,
 body.home-page .info-card {
-    background: rgba(34, 34, 34, 0.85);
+    background: rgba(34, 34, 34, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
 }
 
 [data-theme="light"] body.home-page .nav-card,
 [data-theme="light"] body.home-page .info-card {
-    background: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
 }
 
 [data-theme="light"] body.home-page {
