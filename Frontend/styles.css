@@ -78,6 +78,7 @@
 
 html {
     font-size: 16px;
+    overflow-y: scroll;
 }
 
 body {
@@ -87,7 +88,6 @@ body {
     line-height: 1.6;
     min-height: 100vh;
     overflow-x: hidden;
-    overflow-y: scroll;
     transition: background-color var(--transition-normal), color var(--transition-normal);
 }
 
