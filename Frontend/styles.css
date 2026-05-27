@@ -131,9 +131,21 @@ body.home-page .info-card {
     -webkit-backdrop-filter: blur(12px);
 }
 
+[data-theme="gray"] body.home-page .nav-card,
+[data-theme="gray"] body.home-page .info-card {
+    background: rgba(54, 54, 54, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
 [data-theme="light"] body.home-page {
     background-color: var(--color-primary);
     background-image: url('Background_Image_WhiteMode.png');
+}
+
+[data-theme="gray"] body.home-page {
+    background-color: var(--color-primary);
+    background-image: url('greymode.png');
 }
 
 body.theme-transitioning {
