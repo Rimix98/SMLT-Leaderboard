@@ -864,7 +864,7 @@ a:hover {
 }
 
 .cell-records {
-    padding-left: var(--spacing-md);
+    text-align: center;
 }
 
 /* === Projects Page === */
