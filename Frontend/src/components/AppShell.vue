@@ -3,9 +3,6 @@ import { ref, onMounted, provide, watch, nextTick } from 'vue'
 import { store, toggleTheme } from '../store'
 import { initHostStatus, initCaptcha, verifyHost, logoutHost } from '../api/auth'
 import { refreshCsrfToken } from '../api/utils'
-import { useRouter } from '../router'
-
-const { navigate } = useRouter()
 
 const props = defineProps({ page: { type: String, default: '' } })
 
@@ -123,10 +120,10 @@ provide('openHostModal', openHostModal)
       </div>
       <nav class="header-nav" ref="navRef">
         <div class="nav-indicator" :style="navIndicatorStyle"></div>
-        <a href="#" class="nav-link" :class="{ active: props.page === 'home' }" @click.prevent="navigate('home')">Главная</a>
-        <a href="#" class="nav-link" :class="{ active: props.page === 'leaderboard' }" @click.prevent="navigate('leaderboard')">Лидерборд</a>
-        <a href="#" class="nav-link" :class="{ active: props.page === 'projects' }" @click.prevent="navigate('projects')">Проекты</a>
-        <a href="#" class="nav-link" :class="{ active: props.page === 'staff' }" @click.prevent="navigate('staff')">Стафф</a>
+        <a href="index.html" class="nav-link" :class="{ active: props.page === 'home' }">Главная</a>
+        <a href="leaderboard.html" class="nav-link" :class="{ active: props.page === 'leaderboard' }">Лидерборд</a>
+        <a href="projects.html" class="nav-link" :class="{ active: props.page === 'projects' }">Проекты</a>
+        <a href="staff.html" class="nav-link" :class="{ active: props.page === 'staff' }">Стафф</a>
       </nav>
       <div class="header-actions">
         <button class="btn btn-secondary btn-lg" @click="openInfoModal">ℹ️ Информация</button>
