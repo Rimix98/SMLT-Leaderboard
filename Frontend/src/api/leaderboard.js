@@ -104,9 +104,6 @@ export async function loadAllPlayers() {
   _loadingLeaderboard = true
 
   try {
-    const table = document.getElementById('leaderboardTable')
-    if (!table) { _loadingLeaderboard = false; return }
-
     let playersToMap = []
     const res = await fetchWithAbort('/api/leaderboard', {}, 'leaderboard')
     if (res.ok) {
@@ -137,7 +134,6 @@ export async function loadAllPlayers() {
 }
 
 async function loadPlayersFromClientAPI() {
-  const table = document.getElementById('leaderboardTable')
   const names = await getPlayerNames()
 
   const promises = names.map(async (name) => {
