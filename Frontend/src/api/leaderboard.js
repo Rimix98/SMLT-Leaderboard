@@ -438,7 +438,9 @@ export function showAddPlayerModal() {
 export async function removePlayer(name) {
   if (!store.isHost) { showToast('Только хост может удалять игроков', 'error'); return }
   if (!confirm(`Удалить игрока "${name}"?`)) return
-  await doAdminKnock()
+  console.log('[removePlayer] knocking before delete...')
+  const knockOk = await doAdminKnock()
+  console.log('[removePlayer] knock result:', knockOk, 'key:', tokens.adminKnockKey)
 
   try {
     const res = await fetchWithAbort(`${BACKEND_URL}/players/delete`, {
