@@ -3,6 +3,9 @@ import { ref, onMounted, provide, watch } from 'vue'
 import { store, toggleTheme } from '../store'
 import { initHostStatus, initCaptcha, verifyHost, logoutHost } from '../api/auth'
 import { refreshCsrfToken } from '../api/utils'
+import { useRouter } from '../router'
+
+const { navigate } = useRouter()
 
 defineProps({ page: { type: String, default: '' } })
 
@@ -74,10 +77,10 @@ provide('closeInfoModal', closeInfoModal)
         <slot name="brand" />
       </div>
       <nav class="header-nav">
-        <a href="index.html" class="nav-link" :class="{ active: page === 'home' }">Главная</a>
-        <a href="leaderboard.html" class="nav-link" :class="{ active: page === 'leaderboard' }">Лидерборд</a>
-        <a href="projects.html" class="nav-link" :class="{ active: page === 'projects' }">Проекты</a>
-        <a href="staff.html" class="nav-link" :class="{ active: page === 'staff' }">Стафф</a>
+        <a href="#" class="nav-link" :class="{ active: page === 'home' }" @click.prevent="navigate('home')">Главная</a>
+        <a href="#" class="nav-link" :class="{ active: page === 'leaderboard' }" @click.prevent="navigate('leaderboard')">Лидерборд</a>
+        <a href="#" class="nav-link" :class="{ active: page === 'projects' }" @click.prevent="navigate('projects')">Проекты</a>
+        <a href="#" class="nav-link" :class="{ active: page === 'staff' }" @click.prevent="navigate('staff')">Стафф</a>
       </nav>
       <div class="header-actions">
         <slot name="actions" />

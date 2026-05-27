@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref } from 'vue'
+import { computed, inject, nextTick, onMounted, ref } from 'vue'
 import { store, initTheme } from '../store'
 import { refreshCsrfToken, resolveCountry, CODE_TO_NAME, getFlagCode } from '../api/utils'
 import AppShell from './AppShell.vue'
@@ -27,6 +27,27 @@ const activeTab = ref('players')
 const playerSearch = ref('')
 const leaderboardLoading = ref(true)
 const leaderboardError = ref(false)
+
+const tabHeaderRef = ref(null)
+const playerTabBtn = ref(null)
+const levelTabBtn = ref(null)
+const indicatorStyle = ref({ left: '0px', width: '0px' })
+
+function updateIndicator(tab) {
+  const btn = tab === 'players' ? playerTabBtn.value : levelTabBtn.value
+  if (!btn || !tabHeaderRef.value) return
+  const headerRect = tabHeaderRef.value.getBoundingClientRect()
+  const btnRect = btn.getBoundingClientRect()
+  indicatorStyle.value = {
+    left: `${btnRect.left - headerRect.left}px`,
+    width: `${btnRect.width}px`,
+  }
+}
+
+function switchTab(tab) {
+  activeTab.value = tab
+  nextTick(() => updateIndicator(tab))
+}
 
 async function loadLeaderboard() {
   leaderboardLoading.value = true
@@ -81,6 +102,7 @@ onMounted(async () => {
   initTheme()
   await refreshCsrfToken()
   loadLeaderboard()
+  nextTick(() => updateIndicator('players'))
 })
 
 function retryLoad() {
@@ -125,13 +147,14 @@ function retryLoad() {
         </div>
 
         <div class="demonlist-tabs">
-          <div class="demonlist-tab-header">
-            <button class="demonlist-tab-btn" :class="{ active: activeTab === 'players' }" @click="activeTab = 'players'">🏆 Топ игроков</button>
-            <button class="demonlist-tab-btn" :class="{ active: activeTab === 'levels' }" @click="activeTab = 'levels'">📔 Топ уровней</button>
+          <div class="demonlist-tab-header" ref="tabHeaderRef">
+            <div class="tab-indicator" :style="indicatorStyle"></div>
+            <button ref="playerTabBtn" class="demonlist-tab-btn" :class="{ active: activeTab === 'players' }" @click="switchTab('players')">🏆 Топ игроков</button>
+            <button ref="levelTabBtn" class="demonlist-tab-btn" :class="{ active: activeTab === 'levels' }" @click="switchTab('levels')">📔 Топ уровней</button>
           </div>
 
-          <div v-show="activeTab === 'players'">
-            <div class="leaderboard-section">
+          <Transition name="tab" mode="out-in">
+            <div v-if="activeTab === 'players'" key="players" class="leaderboard-section">
               <div class="leaderboard-header">
                 <h2>🏆 Топ игроков</h2>
                 <div class="leaderboard-controls">
@@ -167,48 +190,46 @@ function retryLoad() {
                 </div>
               </div>
             </div>
-          </div>
 
-        <div v-show="activeTab === 'levels'">
-          <div class="leaderboard-section">
-            <div class="leaderboard-header">
-              <h2>📔 Топ уровней</h2>
-              <div class="leaderboard-controls">
-                <input type="text" class="search-input" placeholder="🔍 Поиск по уровню..." v-model="store.levels.filter" @input="filterLevels(store.levels.filter)">
-                <div class="leaderboard-stats">{{ store.levels.all?.length || 0 }} уровней</div>
-              </div>
-            </div>
-            <div class="leaderboard-table" id="levelsTable">
-              <div class="table-header">
-                <div class="cell cell-position">#</div>
-                <div class="cell cell-player">Уровень</div>
-                <div class="cell cell-points">Позиция</div>
-                <div class="cell cell-records">Викторов</div>
-              </div>
-              <div v-for="(level, index) in displayedLevels" :key="level.id" class="player-row" @click="showLevelVictors(level.id)">
-                <div class="cell cell-position" :class="index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other'">
-                  {{ index + 1 }}
+            <div v-else key="levels" class="leaderboard-section">
+              <div class="leaderboard-header">
+                <h2>📔 Топ уровней</h2>
+                <div class="leaderboard-controls">
+                  <input type="text" class="search-input" placeholder="🔍 Поиск по уровню..." v-model="store.levels.filter" @input="filterLevels(store.levels.filter)">
+                  <div class="leaderboard-stats">{{ store.levels.all?.length || 0 }} уровней</div>
                 </div>
-                <div class="cell cell-player">
-                  <div class="player-info">
-                    <span class="player-name">{{ level.name }}</span>
+              </div>
+              <div class="leaderboard-table" id="levelsTable">
+                <div class="table-header">
+                  <div class="cell cell-position">#</div>
+                  <div class="cell cell-player">Уровень</div>
+                  <div class="cell cell-points">Позиция</div>
+                  <div class="cell cell-records">Викторов</div>
+                </div>
+                <div v-for="(level, index) in displayedLevels" :key="level.id" class="player-row" @click="showLevelVictors(level.id)">
+                  <div class="cell cell-position" :class="index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other'">
+                    {{ index + 1 }}
                   </div>
+                  <div class="cell cell-player">
+                    <div class="player-info">
+                      <span class="player-name">{{ level.name }}</span>
+                    </div>
+                  </div>
+                  <div class="cell cell-points">#{{ level.placement }}</div>
+                  <div class="cell cell-records">{{ level.victors.length }}</div>
                 </div>
-                <div class="cell cell-points">#{{ level.placement }}</div>
-                <div class="cell cell-records">{{ level.victors.length }}</div>
+                <div v-if="!store.levels.all" class="empty-state">
+                  <div class="empty-state-icon">📔</div>
+                  <p>Нет данных об уровнях</p>
+                </div>
               </div>
-              <div v-if="!store.levels.all" class="empty-state">
-                <div class="empty-state-icon">📔</div>
-                <p>Нет данных об уровнях</p>
+              <div v-if="store.levels.all && store.levels.all.length > 39" style="padding:var(--spacing-sm);text-align:center;border-top:1px solid var(--color-border)">
+                <button class="btn btn-secondary btn-sm" @click="expandLevels">
+                  {{ store.levels.expanded ? 'Свернуть' : 'Показать ещё' }}
+                </button>
               </div>
             </div>
-            <div v-if="store.levels.all && store.levels.all.length > 39" style="padding:var(--spacing-sm);text-align:center;border-top:1px solid var(--color-border)">
-              <button class="btn btn-secondary btn-sm" @click="expandLevels">
-                {{ store.levels.expanded ? 'Свернуть' : 'Показать ещё' }}
-              </button>
-            </div>
-          </div>
-        </div>
+          </Transition>
       </div>
 
       <div class="stats-grid">
