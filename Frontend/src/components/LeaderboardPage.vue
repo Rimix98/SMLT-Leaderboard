@@ -215,15 +215,14 @@ function onLevelVictors(id) {
               <div class="leaderboard-table" id="leaderboardTable">
                 <div class="table-header">
                   <div class="cell cell-position">#</div>
-                  <div class="cell cell-records">Hardest</div>
                   <div class="cell cell-player">Игрок</div>
+                  <div class="cell cell-records">Hardest</div>
                   <div class="cell cell-points">Очки</div>
                 </div>
                   <div v-for="(p, index) in store.players" :key="p.id ?? index" class="player-row" @click="onProfileOpen(index)">
                   <div class="cell cell-position" :class="index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other'">
                     {{ index + 1 }}
                   </div>
-                  <div class="cell cell-records">{{ p.hardest?.level?.name || '—' }}</div>
                   <div class="cell cell-player">
                     <span class="player-flag"><img v-if="getFlagCode(p.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(p.nationality)}.png`" :alt="getFlagCode(p.nationality).toUpperCase()" width="20" class="flag-img" style="vertical-align:middle;margin-right:4px"><span v-else>{{ !resolveCountry(p.nationality) && p.nationality === null ? '❌' : '🌍' }}</span></span>
                     <div class="player-info">
@@ -232,6 +231,7 @@ function onLevelVictors(id) {
                     </div>
                     <button v-if="store.isHost" class="btn btn-danger btn-xs player-delete-btn" @click.stop="removePlayer(p.name)">✕</button>
                   </div>
+                  <div class="cell cell-records">{{ p.hardest?.level?.name || '—' }}</div>
                   <div class="cell cell-points">{{ (p.score || 0).toFixed(2) }}</div>
                 </div>
                 <div v-if="store.players.length === 0" class="empty-state">
