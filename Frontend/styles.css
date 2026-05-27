@@ -856,7 +856,7 @@ a:hover {
 }
 
 .cell-records {
-    padding-left: var(--spacing-md);
+    padding-left: var(--spacing-xs);
 }
 
 /* === Projects Page === */
