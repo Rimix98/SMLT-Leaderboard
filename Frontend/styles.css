@@ -104,6 +104,16 @@ body.home-page {
     background-repeat: no-repeat;
 }
 
+body.home-page .nav-card,
+body.home-page .info-card {
+    background: rgba(34, 34, 34, 0.85);
+}
+
+[data-theme="light"] body.home-page .nav-card,
+[data-theme="light"] body.home-page .info-card {
+    background: rgba(255, 255, 255, 0.85);
+}
+
 [data-theme="light"] body.home-page {
     background-color: var(--color-primary);
     background-image: url('Background_Image_WhiteMode.png');

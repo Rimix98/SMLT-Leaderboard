@@ -81,7 +81,7 @@ onMounted(async () => {
       </section>
 
       <section class="info-section" style="padding-bottom:var(--spacing-2xl)">
-        <div class="info-card" style="text-align:center;border:2px dashed var(--color-border);background:var(--color-surface-2)">
+        <div class="info-card" style="text-align:center;border:2px dashed var(--color-border)">
           <p style="color:var(--color-text-muted);font-size:var(--font-size-lg);font-weight:600;letter-spacing:0.05em">Здесь могла быть ваша реклама</p>
         </div>
       </section>
