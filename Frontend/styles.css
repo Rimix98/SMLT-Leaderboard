@@ -443,9 +443,9 @@ a:hover {
 }
 
 .btn-primary {
-    background: var(--color-secondary);
-    color: #fff;
-    border-color: var(--color-secondary);
+    background: var(--color-surface-3);
+    color: var(--color-text-primary);
+    border-color: var(--color-surface-3);
 }
 
 .btn-primary:hover {
