@@ -95,20 +95,6 @@ body.modal-open {
     overflow: hidden;
 }
 
-body.home-page {
-    background-color: #111;
-    background-image: url('Background_Image_DarkMode.png');
-    background-size: cover;
-    background-position: center;
-    background-attachment: fixed;
-    background-repeat: no-repeat;
-}
-
-[data-theme="light"] body.home-page {
-    background-color: #fafafa;
-    background-image: url('Background_Image_WhiteMode.png');
-}
-
 body.theme-transitioning {
     animation: themeFade 0.3s ease-in-out;
 }
