@@ -9,10 +9,18 @@ export const tokens = {
 }
 let adminKnockRefreshTimer = null
 
+function fetchWithTimeout(url, opts, ms) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), ms)
+  const p = fetch(url, { ...opts, signal: controller.signal })
+  p.finally(() => clearTimeout(timeout))
+  return p
+}
+
 export async function refreshCsrfToken() {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await fetch(`${BACKEND_URL}/csrf-token`, { credentials: 'include' })
+      const res = await fetchWithTimeout(`${BACKEND_URL}/csrf-token`, { credentials: 'include' }, 10000)
       const data = await res.json()
       if (data.token) tokens.csrfToken = data.token
       return data.token || null
@@ -82,6 +90,9 @@ export async function fetchWithAbort(url, options = {}, key = null) {
       throw fetchErr
     }
 
+    const newCsrf = res.headers.get('X-CSRF-Token')
+    if (newCsrf) tokens.csrfToken = newCsrf
+
     if (!res.ok && res.status === 404 && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase())) {
       const cloned = res.clone()
       const text = await cloned.text().catch(() => '')
@@ -147,11 +158,14 @@ export const FLAGS = {
 }
 
 export const COUNTRY_TO_CODE = {
-  'russia': 'RU', 'united-states': 'US', 'germany': 'DE', 'france': 'FR',
-  'united-kingdom': 'GB', 'brazil': 'BR', 'south-korea': 'KR', 'korea': 'KR',
+  'russia': 'RU', 'russian-federation': 'RU',
+  'united-states': 'US', 'united-states-of-america': 'US', 'usa': 'US',
+  'germany': 'DE', 'france': 'FR',
+  'united-kingdom': 'GB', 'great-britain': 'GB', 'uk': 'GB',
+  'brazil': 'BR', 'south-korea': 'KR', 'korea': 'KR', 'north-korea': 'KP',
   'japan': 'JP', 'china': 'CN', 'poland': 'PL', 'ukraine': 'UA',
   'canada': 'CA', 'australia': 'AU', 'spain': 'ES', 'italy': 'IT',
-  'argentina': 'AR', 'chile': 'CL', 'mexico': 'MX', 'netherlands': 'NL',
+  'argentina': 'AR', 'chile': 'CL', 'mexico': 'MX', 'netherlands': 'NL', 'holland': 'NL',
   'sweden': 'SE', 'norway': 'NO', 'finland': 'FI', 'denmark': 'DK',
   'belgium': 'BE', 'austria': 'AT', 'czech-republic': 'CZ', 'czechia': 'CZ',
   'slovakia': 'SK', 'hungary': 'HU', 'romania': 'RO', 'bulgaria': 'BG',
@@ -188,16 +202,45 @@ export const CODE_TO_NAME = {
 
 export function resolveCountry(input) {
   if (!input) return null
-  const upper = input.toUpperCase().trim()
+  let val = input.toString().trim()
+  const upper = val.toUpperCase()
   if (FLAGS[upper]) return upper
-  const lower = input.toLowerCase().trim().replace(/\s+/g, '-')
-  return COUNTRY_TO_CODE[lower] || null
+  val = val.toLowerCase()
+  // strip parentheticals: "Russia (Russian Federation)" → "Russia"
+  val = val.replace(/\s*\(.*?\)\s*/g, ' ').trim()
+  // strip common suffixes for fuzzy matching
+  val = val.replace(/\s+(federation|republic|island|territory|kingdom|principality|emirate|commonwealth|union|state|states|region|province|of|the|and|islands)$/gi, '').trim()
+  val = val.replace(/\s+/g, '-')
+  const mapped = COUNTRY_TO_CODE[val]
+  if (mapped) return mapped
+  // retry with full normalized string (without stripping suffixes)
+  const fallback = input.toString().toLowerCase().trim().replace(/\s*\(.*?\)\s*/g, ' ').trim().replace(/\s+/g, '-')
+  return COUNTRY_TO_CODE[fallback] || null
+}
+
+function isValidISOCode(code) {
+  return typeof code === 'string' && /^[A-Z]{2}$/.test(code)
 }
 
 export function getFlagHTML(c) {
   const code = resolveCountry(c)
-  if (!code) return c === null ? '❌' : '🌍'
+  if (!code || !isValidISOCode(code)) return !code && c === null ? '❌' : '🌍'
   return `<img src="https://flagcdn.com/w20/${code.toLowerCase()}.png" alt="${code}" width="20" style="vertical-align:middle;border-radius:2px;margin-right:4px">`
+}
+
+export function createFlagElement(c) {
+  const code = resolveCountry(c)
+  if (!code || !isValidISOCode(code)) {
+    const span = document.createElement('span')
+    span.textContent = !code && c === null ? '❌' : '🌍'
+    return span
+  }
+  const img = document.createElement('img')
+  img.src = `https://flagcdn.com/w20/${code.toLowerCase()}.png`
+  img.alt = code
+  img.width = 20
+  img.style.cssText = 'vertical-align:middle;border-radius:2px;margin-right:4px'
+  return img
 }
 
 export function getCountryLabel(c) {

@@ -20,10 +20,17 @@ function escapeHtml(text) {
 
 function resolveCountry(input) {
     if (!input) return null;
-    const upper = input.toUpperCase().trim();
+    let val = input.toString().trim();
+    const upper = val.toUpperCase();
     if (FLAGS[upper]) return upper;
-    const lower = input.toLowerCase().trim().replace(/\s+/g, '-');
-    return COUNTRY_TO_CODE[lower] || null;
+    val = val.toLowerCase();
+    val = val.replace(/\s*\(.*?\)\s*/g, ' ').trim();
+    val = val.replace(/\s+(federation|republic|island|territory|kingdom|principality|emirate|commonwealth|union|state|states|region|province|of|the|and|islands)$/gi, '').trim();
+    val = val.replace(/\s+/g, '-');
+    const mapped = COUNTRY_TO_CODE[val];
+    if (mapped) return mapped;
+    const fallback = input.toString().toLowerCase().trim().replace(/\s*\(.*?\)\s*/g, ' ').trim().replace(/\s+/g, '-');
+    return COUNTRY_TO_CODE[fallback] || null;
 }
 
 function getRoleColor(roleName) {
@@ -147,11 +154,14 @@ const FLAGS = {
 };
 
 const COUNTRY_TO_CODE = {
-    'russia': 'RU', 'united-states': 'US', 'germany': 'DE', 'france': 'FR',
-    'united-kingdom': 'GB', 'brazil': 'BR', 'south-korea': 'KR', 'korea': 'KR',
+    'russia': 'RU', 'russian-federation': 'RU',
+    'united-states': 'US', 'united-states-of-america': 'US', 'usa': 'US',
+    'germany': 'DE', 'france': 'FR',
+    'united-kingdom': 'GB', 'great-britain': 'GB', 'uk': 'GB',
+    'brazil': 'BR', 'south-korea': 'KR', 'korea': 'KR', 'north-korea': 'KP',
     'japan': 'JP', 'china': 'CN', 'poland': 'PL', 'ukraine': 'UA',
     'canada': 'CA', 'australia': 'AU', 'spain': 'ES', 'italy': 'IT',
-    'argentina': 'AR', 'chile': 'CL', 'mexico': 'MX', 'netherlands': 'NL',
+    'argentina': 'AR', 'chile': 'CL', 'mexico': 'MX', 'netherlands': 'NL', 'holland': 'NL',
     'sweden': 'SE', 'norway': 'NO', 'finland': 'FI', 'denmark': 'DK',
     'belgium': 'BE', 'austria': 'AT', 'czech-republic': 'CZ', 'czechia': 'CZ',
     'slovakia': 'SK', 'hungary': 'HU', 'romania': 'RO', 'bulgaria': 'BG',
@@ -924,10 +934,14 @@ async function savePlayerNames(names) {
 }
 
 
+function isValidISOCode(code) {
+    return typeof code === 'string' && /^[A-Z]{2}$/.test(code);
+}
+
 function getFlag(c) {
     const code = resolveCountry(c);
-    if (!code) {
-        return h('span', { className: 'flag-emoji' }, [c === null ? '❌' : '🌍']);
+    if (!code || !isValidISOCode(code)) {
+        return h('span', { className: 'flag-emoji' }, [!code && c === null ? '❌' : '🌍']);
     }
     return h('img', {
         className: 'flag-img',
@@ -971,8 +985,10 @@ function updateProgress(current, total) {
 }
 
 async function fetchPlayerData(name) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-        const r = await fetch(`${API_BASE}/leaderboard/user/list?search=${encodeURIComponent(name)}&limit=50`);
+        const r = await fetch(`${API_BASE}/leaderboard/user/list?search=${encodeURIComponent(name)}&limit=50`, { signal: controller.signal });
         if (!r.ok) return null;
         const d = await r.json();
         if (d.message !== 'success' || !d.data?.users?.length) return null;
@@ -990,17 +1006,23 @@ async function fetchPlayerData(name) {
     } catch (e) {
         console.error(`Ошибка для "${name}":`, e);
         return null;
+    } finally {
+        clearTimeout(timeout);
     }
 }
 
 async function fetchRecords(id) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-        const r = await fetch(`${API_BASE}/user/record/list?user_id=${id}&limit=50`);
+        const r = await fetch(`${API_BASE}/user/record/list?user_id=${id}&limit=50`, { signal: controller.signal });
         if (!r.ok) return [];
         const d = await r.json();
         return d.message === 'success' && d.data?.records ? d.data.records : [];
     } catch {
         return [];
+    } finally {
+        clearTimeout(timeout);
     }
 }
 
@@ -2315,7 +2337,9 @@ function generateProjectId() {
 function loadProjectOrder() {
     try {
         const raw = localStorage.getItem('smlt-project-order');
-        return raw ? JSON.parse(raw) : [];
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : [];
     } catch { return []; }
 }
 

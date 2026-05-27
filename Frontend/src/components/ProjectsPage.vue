@@ -20,34 +20,46 @@ onMounted(async () => {
   await loadProjects()
 })
 
+function escapeHtml(str) {
+  if (!str) return ''
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+}
+
 function buildParticipantHTML(participants) {
   if (!participants || participants.length === 0) return ''
   return participants.map(line => {
+    const safeLine = escapeHtml(line)
     const newMatch = line.match(/^(.+?)\s*-\s+(.+)$/)
     const oldMatch = !newMatch ? line.match(/^(.+?)\s*\((.+?)\)$/) : null
     if (newMatch) {
-      const name = newMatch[1].trim()
+      const name = escapeHtml(newMatch[1].trim())
       const roles = newMatch[2].split(/\s+/).filter(Boolean)
       let html = `${name} - `
       roles.forEach((role, i) => {
         if (i) html += ' '
+        const safeRole = escapeHtml(role)
         const color = getRoleColor(role)
-        html += `<span class="role"${color ? ` style="color:${color}"` : ''}>${role}</span>`
+        html += `<span class="role"${color ? ` style="color:${escapeHtml(color)}"` : ''}>${safeRole}</span>`
       })
       return `<span class="participant-tag">${html}</span>`
     } else if (oldMatch) {
-      const name = oldMatch[1].trim()
-      const roles = oldMatch[2].split(',').map(r => r.trim())
+      const name = escapeHtml(oldMatch[1].trim())
+      const roles = oldMatch[2].split(',').map(r => escapeHtml(r.trim()))
       let html = `${name} - (`
       roles.forEach((role, i) => {
         if (i) html += ', '
-        const color = getRoleColor(role)
-        html += `<span class="role"${color ? ` style="color:${color}"` : ''}>${role}</span>`
+        const color = getRoleColor(role.trim())
+        html += `<span class="role"${color ? ` style="color:${escapeHtml(color)}"` : ''}>${role}</span>`
       })
       html += ')'
       return `<span class="participant-tag">${html}</span>`
     }
-    return `<span class="participant-tag">${line}</span>`
+    return `<span class="participant-tag">${safeLine}</span>`
   }).join('')
 }
 </script>

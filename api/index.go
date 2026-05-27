@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -78,7 +79,6 @@ type FullPlayerData struct {
 
 type AuditEntry struct {
 	Action    string      `json:"action" firestore:"action"`
-	AdminIP   string      `json:"adminIp" firestore:"adminIp"`
 	Details   interface{} `json:"details" firestore:"details"`
 	CreatedAt time.Time   `json:"createdAt" firestore:"createdAt"`
 }
@@ -273,6 +273,7 @@ var (
 	reVideoID      = regexp.MustCompile(`^[a-zA-Z0-9_-]{11}$`)
 	reRoleName     = regexp.MustCompile(`^[\p{L}0-9 _.\-]+$`)
 	reHexColor     = regexp.MustCompile(`^#?[0-9a-fA-F]{6}$`)
+	reCaptchaID    = regexp.MustCompile(`^[a-zA-Z0-9]{8,64}$`)
 )
 
 var defaultPlayerNames = []string{
@@ -297,6 +298,7 @@ func init() {
 	initRateLimitSalt()
 	initJWTSecrets()
 	initAdminKnock()
+	startTokenBlacklistCleanup()
 }
 
 func initAdminKnock() {
@@ -314,11 +316,13 @@ func initAdminKnock() {
 func initRateLimitSalt() {
 	saltOnce.Do(func() {
 		buf := make([]byte, 32)
-		if _, err := rand.Read(buf); err != nil {
-			rateLimitSalt = fmt.Sprintf("%x", time.Now().UnixNano())
-			return
+		for tries := 0; tries < 3; tries++ {
+			if _, err := rand.Read(buf); err == nil {
+				rateLimitSalt = hex.EncodeToString(buf)
+				return
+			}
 		}
-		rateLimitSalt = hex.EncodeToString(buf)
+		rateLimitSalt = fmt.Sprintf("%x|%d", time.Now().UnixNano(), os.Getpid())
 	})
 }
 
@@ -391,6 +395,10 @@ func newMemoryLimiter() *memoryLimiter {
 	go m.cleanup()
 	return m
 }
+
+// WARNING: in-memory rate limiter is scoped to a single serverless instance.
+// On Vercel, concurrent instances each have their own counter,
+// so effective limit = instances × max. Use Upstash Redis in production.
 
 func (m *memoryLimiter) stop() {
 	close(m.stopCh)
@@ -769,6 +777,7 @@ func hashIP(ip string) string {
 
 func sendError(w http.ResponseWriter, status int, msg string) {
 	log.Printf("[error] %d %s", status, msg)
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
@@ -780,7 +789,7 @@ func methodNotAllowed(w http.ResponseWriter, allowed string) {
 
 func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{}) error {
 	ct := r.Header.Get("Content-Type")
-	if ct != "" && !strings.HasPrefix(ct, "application/json") {
+	if !strings.HasPrefix(ct, "application/json") {
 		return errors.New("unsupported content type")
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
@@ -797,12 +806,13 @@ func sanitizeString(s string) string {
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(v)
 }
 
 func setSecureCookie(w http.ResponseWriter, name, value string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     name,
+		Name:     "__Host-" + name,
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
@@ -814,7 +824,7 @@ func setSecureCookie(w http.ResponseWriter, name, value string, maxAge int) {
 
 func clearCookie(w http.ResponseWriter, name string) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     name,
+		Name:     "__Host-" + name,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
@@ -877,7 +887,16 @@ func verifyTokenVersion(ctx context.Context, claims *jwt.MapClaims) error {
 		}
 	}
 	if fsClient == nil {
-		return nil
+		// Use last known version from cache (even if slightly expired)
+		if cached, ok := tokenVerCache.Load("tokenVersion"); ok {
+			entry := cached.(*tokenVersionCacheEntry)
+			if entry.version > requiredVer {
+				return errors.New("token version too old")
+			}
+			return nil
+		}
+		// No cache and no Firestore — deny to be safe during outages
+		return errors.New("token version cannot be verified")
 	}
 	doc, err := fsClient.Collection("config").Doc("auth").Get(ctx)
 	if err != nil {
@@ -904,7 +923,7 @@ func verifyTokenVersion(ctx context.Context, claims *jwt.MapClaims) error {
 
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("auth_token")
+		cookie, err := r.Cookie("__Host-auth_token")
 		if err != nil {
 			sendError(w, http.StatusUnauthorized, "Нет доступа")
 			return
@@ -945,10 +964,17 @@ func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		headerToken := r.Header.Get("X-CSRF-Token")
-		cookie, err := r.Cookie("csrf_token")
+		cookie, err := r.Cookie("__Host-csrf_token")
 		if err != nil || cookie.Value == "" || headerToken == "" || headerToken != cookie.Value {
 			sendError(w, http.StatusForbidden, "Доступ запрещен")
 			return
+		}
+		// Rotate CSRF token after successful verification (single-use)
+		newToken := make([]byte, 32)
+		if _, randErr := rand.Read(newToken); randErr == nil {
+			tokenStr := hex.EncodeToString(newToken)
+			setSecureCookie(w, "csrf_token", tokenStr, 3600)
+			w.Header().Set("X-CSRF-Token", tokenStr)
 		}
 		next.ServeHTTP(w, r)
 	}
@@ -1103,7 +1129,7 @@ func handleAdminKnock(w http.ResponseWriter, r *http.Request) {
 	}
 	ip := getRealIP(r)
 	adminKnockStore.set(ip, key, adminKnockTTL)
-	log.Printf("[knock] admin key issued for IP %s (TTL=%v)", ip, adminKnockTTL)
+	log.Printf("[knock] admin key issued (TTL=%v)", adminKnockTTL)
 	writeJSON(w, map[string]interface{}{
 		"key":        key,
 		"ttl":        int(adminKnockTTL.Seconds()),
@@ -1170,6 +1196,12 @@ func handleVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]bool{"success": false})
 		return
 	}
+	if jti, ok := (*claims)["jti"].(string); ok && jti != "" {
+		if isTokenBlacklisted(r.Context(), jti) {
+			writeJSON(w, map[string]bool{"success": false})
+			return
+		}
+	}
 	if err := verifyTokenVersion(r.Context(), claims); err != nil {
 		writeJSON(w, map[string]bool{"success": false})
 		return
@@ -1217,10 +1249,12 @@ func getCurrentTokenVersion(ctx context.Context) int64 {
 
 func generateJTI() string {
 	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return fmt.Sprintf("%x", time.Now().UnixNano())
+	for tries := 0; tries < 3; tries++ {
+		if _, err := rand.Read(buf); err == nil {
+			return hex.EncodeToString(buf)
+		}
 	}
-	return hex.EncodeToString(buf)
+	return fmt.Sprintf("%x-%d", time.Now().UnixNano(), os.Getpid())
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -1241,6 +1275,10 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ensureCaptcha()
+	if !reCaptchaID.MatchString(req.CaptchaID) {
+		sendError(w, http.StatusBadRequest, "Некорректный ID капчи")
+		return
+	}
 	if !captchaStore.Verify(req.CaptchaID, req.CaptchaValue, true) {
 		sendError(w, http.StatusUnauthorized, "Неверные учетные данные")
 		return
@@ -1304,6 +1342,48 @@ func blacklistToken(ctx context.Context, jti string) {
 	})
 	if err != nil {
 		log.Printf("[auth] failed to blacklist token: %v", err)
+	}
+}
+
+var tokenBlacklistCleanupOnce sync.Once
+
+func startTokenBlacklistCleanup() {
+	tokenBlacklistCleanupOnce.Do(func() {
+		go func() {
+			ticker := time.NewTicker(1 * time.Hour)
+			defer ticker.Stop()
+			for range ticker.C {
+				cleanupExpiredBlacklistEntries()
+			}
+		}()
+	})
+}
+
+func cleanupExpiredBlacklistEntries() {
+	if fsClient == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	iter := fsClient.Collection("token_blacklist").Where("expiresAt", "<", time.Now()).Documents(ctx)
+	defer iter.Stop()
+	batch := fsClient.BulkWriter(ctx)
+	defer batch.End()
+	deleted := int64(0)
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			log.Printf("[auth] blacklist cleanup iter: %v", err)
+			break
+		}
+		batch.Delete(doc.Ref)
+		atomic.AddInt64(&deleted, 1)
+	}
+	if n := atomic.LoadInt64(&deleted); n > 0 {
+		log.Printf("[auth] cleaned up %d expired blacklist entries", n)
 	}
 }
 
@@ -1392,6 +1472,19 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		for j, part := range projectList[i].Participants {
 			projectList[i].Participants[j] = sanitizeString(part)
 		}
+		if len(projectList[i].Name) > 100 ||
+			len(projectList[i].VideoID) > 200 ||
+			len(projectList[i].Comment) > 500 ||
+			len(projectList[i].Verifier) > 50 {
+			sendError(w, http.StatusBadRequest, "Слишком длинное поле в проекте")
+			return
+		}
+		for _, part := range projectList[i].Participants {
+			if len(part) > 50 {
+				sendError(w, http.StatusBadRequest, "Слишком длинное имя участника")
+				return
+			}
+		}
 	}
 
 	seen := make(map[string]bool)
@@ -1449,7 +1542,6 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 
 	auditLog(r.Context(), AuditEntry{
 		Action:  "projects.save",
-		AdminIP: getRealIP(r),
 		Details: map[string]int{"count": len(projectList)},
 	})
 	writeJSON(w, map[string]bool{"success": true})
@@ -1615,7 +1707,6 @@ func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "players.save",
-		AdminIP: getRealIP(r),
 		Details: map[string]int{"count": len(players)},
 	})
 	writeJSON(w, map[string]bool{"success": true})
@@ -1639,6 +1730,10 @@ func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
 	req.Name = sanitizeString(req.Name)
 	if req.Name == "" {
 		sendError(w, http.StatusBadRequest, "Имя игрока обязательно")
+		return
+	}
+	if len(req.Name) > 32 {
+		sendError(w, http.StatusBadRequest, "Слишком длинное имя игрока")
 		return
 	}
 	ctx := r.Context()
@@ -1681,7 +1776,6 @@ func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "players.delete",
-		AdminIP: getRealIP(r),
 		Details: map[string]string{"name": req.Name},
 	})
 	writeJSON(w, map[string]bool{"success": true})
@@ -1777,7 +1871,7 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.add",
-		AdminIP: getRealIP(r),
+
 		Details: map[string]interface{}{
 			"roleIndex": req.RoleIndex,
 			"nickname":  req.Nickname,
@@ -1850,7 +1944,7 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.createRole",
-		AdminIP: getRealIP(r),
+
 		Details: map[string]string{"name": req.Name, "color": req.Color},
 	})
 	writeJSON(w, map[string]interface{}{
@@ -1902,7 +1996,7 @@ func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.deleteRole",
-		AdminIP: getRealIP(r),
+
 		Details: map[string]int{"roleIndex": req.RoleIndex},
 	})
 	writeJSON(w, map[string]bool{"success": true})
@@ -1975,7 +2069,7 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.updateRole",
-		AdminIP: getRealIP(r),
+
 		Details: map[string]interface{}{"roleIndex": req.RoleIndex, "name": req.Name, "color": req.Color},
 	})
 	writeJSON(w, map[string]bool{"success": true})
@@ -2049,7 +2143,7 @@ func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.removePlayer",
-		AdminIP: getRealIP(r),
+
 		Details: map[string]interface{}{
 			"roleIndex": req.RoleIndex,
 			"nickname":  req.Nickname,
@@ -2109,7 +2203,7 @@ func handleReorderStaffRoles(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.reorder",
-		AdminIP: getRealIP(r),
+
 		Details: map[string]interface{}{
 			"roleIndex": req.RoleIndex,
 			"direction": req.Direction,
@@ -2257,7 +2351,7 @@ func handleSetStaffTier(w http.ResponseWriter, r *http.Request) {
 	}
 	auditLog(r.Context(), AuditEntry{
 		Action:  "staff.setTier",
-		AdminIP: getRealIP(r),
+
 		Details: map[string]interface{}{
 			"category": req.Category,
 			"nickname": req.Nickname,
@@ -2432,11 +2526,12 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-src https://www.youtube.com; object-src 'none'; base-uri 'none'; form-action 'self'")
+	w.Header().Del("Server")
 
 	origin := r.Header.Get("Origin")
 	if origin != "" {
 		allowedOrigins := map[string]bool{
-			"https://smlt-demonlist.vercel.app": true,
+			"https://smltdemonlist.vercel.app": true,
 			"https://smlt-demonlist.ru":         true,
 			"https://www.smlt-demonlist.ru":     true,
 		}

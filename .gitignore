@@ -7,6 +7,9 @@ Secret/
 .vercel/
 .vscode/
 
+*.swp
+*.swo
+*.swn
 
 *.exe
 *.exe~

@@ -30,7 +30,12 @@ export async function saveProjects(data) {
 }
 
 function loadProjectOrder() {
-  try { const raw = localStorage.getItem('smlt-project-order'); return raw ? JSON.parse(raw) : [] } catch { return [] }
+  try {
+    const raw = localStorage.getItem('smlt-project-order')
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : []
+  } catch { return [] }
 }
 
 function saveProjectOrder(order) {
@@ -271,7 +276,15 @@ export async function initParticipantBuilder() {
         const item = document.createElement('div')
         item.className = 'participant-search-result-item'
         if (m.color) item.style.borderLeftColor = m.color
-        item.innerHTML = `<span class="psr-name">${m.nickname}</span> <span class="psr-role">${m.role}</span>`
+        const psrName = document.createElement('span')
+        psrName.className = 'psr-name'
+        psrName.textContent = m.nickname
+        const psrRole = document.createElement('span')
+        psrRole.className = 'psr-role'
+        psrRole.textContent = m.role
+        item.appendChild(psrName)
+        item.appendChild(document.createTextNode(' '))
+        item.appendChild(psrRole)
         item.addEventListener('click', () => {
           document.querySelectorAll('.participant-search-result-item').forEach(el => el.classList.remove('selected'))
           item.classList.add('selected')

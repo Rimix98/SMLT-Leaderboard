@@ -1,5 +1,5 @@
 import { store } from '../store'
-import { fetchWithAbort, parseJsonResponse, isAbortError, API_BASE, BACKEND_URL, doAdminKnock, tokens, showToast } from './utils'
+import { fetchWithAbort, parseJsonResponse, isAbortError, API_BASE, BACKEND_URL, doAdminKnock, tokens, showToast, createFlagElement } from './utils'
 
 const DEFAULT_PLAYER_NAMES = [
   "samoletik", "paradoxiz", "clokman", "itzslxnq", "H30n41k_GmD",
@@ -41,7 +41,9 @@ export async function savePlayerNames(names) {
 }
 
 function fetchPlayerData(name) {
-  return fetch(`${API_BASE}/leaderboard/user/list?search=${encodeURIComponent(name)}&limit=50`)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15000)
+  return fetch(`${API_BASE}/leaderboard/user/list?search=${encodeURIComponent(name)}&limit=50`, { signal: controller.signal })
     .then(r => r.ok ? r.json() : null)
     .then(d => {
       if (d?.message !== 'success' || !d.data?.users?.length) return null
@@ -52,13 +54,17 @@ function fetchPlayerData(name) {
       return fp || null
     })
     .catch(e => { console.error(`Ошибка для "${name}":`, e); return null })
+    .finally(() => clearTimeout(timeout))
 }
 
 function fetchRecords(id) {
-  return fetch(`${API_BASE}/user/record/list?user_id=${id}&limit=50`)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15000)
+  return fetch(`${API_BASE}/user/record/list?user_id=${id}&limit=50`, { signal: controller.signal })
     .then(r => r.ok ? r.json() : [])
     .then(d => d.message === 'success' && d.data?.records ? d.data.records : [])
     .catch(() => [])
+    .finally(() => clearTimeout(timeout))
 }
 
 function mapLeaderboardEntry(p) {
@@ -246,10 +252,13 @@ export function showLevelVictors(levelId) {
   if (!modal || !title || !body) return
 
   title.textContent = `🏆 ${levelData.name} #${levelData.placement}`
-  body.innerHTML = ''
+  while (body.firstChild) body.firstChild.remove()
 
   if (levelData.victors.length === 0) {
-    body.innerHTML = '<p style="color: var(--color-text-muted);">Нет викторов</p>'
+    const p = document.createElement('p')
+    p.style.cssText = 'color: var(--color-text-muted);'
+    p.textContent = 'Нет викторов'
+    body.appendChild(p)
     modal.classList.add('active')
     return
   }
@@ -257,10 +266,16 @@ export function showLevelVictors(levelId) {
   const list = document.createElement('div')
   list.className = 'level-victors-list'
   levelData.victors.forEach((victor, idx) => {
-    const flagHTML = `<img src="https://flagcdn.com/w20/${(victor.nationality || '').toLowerCase()}.png" alt="${victor.nationality || ''}" width="20" style="vertical-align:middle;border-radius:2px;margin-right:4px">`
+    const flagEl = createFlagElement(victor.nationality)
     const item = document.createElement('div')
     item.style.cssText = 'display:flex;justify-content:space-between;padding:var(--spacing-sm);border-bottom:1px solid var(--color-border)'
-    item.innerHTML = `<span><strong>#${idx + 1}</strong> ${flagHTML} ${victor.name}</span>`
+    const span = document.createElement('span')
+    const strong = document.createElement('strong')
+    strong.textContent = `#${idx + 1} `
+    span.appendChild(strong)
+    span.appendChild(flagEl)
+    span.appendChild(document.createTextNode(` ${victor.name}`))
+    item.appendChild(span)
     list.appendChild(item)
   })
   body.appendChild(list)
@@ -277,42 +292,76 @@ export function showProfile(idx) {
   if (!p) return
 
   const rec = p.records ? p.records.filter(r => r.status === 'accepted' && r.level) : []
-  const flagHTML = `<img src="https://flagcdn.com/w20/${(p.nationality || '').toLowerCase()}.png" alt="${p.nationality || ''}" width="20" style="vertical-align:middle;border-radius:2px;margin-right:4px">`
 
   const titleEl = document.getElementById('profileTitle')
-  titleEl.innerHTML = `${flagHTML} ${p.name}`
+  while (titleEl.firstChild) titleEl.firstChild.remove()
+  const flagEl = createFlagElement(p.nationality)
+  titleEl.appendChild(flagEl)
+  titleEl.appendChild(document.createTextNode(` ${p.name}`))
 
   const score = p.score ? p.score.toFixed(2) : '—'
   const rank = p.rank || '—'
   const body = document.getElementById('profileBody')
-  body.innerHTML = ''
+  while (body.firstChild) body.firstChild.remove()
+
+  function makeStat(value, label) {
+    const div = document.createElement('div')
+    div.className = 'profile-stat'
+    const valDiv = document.createElement('div')
+    valDiv.className = 'profile-stat-value'
+    valDiv.textContent = String(value)
+    const lblDiv = document.createElement('div')
+    lblDiv.className = 'profile-stat-label'
+    lblDiv.textContent = label
+    div.appendChild(valDiv)
+    div.appendChild(lblDiv)
+    return div
+  }
 
   const statsDiv = document.createElement('div')
   statsDiv.className = 'profile-stats'
-  statsDiv.innerHTML = `
-    <div class="profile-stat"><div class="profile-stat-value">${score}</div><div class="profile-stat-label">Очки</div></div>
-    <div class="profile-stat"><div class="profile-stat-value">#${rank}</div><div class="profile-stat-label">Глобальный топ</div></div>
-    <div class="profile-stat"><div class="profile-stat-value">${rec.length}</div><div class="profile-stat-label">Уровней</div></div>
-  `
+  statsDiv.appendChild(makeStat(score, 'Очки'))
+  statsDiv.appendChild(makeStat(`#${rank}`, 'Глобальный топ'))
+  statsDiv.appendChild(makeStat(rec.length, 'Уровней'))
   body.appendChild(statsDiv)
+
+  function makeInfoRow(label, valueNode) {
+    const row = document.createElement('div')
+    row.className = 'profile-info-row'
+    const lbl = document.createElement('span')
+    lbl.className = 'profile-info-label'
+    lbl.textContent = label
+    row.appendChild(lbl)
+    const val = document.createElement('span')
+    val.className = 'profile-info-value'
+    if (valueNode instanceof Node) {
+      val.appendChild(valueNode)
+    } else {
+      val.textContent = String(valueNode)
+    }
+    row.appendChild(val)
+    return row
+  }
 
   if (p.hardest) {
     const hardestLabel = p.hardest.level?.name != null ? String(p.hardest.level.name) : String(p.hardest)
-    const row = document.createElement('div')
-    row.className = 'profile-info-row'
-    row.innerHTML = `<span class="profile-info-label">Hardest:</span><span class="profile-info-value">${hardestLabel}</span>`
-    body.appendChild(row)
+    body.appendChild(makeInfoRow('Hardest:', hardestLabel))
   }
 
-  const countryRow = document.createElement('div')
-  countryRow.className = 'profile-info-row'
-  countryRow.innerHTML = `<span class="profile-info-label">Страна:</span><span class="profile-info-value">${flagHTML} ${p.nationality || 'Не указана'}</span>`
-  body.appendChild(countryRow)
+  const countryVal = document.createElement('span')
+  countryVal.className = 'profile-info-value'
+  const countryFlag = createFlagElement(p.nationality)
+  countryVal.appendChild(countryFlag)
+  countryVal.appendChild(document.createTextNode(` ${p.nationality || 'Не указана'}`))
+  body.appendChild(makeInfoRow('Страна:', countryVal))
 
   const recordsSection = document.createElement('div')
   recordsSection.className = 'profile-records-section'
-  recordsSection.innerHTML = `<h4>Пройденные уровни (${rec.length})</h4><div class="profile-records-list"></div>`
-  const recordsList = recordsSection.querySelector('.profile-records-list')
+  const h4 = document.createElement('h4')
+  h4.textContent = `Пройденные уровни (${rec.length})`
+  recordsSection.appendChild(h4)
+  const recordsList = document.createElement('div')
+  recordsList.className = 'profile-records-list'
 
   if (rec.length > 0) {
     rec.forEach(r => {
@@ -321,17 +370,37 @@ export function showProfile(idx) {
       const progress = r.percent ?? r.progress ?? 100
       const item = document.createElement('div')
       item.className = 'record-item'
-      item.innerHTML = `<span class="record-demon">${levelName}<span class="record-placement">#${placement}</span></span><span class="record-progress${progress >= 100 ? ' progress-100' : ''}">${progress}%</span>`
+      const demonSpan = document.createElement('span')
+      demonSpan.className = 'record-demon'
+      demonSpan.textContent = levelName
+      const placeSpan = document.createElement('span')
+      placeSpan.className = 'record-placement'
+      placeSpan.textContent = `#${placement}`
+      demonSpan.appendChild(placeSpan)
+      item.appendChild(demonSpan)
+      const progSpan = document.createElement('span')
+      progSpan.className = `record-progress${progress >= 100 ? ' progress-100' : ''}`
+      progSpan.textContent = `${progress}%`
+      item.appendChild(progSpan)
       recordsList.appendChild(item)
     })
   } else {
-    recordsList.innerHTML = '<div class="no-records">Нет записей</div>'
+    const noRec = document.createElement('div')
+    noRec.className = 'no-records'
+    noRec.textContent = 'Нет записей'
+    recordsList.appendChild(noRec)
   }
+  recordsSection.appendChild(recordsList)
   body.appendChild(recordsSection)
 
   const linkDiv = document.createElement('div')
   linkDiv.className = 'profile-link'
-  linkDiv.innerHTML = `<a href="https://demonlist.org/profile/${encodeURIComponent(String(p.id))}/" target="_blank" rel="noopener noreferrer">🔗 Показать аккаунт в Global Demonlist →</a>`
+  const a = document.createElement('a')
+  a.href = `https://demonlist.org/profile/${encodeURIComponent(String(p.id))}/`
+  a.target = '_blank'
+  a.rel = 'noopener noreferrer'
+  a.textContent = '🔗 Показать аккаунт в Global Demonlist →'
+  linkDiv.appendChild(a)
   body.appendChild(linkDiv)
 
   document.getElementById('profileModal').classList.add('active')
@@ -344,7 +413,7 @@ export function closeProfileModal(e) {
 }
 
 export function showCountryTop(raw) {
-  import('./utils').then(({ resolveCountry, CODE_TO_NAME, getFlagHTML }) => {
+  import('./utils').then(({ resolveCountry, CODE_TO_NAME }) => {
     const country = resolveCountry(raw)
     if (!country) { showToast('Страна не найдена', 'error'); return }
 
@@ -356,20 +425,38 @@ export function showCountryTop(raw) {
     const body = document.getElementById('countryBody')
     if (!modal || !title || !body) return
 
-    const flagHTML = getFlagHTML(country)
+    const flagEl = createFlagElement(country)
     const countryName = CODE_TO_NAME[country] || country
-    title.innerHTML = `${flagHTML} Топ игроков: ${countryName}`
+    while (title.firstChild) title.firstChild.remove()
+    title.appendChild(flagEl)
+    title.appendChild(document.createTextNode(` Топ игроков: ${countryName}`))
 
-    body.innerHTML = countryPlayers.length === 0
-      ? '<p style="color: var(--color-text-muted);">Нет данных</p>'
-      : countryPlayers.map((p, idx) => {
-          const score = p.score ? p.score.toFixed(2) : '—'
-          const rank = p.rank || '—'
-          return `<div style="display:flex;justify-content:space-between;padding:var(--spacing-sm);border-bottom:1px solid var(--color-border)">
-            <span><strong>#${idx + 1}</strong> ${p.name}</span>
-            <span style="color:var(--color-text-muted)">${score} pts · #${rank}</span>
-          </div>`
-        }).join('')
+    while (body.firstChild) body.firstChild.remove()
+
+    if (countryPlayers.length === 0) {
+      const p = document.createElement('p')
+      p.style.cssText = 'color: var(--color-text-muted);'
+      p.textContent = 'Нет данных'
+      body.appendChild(p)
+    } else {
+      countryPlayers.forEach((p, idx) => {
+        const score = p.score ? p.score.toFixed(2) : '—'
+        const rank = p.rank || '—'
+        const row = document.createElement('div')
+        row.style.cssText = 'display:flex;justify-content:space-between;padding:var(--spacing-sm);border-bottom:1px solid var(--color-border)'
+        const leftSpan = document.createElement('span')
+        const strong = document.createElement('strong')
+        strong.textContent = `#${idx + 1} `
+        leftSpan.appendChild(strong)
+        leftSpan.appendChild(document.createTextNode(p.name))
+        row.appendChild(leftSpan)
+        const rightSpan = document.createElement('span')
+        rightSpan.style.cssText = 'color:var(--color-text-muted)'
+        rightSpan.textContent = `${score} pts · #${rank}`
+        row.appendChild(rightSpan)
+        body.appendChild(row)
+      })
+    }
 
     modal.classList.add('active')
   })
