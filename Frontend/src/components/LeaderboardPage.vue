@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, inject, onMounted, ref } from 'vue'
 import { store, initTheme } from '../store'
 import { refreshCsrfToken, resolveCountry, CODE_TO_NAME, getFlagCode } from '../api/utils'
 import AppShell from './AppShell.vue'
@@ -20,6 +20,8 @@ import {
   addPlayer,
   closeAddPlayerModal,
 } from '../api/leaderboard'
+
+const openInfoModal = inject('openInfoModal')
 
 const activeTab = ref('players')
 const playerSearch = ref('')

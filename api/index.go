@@ -1177,7 +1177,7 @@ func handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
 // ──────────────────────────────────────────────
 
 func handleVerify(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("auth_token")
+	cookie, err := r.Cookie("__Host-auth_token")
 	if err != nil {
 		writeJSON(w, map[string]bool{"success": false})
 		return

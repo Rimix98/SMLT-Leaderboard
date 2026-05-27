@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, inject, onMounted } from 'vue'
 import { store, initTheme } from '../store'
 import { refreshCsrfToken } from '../api/utils'
 import AppShell from './AppShell.vue'
@@ -13,6 +13,8 @@ import {
   showAddProjectModal,
 } from '../api/projects'
 import { getRoleColor } from '../api/staff'
+
+const openInfoModal = inject('openInfoModal')
 
 onMounted(async () => {
   initTheme()

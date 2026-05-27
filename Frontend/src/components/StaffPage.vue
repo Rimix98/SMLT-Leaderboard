@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted } from 'vue'
+import { inject, onMounted } from 'vue'
 import { store, initTheme } from '../store'
 import { refreshCsrfToken } from '../api/utils'
 import AppShell from './AppShell.vue'
@@ -22,6 +22,8 @@ import {
   closeAddStaffPlayerModal,
   addPlayerToRole,
 } from '../api/staff'
+
+const openInfoModal = inject('openInfoModal')
 
 onMounted(async () => {
   initTheme()
