@@ -112,6 +112,23 @@ export async function fetchWithAbort(url, options = {}, key = null) {
       }
     }
 
+    if (!res.ok && res.status === 403 && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase())) {
+      tokens.csrfToken = ''
+      const refreshed = await refreshCsrfToken()
+      if (refreshed) {
+        headers = buildHeaders()
+        const controller2 = new AbortController()
+        const timeoutId2 = setTimeout(() => controller2.abort(), timeoutMs)
+        try {
+          res = await fetch(url, { ...options, headers, signal: controller2.signal })
+          const newCsrf = res.headers.get('X-CSRF-Token')
+          if (newCsrf) tokens.csrfToken = newCsrf
+        } finally {
+          clearTimeout(timeoutId2)
+        }
+      }
+    }
+
     return res
   } finally {
     cleanup()
