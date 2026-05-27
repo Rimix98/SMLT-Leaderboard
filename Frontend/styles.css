@@ -851,7 +851,7 @@ a:hover {
 
 .cell-points,
 .cell-records {
-    text-align: center;
+    text-align: left;
     color: var(--color-text-secondary);
 }
 
@@ -1640,6 +1640,8 @@ a:hover {
         gap: var(--spacing-sm);
         padding: var(--spacing-sm);
     }
+
+
 
     .cell-points {
         display: none;

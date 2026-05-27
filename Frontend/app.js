@@ -1194,6 +1194,7 @@ function ensureLeaderboardShell(table) {
         h('div', { className: 'cell cell-records' }, ['Hardest']),
         h('div', { className: 'cell cell-player' }, ['Игрок']),
     ]);
+
     const body = h('div', { className: 'js-leaderboard-body' });
     store._leaderboard.body = body;
     shell = h('div', { className: 'js-leaderboard-shell' }, [header, body]);
