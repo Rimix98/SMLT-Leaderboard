@@ -849,15 +849,17 @@ a:hover {
     display: inline-flex;
 }
 
-.cell-points,
-.cell-records {
+.cell-points {
     text-align: left;
     color: var(--color-text-secondary);
 }
 
 .cell-records {
-    padding-left: var(--spacing-xs);
+    text-align: center;
+    color: var(--color-text-secondary);
 }
+
+
 
 /* === Projects Page === */
 .projects-grid {
