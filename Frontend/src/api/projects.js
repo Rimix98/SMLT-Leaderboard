@@ -103,14 +103,19 @@ export async function saveProject() {
     projectId = generateProjectId()
     document.getElementById('projectId').value = projectId
   }
+  const MAX_NAME_LEN = 100
+  function truncate(s) { return s && s.length > MAX_NAME_LEN ? s.slice(0, MAX_NAME_LEN) : s }
+
   const project = {
-    name: document.getElementById('projectName').value.trim(),
+    name: truncate(document.getElementById('projectName').value.trim()),
     videoId: extractVideoId(document.getElementById('projectVideo').value.trim()),
     id: projectId,
-    comment: document.getElementById('projectComment').value.trim(),
+    comment: truncate(document.getElementById('projectComment').value.trim()),
     status: document.getElementById('projectStatus').value,
-    verifier: document.getElementById('projectVerifier').value.trim(),
-    participants: Array.isArray(store.pendingProjectParticipants) ? store.pendingProjectParticipants.filter(Boolean) : []
+    verifier: truncate(document.getElementById('projectVerifier').value.trim()),
+    participants: Array.isArray(store.pendingProjectParticipants)
+      ? store.pendingProjectParticipants.filter(Boolean).map(p => truncate(p))
+      : []
   }
 
   if (projectId !== '-') {
@@ -302,8 +307,9 @@ export async function initParticipantBuilder() {
 }
 
 export function addProjectParticipant() {
-  const name = store._selectedParticipant || document.getElementById('participantSearchInput')?.value?.trim()
+  let name = store._selectedParticipant || document.getElementById('participantSearchInput')?.value?.trim()
   if (!name) { showToast('Введите или выберите игрока', 'error'); return }
+  if (name.length > 100) name = name.slice(0, 100)
   const activeRoles = []
   document.querySelectorAll('#participantRoleTags .role-tag-btn.active').forEach(b => activeRoles.push(b.dataset.role))
   let entry = name
