@@ -793,11 +793,9 @@ func decodeRequestJSON(w http.ResponseWriter, r *http.Request, dest interface{})
 		return errors.New("unsupported content type")
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(body, dest)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	return dec.Decode(dest)
 }
 
 func sanitizeString(s string) string {

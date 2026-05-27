@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { store, initTheme } from '../store'
-import { refreshCsrfToken, resolveCountry, CODE_TO_NAME, getFlagHTML } from '../api/utils'
+import { refreshCsrfToken, resolveCountry, CODE_TO_NAME, getFlagCode } from '../api/utils'
 import AppShell from './AppShell.vue'
 import {
   loadAllPlayers,
@@ -149,7 +149,7 @@ function retryLoad() {
                     {{ index + 1 }}
                   </div>
                   <div class="cell cell-player">
-                    <span class="player-flag" v-html="getFlagHTML(p.nationality)"></span>
+                    <span class="player-flag"><img v-if="getFlagCode(p.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(p.nationality)}.png`" :alt="getFlagCode(p.nationality).toUpperCase()" width="20" style="vertical-align:middle;border-radius:2px;margin-right:4px"><span v-else>{{ !resolveCountry(p.nationality) && p.nationality === null ? '❌' : '🌍' }}</span></span>
                     <div class="player-info">
                       <span class="player-name">{{ p.name }}</span>
                       <span class="player-score">{{ (p.score || 0).toFixed(2) }} pts · #{{ p.rank || '—' }}</span>
@@ -235,7 +235,7 @@ function retryLoad() {
           <div class="country-list" id="countryList">
             <div v-for="c in countryStats" :key="c.code" class="country-item" style="cursor:pointer" @click="showCountryTop(c.name)">
               <div class="country-info">
-                <span class="country-flag" v-html="getFlagHTML(c.name)"></span>
+                <span class="country-flag"><img v-if="getFlagCode(c.name)" :src="`https://flagcdn.com/w20/${getFlagCode(c.name)}.png`" :alt="getFlagCode(c.name).toUpperCase()" width="20" style="vertical-align:middle;border-radius:2px;margin-right:4px"><span v-else>{{ !resolveCountry(c.name) && c.name === null ? '❌' : '🌍' }}</span></span>
                 <span class="country-name">{{ c.displayName }}</span>
               </div>
               <span class="country-count">{{ c.count }}</span>

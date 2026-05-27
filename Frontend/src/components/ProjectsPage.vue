@@ -20,47 +20,28 @@ onMounted(async () => {
   await loadProjects()
 })
 
-function escapeHtml(str) {
-  if (!str) return ''
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;')
-}
-
-function buildParticipantHTML(participants) {
-  if (!participants || participants.length === 0) return ''
+function parseParticipantRoles(participants) {
+  if (!participants || participants.length === 0) return []
   return participants.map(line => {
-    const safeLine = escapeHtml(line)
     const newMatch = line.match(/^(.+?)\s*-\s+(.+)$/)
     const oldMatch = !newMatch ? line.match(/^(.+?)\s*\((.+?)\)$/) : null
     if (newMatch) {
-      const name = escapeHtml(newMatch[1].trim())
-      const roles = newMatch[2].split(/\s+/).filter(Boolean)
-      let html = `${name} - `
-      roles.forEach((role, i) => {
-        if (i) html += ' '
-        const safeRole = escapeHtml(role)
-        const color = getRoleColor(role)
-        html += `<span class="role"${color ? ` style="color:${escapeHtml(color)}"` : ''}>${safeRole}</span>`
-      })
-      return `<span class="participant-tag">${html}</span>`
+      const name = newMatch[1].trim()
+      const roles = newMatch[2].split(/\s+/).filter(Boolean).map(r => ({
+        name: r,
+        color: getRoleColor(r)
+      }))
+      return { name, roles, type: 'dash' }
     } else if (oldMatch) {
-      const name = escapeHtml(oldMatch[1].trim())
-      const roles = oldMatch[2].split(',').map(r => escapeHtml(r.trim()))
-      let html = `${name} - (`
-      roles.forEach((role, i) => {
-        if (i) html += ', '
-        const color = getRoleColor(role.trim())
-        html += `<span class="role"${color ? ` style="color:${escapeHtml(color)}"` : ''}>${role}</span>`
+      const name = oldMatch[1].trim()
+      const roles = oldMatch[2].split(',').map(r => {
+        const t = r.trim()
+        return { name: t, color: getRoleColor(t) }
       })
-      html += ')'
-      return `<span class="participant-tag">${html}</span>`
+      return { name, roles, type: 'paren' }
     }
-    return `<span class="participant-tag">${safeLine}</span>`
-  }).join('')
+    return { name: line, roles: [], type: 'plain' }
+  })
 }
 </script>
 
@@ -144,7 +125,11 @@ function buildParticipantHTML(participants) {
             </div>
             <div class="project-participants">
               <div class="project-participants-title">Участники:</div>
-              <div class="project-participants-list" v-html="buildParticipantHTML(project.participants)"></div>
+              <div class="project-participants-list">
+              <span v-for="(entry, ei) in parseParticipantRoles(project.participants)" :key="ei" class="participant-tag">
+                {{ entry.name }}<template v-if="entry.type === 'dash'"> - <template v-for="(role, ri) in entry.roles" :key="ri"><span v-if="ri"> </span><span class="role" :style="role.color ? { color: role.color } : {}">{{ role.name }}</span></template></template><template v-else-if="entry.type === 'paren'"> - (<template v-for="(role, ri) in entry.roles" :key="ri"><span v-if="ri">, </span><span class="role" :style="role.color ? { color: role.color } : {}">{{ role.name }}</span></template>)</template>
+              </span>
+            </div>
             </div>
             <div v-if="store.isHost" class="project-actions">
               <button class="btn btn-secondary btn-sm" @click="moveProject(idx, 'up')">↑</button>
