@@ -145,7 +145,7 @@ body.home-page .info-card {
 
 [data-theme="gray"] body.home-page {
     background-color: var(--color-primary);
-    background-image: url('greymode.png');
+    background-image: url('Background_Image_GreyMode.png');
 }
 
 body.theme-transitioning {
