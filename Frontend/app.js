@@ -1190,8 +1190,8 @@ function ensureLeaderboardShell(table) {
     clearEl(table);
     const header = h('div', { className: 'table-header' }, [
         h('div', { className: 'cell cell-position' }, ['#']),
-        h('div', { className: 'cell cell-player' }, ['Игрок']),
         h('div', { className: 'cell cell-records' }, ['Hardest']),
+        h('div', { className: 'cell cell-player' }, ['Игрок']),
         h('div', { className: 'cell cell-points' }, ['Очки']),
     ]);
 
@@ -1209,6 +1209,7 @@ function createPlayerRow(index, p) {
     const hardest = p.hardest?.level?.name || '—';
     return h('div', { className: 'player-row', dataset: { profileIndex: String(index) } }, [
         h('div', { className: `cell cell-position ${rc}` }, [String(index + 1)]),
+        h('div', { className: 'cell cell-records' }, [hardest]),
         h('div', { className: 'cell cell-player' }, [
             h('span', { className: 'player-flag' }, [
                 getFlag(p.nationality),
@@ -1219,7 +1220,6 @@ function createPlayerRow(index, p) {
             ]),
             h('button', { className: 'btn btn-danger btn-xs player-delete-btn', attrs: { type: 'button' }, dataset: { action: 'remove-player', removePlayer: '', playerName: p.name } }, ['✕']),
         ]),
-        h('div', { className: 'cell cell-records' }, [hardest]),
         h('div', { className: 'cell cell-points' }, [score]),
     ]);
 }
@@ -1230,7 +1230,7 @@ function updatePlayerRow(row, index, p) {
     const score = p.score ? p.score.toFixed(2) : '—';
     const rank = p.rank || '—';
     const hardest = p.hardest?.level?.name || '—';
-    const [cellPos, cellPlayer, cellRec, cellPoints] = row.children;
+    const [cellPos, cellRec, cellPlayer, cellPoints] = row.children;
     cellPos.className = `cell cell-position ${rc}`;
     cellPos.textContent = String(index + 1);
     cellRec.textContent = hardest;
