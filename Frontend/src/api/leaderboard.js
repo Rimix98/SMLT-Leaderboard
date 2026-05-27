@@ -84,7 +84,7 @@ function mapLeaderboardEntry(p) {
 
   return {
     id: userData?.id || p.id,
-    name: userData?.username || p.name,
+    name: p.name,
     rank: userData?.placement || 0,
     score: parseFloat(userData?.points) || 0,
     nationality: userData?.country || null,
@@ -438,9 +438,7 @@ export function showAddPlayerModal() {
 export async function removePlayer(name) {
   if (!store.isHost) { showToast('Только хост может удалять игроков', 'error'); return }
   if (!confirm(`Удалить игрока "${name}"?`)) return
-  console.log('[removePlayer] knocking before delete...')
-  const knockOk = await doAdminKnock()
-  console.log('[removePlayer] knock result:', knockOk, 'key:', tokens.adminKnockKey)
+  await doAdminKnock()
 
   try {
     const res = await fetchWithAbort(`${BACKEND_URL}/players/delete`, {
@@ -450,14 +448,6 @@ export async function removePlayer(name) {
       body: JSON.stringify({ name })
     }, 'players-delete')
     if (res.ok) { await loadAllPlayers(); showToast(`Игрок "${name}" удалён`, 'success'); return }
-    if (res.status === 404) {
-      const text = await res.clone().text().catch(() => '')
-      if (text.includes('Роут не найден')) {
-        showToast('Сессия истекла. Попробуйте перезайти.', 'error')
-        logoutHost()
-        return
-      }
-    }
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || 'Ошибка удаления игрока')
   } catch (e) {

@@ -74,7 +74,6 @@ export async function fetchWithAbort(url, options = {}, key = null) {
 
   try {
     let headers = buildHeaders()
-    console.log(`[fetchWithAbort] ${options.method || 'GET'} ${url}`, { knockKey: tokens.adminKnockKey, csrf: tokens.csrfToken, headers })
     let res = null
     try {
       res = await fetch(url, { ...options, headers, signal: controller.signal })
@@ -82,25 +81,19 @@ export async function fetchWithAbort(url, options = {}, key = null) {
       cleanup()
       throw fetchErr
     }
-    console.log(`[fetchWithAbort] response ${res.status} for ${url}`)
 
     if (!res.ok && res.status === 404 && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase())) {
       const cloned = res.clone()
       const text = await cloned.text().catch(() => '')
-      console.log(`[fetchWithAbort] 404 body: "${text}"`)
       if (text.includes('Роут не найден')) {
         tokens.adminKnockKey = ''
-        console.log('[fetchWithAbort] re-knocking...')
         const knocked = await doAdminKnock()
-        console.log('[fetchWithAbort] re-knock result:', knocked, 'key:', tokens.adminKnockKey)
         if (knocked) {
           headers = buildHeaders()
-          console.log('[fetchWithAbort] retry headers:', headers)
           const controller2 = new AbortController()
           const timeoutId2 = setTimeout(() => controller2.abort(), timeoutMs)
           try {
             res = await fetch(url, { ...options, headers, signal: controller2.signal })
-            console.log(`[fetchWithAbort] retry response ${res.status} for ${url}`)
           } finally {
             clearTimeout(timeoutId2)
           }
