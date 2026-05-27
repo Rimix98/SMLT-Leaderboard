@@ -235,9 +235,23 @@ a:hover {
     border: 1px solid var(--color-border);
     border-radius: var(--border-radius-md);
     padding: 3px;
+    position: relative;
+}
+
+.nav-indicator {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    background: var(--color-surface);
+    border-radius: 6px;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 0;
+    pointer-events: none;
 }
 
 .nav-link {
+    position: relative;
+    z-index: 1;
     padding: 6px 14px;
     font-size: var(--font-size-sm);
     font-weight: 500;
