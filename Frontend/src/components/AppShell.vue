@@ -137,6 +137,7 @@ provide('closeInfoModal', closeInfoModal)
       </div>
     </div>
   </Teleport>
+  <div id="toastContainer"></div>
 </template>
 
 <style>
