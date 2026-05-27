@@ -1190,9 +1190,9 @@ function ensureLeaderboardShell(table) {
     clearEl(table);
     const header = h('div', { className: 'table-header' }, [
         h('div', { className: 'cell cell-position' }, ['#']),
-        h('div', { className: 'cell cell-points' }, ['Очки']),
-        h('div', { className: 'cell cell-records' }, ['Hardest']),
         h('div', { className: 'cell cell-player' }, ['Игрок']),
+        h('div', { className: 'cell cell-records' }, ['Hardest']),
+        h('div', { className: 'cell cell-points' }, ['Очки']),
     ]);
 
     const body = h('div', { className: 'js-leaderboard-body' });
@@ -1209,8 +1209,6 @@ function createPlayerRow(index, p) {
     const hardest = p.hardest?.level?.name || '—';
     return h('div', { className: 'player-row', dataset: { profileIndex: String(index) } }, [
         h('div', { className: `cell cell-position ${rc}` }, [String(index + 1)]),
-        h('div', { className: 'cell cell-points' }, [score]),
-        h('div', { className: 'cell cell-records' }, [hardest]),
         h('div', { className: 'cell cell-player' }, [
             h('span', { className: 'player-flag' }, [
                 getFlag(p.nationality),
@@ -1221,6 +1219,8 @@ function createPlayerRow(index, p) {
             ]),
             h('button', { className: 'btn btn-danger btn-xs player-delete-btn', attrs: { type: 'button' }, dataset: { action: 'remove-player', removePlayer: '', playerName: p.name } }, ['✕']),
         ]),
+        h('div', { className: 'cell cell-records' }, [hardest]),
+        h('div', { className: 'cell cell-points' }, [score]),
     ]);
 }
 
@@ -1230,11 +1230,11 @@ function updatePlayerRow(row, index, p) {
     const score = p.score ? p.score.toFixed(2) : '—';
     const rank = p.rank || '—';
     const hardest = p.hardest?.level?.name || '—';
-    const [cellPos, cellPoints, cellRec, cellPlayer] = row.children;
+    const [cellPos, cellPlayer, cellRec, cellPoints] = row.children;
     cellPos.className = `cell cell-position ${rc}`;
     cellPos.textContent = String(index + 1);
-    cellPoints.textContent = score;
     cellRec.textContent = hardest;
+    cellPoints.textContent = score;
     const flagSpan = cellPlayer.querySelector('.player-flag');
     flagSpan.textContent = '';
     flagSpan.append(getFlag(p.nationality));
