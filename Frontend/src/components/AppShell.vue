@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, provide, watch } from 'vue'
+import { ref, onMounted, provide, watch, nextTick } from 'vue'
 import { store, toggleTheme } from '../store'
 import { initHostStatus, initCaptcha, verifyHost, logoutHost } from '../api/auth'
 import { refreshCsrfToken } from '../api/utils'
@@ -7,7 +7,26 @@ import { useRouter } from '../router'
 
 const { navigate } = useRouter()
 
-defineProps({ page: { type: String, default: '' } })
+const props = defineProps({ page: { type: String, default: '' } })
+
+const navRef = ref(null)
+const navIndicatorStyle = ref({ left: '0px', width: '0px' })
+
+function updateNavIndicator() {
+  if (!navRef.value) return
+  const activeLink = navRef.value.querySelector('.nav-link.active')
+  if (!activeLink) return
+  const navRect = navRef.value.getBoundingClientRect()
+  const linkRect = activeLink.getBoundingClientRect()
+  navIndicatorStyle.value = {
+    left: `${linkRect.left - navRect.left}px`,
+    width: `${linkRect.width}px`,
+  }
+}
+
+watch(() => props.page, () => {
+  nextTick(updateNavIndicator)
+})
 
 // Modal states
 const hostModalOpen = ref(false)
@@ -23,6 +42,7 @@ watch(() => store.isHost, (val) => {
 onMounted(async () => {
   await refreshCsrfToken()
   await initHostStatus()
+  nextTick(updateNavIndicator)
 })
 
 function openHostModal() {
@@ -76,11 +96,12 @@ provide('closeInfoModal', closeInfoModal)
       <div class="header-brand">
         <slot name="brand" />
       </div>
-      <nav class="header-nav">
-        <a href="#" class="nav-link" :class="{ active: page === 'home' }" @click.prevent="navigate('home')">Главная</a>
-        <a href="#" class="nav-link" :class="{ active: page === 'leaderboard' }" @click.prevent="navigate('leaderboard')">Лидерборд</a>
-        <a href="#" class="nav-link" :class="{ active: page === 'projects' }" @click.prevent="navigate('projects')">Проекты</a>
-        <a href="#" class="nav-link" :class="{ active: page === 'staff' }" @click.prevent="navigate('staff')">Стафф</a>
+      <nav class="header-nav" ref="navRef">
+        <div class="nav-indicator" :style="navIndicatorStyle"></div>
+        <a href="#" class="nav-link" :class="{ active: props.page === 'home' }" @click.prevent="navigate('home')">Главная</a>
+        <a href="#" class="nav-link" :class="{ active: props.page === 'leaderboard' }" @click.prevent="navigate('leaderboard')">Лидерборд</a>
+        <a href="#" class="nav-link" :class="{ active: props.page === 'projects' }" @click.prevent="navigate('projects')">Проекты</a>
+        <a href="#" class="nav-link" :class="{ active: props.page === 'staff' }" @click.prevent="navigate('staff')">Стафф</a>
       </nav>
       <div class="header-actions">
         <slot name="actions" />

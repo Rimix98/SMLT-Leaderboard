@@ -246,29 +246,40 @@ a:hover {
     background: var(--color-surface-2);
     padding: 3px;
     border-radius: var(--border-radius-md);
+    position: relative;
+}
+
+.nav-indicator {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    background: var(--color-surface);
+    border-radius: 6px;
+    box-shadow: var(--shadow-sm);
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 0;
 }
 
 .nav-link {
+    position: relative;
+    z-index: 1;
     padding: 6px 14px;
     font-size: var(--font-size-sm);
     font-weight: 500;
     color: var(--color-text-secondary);
     border-radius: 6px;
-    transition: all var(--transition-fast);
     text-decoration: none;
     white-space: nowrap;
+    transition: color var(--transition-fast);
 }
 
 .nav-link:hover {
-    background: var(--color-surface-3);
     color: var(--color-text-primary);
     text-decoration: none;
 }
 
 .nav-link.active {
-    background: var(--color-surface);
     color: var(--color-text-primary);
-    box-shadow: var(--shadow-sm);
 }
 
 .header-actions {
