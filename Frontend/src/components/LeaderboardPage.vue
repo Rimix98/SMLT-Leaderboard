@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { store, initTheme } from '../store'
 import { refreshCsrfToken, resolveCountry, CODE_TO_NAME, getFlagCode } from '../api/utils'
 import AppShell from './AppShell.vue'
@@ -20,8 +20,6 @@ import {
   addPlayer,
   closeAddPlayerModal,
 } from '../api/leaderboard'
-
-const openInfoModal = inject('openInfoModal')
 
 const activeTab = ref('players')
 const playerSearch = ref('')
@@ -64,36 +62,41 @@ async function loadLeaderboard() {
 
 const totalPoints = computed(() => store.players.reduce((sum, p) => sum + (p.score || 0), 0))
 
-const hardestLevelInfo = computed(() => {
-  let hardest = null
-  let hardestPlayer = null
-  store.players.forEach(p => {
-    if (p.hardest && p.hardest.level) {
-      if (!hardest || p.hardest.level.placement < hardest.placement) {
-        hardest = p.hardest.level
-        hardestPlayer = p
-      }
-    }
-  })
-  return hardest ? { name: hardest.name || '—', player: hardestPlayer?.name } : null
+const averagePoints = computed(() => {
+  if (store.players.length === 0) return 0
+  return totalPoints.value / store.players.length
+})
+
+const totalCompletedLevels = computed(() => store.levels.all?.length || 0)
+
+const topLevelByVictors = computed(() => {
+  if (!store.levels.all || store.levels.all.length === 0) return null
+  return store.levels.all.reduce((max, l) => (l.victors.length > (max?.victors?.length || 0)) ? l : max, null)
 })
 
 const countryStats = computed(() => {
   const counts = {}
+  let unknownCount = 0
   store.players.forEach(p => {
     const country = p.nationality
     if (country) {
       const key = country.toLowerCase().trim().replace(/\s+/g, '-')
       if (!counts[key]) counts[key] = { name: country, count: 0 }
       counts[key].count++
+    } else {
+      unknownCount++
     }
   })
-  return Object.values(counts)
+  const result = Object.values(counts)
     .map(c => {
       const code = resolveCountry(c.name)
       return { ...c, code, displayName: code ? (CODE_TO_NAME[code] || code) : 'Unknown' }
     })
     .sort((a, b) => b.count - a.count)
+  if (unknownCount > 0) {
+    result.push({ name: null, code: null, count: unknownCount, displayName: 'Unknown' })
+  }
+  return result
 })
 
 const displayedLevels = computed(() => getFilteredLevels())
@@ -108,6 +111,54 @@ onMounted(async () => {
 function retryLoad() {
   loadLeaderboard()
 }
+
+// Modal close helpers: only close if mousedown AND mouseup are on overlay
+function makeOverlayClose(closeFn) {
+  let mousedownOverlay = false
+  return {
+    onMousedown(e) {
+      mousedownOverlay = e.target === e.currentTarget
+    },
+    onMouseup(e) {
+      if (mousedownOverlay && e.target === e.currentTarget) {
+        closeFn()
+      }
+      mousedownOverlay = false
+    }
+  }
+}
+
+function onModalOpen() {
+  document.body.classList.add('modal-open')
+}
+
+const profileModalClose = makeOverlayClose(() => {
+  closeProfileModal()
+  document.body.classList.remove('modal-open')
+})
+const countryModalClose = makeOverlayClose(() => {
+  closeCountryModal()
+  document.body.classList.remove('modal-open')
+})
+const levelModalClose = makeOverlayClose(() => {
+  closeLevelModal()
+  document.body.classList.remove('modal-open')
+})
+
+function onProfileOpen(index) {
+  showProfile(index)
+  document.body.classList.add('modal-open')
+}
+
+function onCountryTop(name) {
+  showCountryTop(name)
+  document.body.classList.add('modal-open')
+}
+
+function onLevelVictors(id) {
+  showLevelVictors(id)
+  document.body.classList.add('modal-open')
+}
 </script>
 
 <template>
@@ -120,7 +171,6 @@ function retryLoad() {
       </div>
     </template>
     <template #actions>
-      <button class="btn btn-secondary btn-lg" @click="openInfoModal">ℹ️ Информация</button>
     </template>
   </AppShell>
 
@@ -142,7 +192,7 @@ function retryLoad() {
         <div v-if="store.isHost" class="admin-panel">
           <div class="admin-panel-header">👑 Управление игроками</div>
           <div class="admin-panel-content">
-            <button class="btn btn-primary" @click="showAddPlayerModal">➕ Добавить игрока</button>
+            <button class="btn btn-primary" @click="showAddPlayerModal(); document.body.classList.add('modal-open')">➕ Добавить игрока</button>
           </div>
         </div>
 
@@ -165,24 +215,24 @@ function retryLoad() {
               <div class="leaderboard-table" id="leaderboardTable">
                 <div class="table-header">
                   <div class="cell cell-position">#</div>
-                  <div class="cell cell-player">Игрок</div>
                   <div class="cell cell-points">Очки</div>
                   <div class="cell cell-records">Hardest</div>
+                  <div class="cell cell-player">Игрок</div>
                 </div>
-                <div v-for="(p, index) in store.players" :key="p.id ?? index" class="player-row" @click="showProfile(index)">
+                  <div v-for="(p, index) in store.players" :key="p.id ?? index" class="player-row" @click="onProfileOpen(index)">
                   <div class="cell cell-position" :class="index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other'">
                     {{ index + 1 }}
                   </div>
+                  <div class="cell cell-points">{{ (p.score || 0).toFixed(2) }}</div>
+                  <div class="cell cell-records">{{ p.hardest?.level?.name || '—' }}</div>
                   <div class="cell cell-player">
-                    <span class="player-flag"><img v-if="getFlagCode(p.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(p.nationality)}.png`" :alt="getFlagCode(p.nationality).toUpperCase()" width="20" style="vertical-align:middle;border-radius:2px;margin-right:4px"><span v-else>{{ !resolveCountry(p.nationality) && p.nationality === null ? '❌' : '🌍' }}</span></span>
+                    <span class="player-flag"><img v-if="getFlagCode(p.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(p.nationality)}.png`" :alt="getFlagCode(p.nationality).toUpperCase()" width="20" class="flag-img" style="vertical-align:middle;margin-right:4px"><span v-else>{{ !resolveCountry(p.nationality) && p.nationality === null ? '❌' : '🌍' }}</span></span>
                     <div class="player-info">
                       <span class="player-name">{{ p.name }}</span>
                       <span class="player-score">{{ (p.score || 0).toFixed(2) }} pts · #{{ p.rank || '—' }}</span>
                     </div>
                     <button v-if="store.isHost" class="btn btn-danger btn-xs player-delete-btn" @click.stop="removePlayer(p.name)">✕</button>
                   </div>
-                  <div class="cell cell-points">{{ (p.score || 0).toFixed(2) }}</div>
-                  <div class="cell cell-records">{{ p.hardest?.level?.name || '—' }}</div>
                 </div>
                 <div v-if="store.players.length === 0" class="empty-state">
                   <div class="empty-state-icon">🏆</div>
@@ -206,7 +256,7 @@ function retryLoad() {
                   <div class="cell cell-points">Позиция</div>
                   <div class="cell cell-records">Викторов</div>
                 </div>
-                <div v-for="(level, index) in displayedLevels" :key="level.id" class="player-row" @click="showLevelVictors(level.id)">
+                <div v-for="(level, index) in displayedLevels" :key="level.id" class="player-row" @click="onLevelVictors(level.id)">
                   <div class="cell cell-position" :class="index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other'">
                     {{ index + 1 }}
                   </div>
@@ -241,24 +291,29 @@ function retryLoad() {
               <div class="stat-label">Игроков</div>
             </div>
             <div class="stat-card">
-              <div class="stat-value">{{ totalPoints.toFixed(2) }}</div>
-              <div class="stat-label">Сумма очков</div>
+              <div class="stat-value">{{ averagePoints.toFixed(2) }}</div>
+              <div class="stat-label">Среднее очков</div>
             </div>
             <div class="stat-card">
-              <div class="stat-value" style="font-size: var(--font-size-sm);"
-                :title="hardestLevelInfo ? `${hardestLevelInfo.name} — ${hardestLevelInfo.player}` : ''">
-                {{ hardestLevelInfo?.name || '—' }}
+              <div class="stat-value">{{ totalCompletedLevels }}</div>
+              <div class="stat-label">Пройдено уровней</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" style="font-size: var(--font-size-sm);
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+                :title="topLevelByVictors ? `${topLevelByVictors.name} — ${topLevelByVictors.victors.length} victors` : ''">
+                {{ topLevelByVictors?.name || '—' }}
               </div>
-              <div class="stat-label">Сложнейший уровень</div>
+              <div class="stat-label">Топ уровень</div>
             </div>
           </div>
         </div>
         <div class="stats-section">
           <h3>🌍 По странам</h3>
           <div class="country-list" id="countryList">
-            <div v-for="c in countryStats" :key="c.code" class="country-item" style="cursor:pointer" @click="showCountryTop(c.name)">
+            <div v-for="c in countryStats" :key="c.code" class="country-item" style="cursor:pointer" @click="onCountryTop(c.name)">
               <div class="country-info">
-                <span class="country-flag"><img v-if="getFlagCode(c.name)" :src="`https://flagcdn.com/w20/${getFlagCode(c.name)}.png`" :alt="getFlagCode(c.name).toUpperCase()" width="20" style="vertical-align:middle;border-radius:2px;margin-right:4px"><span v-else>{{ !resolveCountry(c.name) && c.name === null ? '❌' : '🌍' }}</span></span>
+                <span class="country-flag"><img v-if="getFlagCode(c.name)" :src="`https://flagcdn.com/w20/${getFlagCode(c.name)}.png`" :alt="getFlagCode(c.name).toUpperCase()" width="20" class="flag-img" style="vertical-align:middle;margin-right:4px"><span v-else>{{ !resolveCountry(c.name) && c.name === null ? '❌' : '🌍' }}</span></span>
                 <span class="country-name">{{ c.displayName }}</span>
               </div>
               <span class="country-count">{{ c.count }}</span>
@@ -272,38 +327,38 @@ function retryLoad() {
   </main>
 
   <Teleport to="body">
-    <div id="profileModal" class="modal-overlay" @click.self="closeProfileModal">
-      <div class="modal" @click.stop>
+    <div id="profileModal" class="modal-overlay" @mousedown="profileModalClose.onMousedown" @mouseup="profileModalClose.onMouseup">
+      <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title" id="profileTitle">Профиль</div>
-          <button class="modal-close" @click="closeProfileModal">✕</button>
+          <button class="modal-close" @click="closeProfileModal; document.body.classList.remove('modal-open')">✕</button>
         </div>
         <div class="modal-body" id="profileBody"></div>
       </div>
     </div>
 
-    <div id="countryModal" class="modal-overlay" @click.self="closeCountryModal">
-      <div class="modal" @click.stop>
+    <div id="countryModal" class="modal-overlay" @mousedown="countryModalClose.onMousedown" @mouseup="countryModalClose.onMouseup">
+      <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title" id="countryTitle">Топ страны</div>
-          <button class="modal-close" @click="closeCountryModal">✕</button>
+          <button class="modal-close" @click="closeCountryModal; document.body.classList.remove('modal-open')">✕</button>
         </div>
         <div class="modal-body" id="countryBody"></div>
       </div>
     </div>
 
-    <div id="levelModal" class="modal-overlay" @click.self="closeLevelModal">
-      <div class="modal" @click.stop>
+    <div id="levelModal" class="modal-overlay" @mousedown="levelModalClose.onMousedown" @mouseup="levelModalClose.onMouseup">
+      <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title" id="levelTitle">Викторы уровня</div>
-          <button class="modal-close" @click="closeLevelModal">✕</button>
+          <button class="modal-close" @click="closeLevelModal; document.body.classList.remove('modal-open')">✕</button>
         </div>
         <div class="modal-body" id="levelBody"></div>
       </div>
     </div>
 
-    <div id="addPlayerModal" class="modal-overlay">
-      <div class="modal" @click.stop>
+    <div id="addPlayerModal" class="modal-overlay" @mousedown="(e) => { if (e.target === e.currentTarget) { closeAddPlayerModal(); document.body.classList.remove('modal-open') } }">
+      <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title">➕ Добавить игрока</div>
           <button class="modal-close" @click="closeAddPlayerModal">✕</button>
@@ -314,8 +369,8 @@ function retryLoad() {
             <input type="text" id="newPlayerName" class="form-input" placeholder="Например: samoletik">
           </div>
           <div style="display:flex;gap:var(--spacing-sm)">
-            <button class="btn btn-secondary" @click="closeAddPlayerModal">Отмена</button>
-            <button class="btn btn-primary" @click="addPlayer">Добавить</button>
+            <button class="btn btn-secondary" @click="closeAddPlayerModal; document.body.classList.remove('modal-open')">Отмена</button>
+            <button class="btn btn-primary" @click="addPlayer; document.body.classList.remove('modal-open')">Добавить</button>
           </div>
         </div>
       </div>

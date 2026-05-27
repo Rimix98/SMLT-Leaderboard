@@ -96,6 +96,10 @@ body {
     transition: background-color var(--transition-normal), color var(--transition-normal);
 }
 
+body.modal-open {
+    overflow: hidden;
+}
+
 body.home-page {
     background-image: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('Background_Image_DarkMode.png');
     background-size: cover;
@@ -598,7 +602,7 @@ a:hover {
 
 .stats-grid-main {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: var(--spacing-md);
 }
 
@@ -631,7 +635,7 @@ a:hover {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    max-height: 200px;
+    max-height: 400px;
     overflow-y: auto;
 }
 
@@ -732,7 +736,7 @@ a:hover {
 
 .table-header {
     display: grid;
-    grid-template-columns: 50px 1fr 80px 80px;
+    grid-template-columns: 50px 80px 80px 1fr;
     padding: 10px var(--spacing-lg);
     background-color: var(--color-surface-2);
     border-bottom: 1px solid var(--color-border);
@@ -745,7 +749,7 @@ a:hover {
 
 .player-row {
     display: grid;
-    grid-template-columns: 50px 1fr 80px 80px;
+    grid-template-columns: 50px 80px 80px 1fr;
     padding: 0 var(--spacing-lg);
     border-bottom: 1px solid var(--color-border);
     transition: background-color var(--transition-fast);
@@ -801,6 +805,11 @@ a:hover {
     flex-shrink: 0;
     display: flex;
     align-items: center;
+}
+
+.flag-img {
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
 }
 
 .player-flag-label {
@@ -1077,7 +1086,7 @@ a:hover {
 
 .participants-preview {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: var(--spacing-xs);
     padding: var(--spacing-sm);
     min-height: 40px;

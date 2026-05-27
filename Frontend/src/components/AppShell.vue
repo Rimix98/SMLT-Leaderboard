@@ -35,9 +35,36 @@ const captchaValue = ref('')
 const hostError = ref('')
 const infoModalOpen = ref(false)
 
+// Modal close helpers: track mousedown on overlay
+function makeOverlayClose(closeFn) {
+  let mousedownOverlay = false
+  return {
+    onMousedown(e) {
+      mousedownOverlay = e.target === e.currentTarget
+    },
+    onMouseup(e) {
+      if (mousedownOverlay && e.target === e.currentTarget) {
+        closeFn()
+      }
+      mousedownOverlay = false
+    }
+  }
+}
+
+const hostClose = makeOverlayClose(closeHostModal)
+const infoClose = makeOverlayClose(closeInfoModal)
+
 watch(() => store.isHost, (val) => {
   document.body.classList.toggle('host-active', val)
 }, { immediate: true })
+
+watch(hostModalOpen, (val) => {
+  document.body.classList.toggle('modal-open', val)
+})
+
+watch(infoModalOpen, (val) => {
+  document.body.classList.toggle('modal-open', val)
+})
 
 onMounted(async () => {
   await refreshCsrfToken()
@@ -73,8 +100,6 @@ function closeInfoModal() {
 
 // Provide for child components
 provide('openHostModal', openHostModal)
-provide('openInfoModal', openInfoModal)
-provide('closeInfoModal', closeInfoModal)
 </script>
 
 <template>
@@ -104,14 +129,15 @@ provide('closeInfoModal', closeInfoModal)
         <a href="#" class="nav-link" :class="{ active: props.page === 'staff' }" @click.prevent="navigate('staff')">Стафф</a>
       </nav>
       <div class="header-actions">
+        <button class="btn btn-secondary btn-lg" @click="openInfoModal">ℹ️ Информация</button>
         <slot name="actions" />
       </div>
     </div>
   </header>
 
   <Teleport to="body">
-    <div class="modal-overlay" :class="{ active: hostModalOpen }" @click.self="closeHostModal">
-      <div class="modal" @click.stop>
+    <div class="modal-overlay" :class="{ active: hostModalOpen }" @mousedown="hostClose.onMousedown" @mouseup="hostClose.onMouseup">
+      <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title">🔐 Вход хоста</div>
           <button class="modal-close" @click="closeHostModal">✕</button>
@@ -134,8 +160,8 @@ provide('closeInfoModal', closeInfoModal)
       </div>
     </div>
 
-    <div class="modal-overlay" :class="{ active: infoModalOpen }" @click.self="closeInfoModal">
-      <div class="modal" style="max-width: 480px;" @click.stop>
+    <div class="modal-overlay" :class="{ active: infoModalOpen }" @mousedown="infoClose.onMousedown" @mouseup="infoClose.onMouseup">
+      <div class="modal" style="max-width: 480px;" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title">📋 Информация</div>
           <button class="modal-close" @click="closeInfoModal">✕</button>

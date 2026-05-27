@@ -1,5 +1,5 @@
 <script setup>
-import { inject, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { store, initTheme } from '../store'
 import { refreshCsrfToken } from '../api/utils'
 import AppShell from './AppShell.vue'
@@ -7,6 +7,8 @@ import {
   loadStaffRoles,
   loadStaffTiers,
   getTierConfig,
+  getPlayerTier,
+  TIER_CONFIG,
   showAddRoleModal,
   showEditRoleModal,
   deleteRole,
@@ -23,7 +25,67 @@ import {
   addPlayerToRole,
 } from '../api/staff'
 
-const openInfoModal = inject('openInfoModal')
+// Modal close helpers with mousedown/mouseup tracking
+function makeOverlayClose(closeFn) {
+  let mousedownOverlay = false
+  return {
+    onMousedown(e) {
+      mousedownOverlay = e.target === e.currentTarget
+    },
+    onMouseup(e) {
+      if (mousedownOverlay && e.target === e.currentTarget) {
+        closeFn()
+      }
+      mousedownOverlay = false
+    }
+  }
+}
+
+const addRoleClose = makeOverlayClose(() => {
+  closeAddRoleModal()
+  document.body.classList.remove('modal-open')
+})
+
+const addPlayerClose = makeOverlayClose(() => {
+  closeAddStaffPlayerModal()
+  document.body.classList.remove('modal-open')
+})
+
+function openAddRole() {
+  showAddRoleModal()
+  document.body.classList.add('modal-open')
+}
+
+function openEditRole(roleIndex) {
+  showEditRoleModal(roleIndex)
+  document.body.classList.add('modal-open')
+}
+
+function openAddStaffPlayer(roleIndex) {
+  showAddStaffPlayerModal(roleIndex)
+  document.body.classList.add('modal-open')
+}
+
+const totalUniqueParticipants = computed(() => {
+  const names = new Set()
+  store.staffRoles.forEach(role => {
+    ;(role.players || []).forEach(p => names.add(p.nickname))
+  })
+  return names.size
+})
+
+const totalRoles = computed(() => store.staffRoles.length)
+
+const tierCounts = computed(() => {
+  const counts = { priority: 0, base: 0, reserve: 0, na: 0 }
+  store.staffRoles.forEach(role => {
+    ;(role.players || []).forEach(p => {
+      const tierKey = getPlayerTier(p.nickname)
+      if (counts[tierKey] !== undefined) counts[tierKey]++
+    })
+  })
+  return counts
+})
 
 onMounted(async () => {
   initTheme()
@@ -42,7 +104,6 @@ onMounted(async () => {
       </div>
     </template>
     <template #actions>
-      <button class="btn btn-secondary btn-lg" @click="openInfoModal">ℹ️ Информация</button>
     </template>
   </AppShell>
 
@@ -51,7 +112,48 @@ onMounted(async () => {
       <div v-if="store.isHost" class="admin-panel">
         <div class="admin-panel-header">👑 Управление ролями</div>
         <div class="admin-panel-content">
-          <button class="btn btn-primary" @click="showAddRoleModal">➕ Создать роль</button>
+          <button class="btn btn-primary" @click="openAddRole()">➕ Создать роль</button>
+        </div>
+      </div>
+
+      <div class="stats-grid" style="margin-bottom:var(--spacing-lg)">
+        <div class="stats-section">
+          <h3>📊 Статистика</h3>
+          <div class="stats-grid-main" style="grid-template-columns:repeat(3,1fr)">
+            <div class="stat-card">
+              <div class="stat-value">{{ totalUniqueParticipants }}</div>
+              <div class="stat-label">Всего участников</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">{{ totalRoles }}</div>
+              <div class="stat-label">Ролей</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" style="font-size:var(--font-size-sm)">{{ tierCounts.priority + tierCounts.base + tierCounts.reserve + tierCounts.na }}</div>
+              <div class="stat-label">Участников (с учётом ролей)</div>
+            </div>
+          </div>
+        </div>
+        <div class="stats-section">
+          <h3>🎯 По тирам</h3>
+          <div class="stats-grid-main" style="grid-template-columns:repeat(4,1fr)">
+            <div class="stat-card">
+              <div class="stat-value" style="color:#00ffff">{{ tierCounts.priority }}</div>
+              <div class="stat-label">Приоритет</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" style="color:#540b6d">{{ tierCounts.base }}</div>
+              <div class="stat-label">Основа</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" style="color:#6d0b0d">{{ tierCounts.reserve }}</div>
+              <div class="stat-label">Резерв</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" style="color:#888888">{{ tierCounts.na }}</div>
+              <div class="stat-label">N/A</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -112,7 +214,7 @@ onMounted(async () => {
             <div v-if="store.isHost" class="project-actions">
               <button class="btn btn-secondary btn-sm" @click="moveRole(roleIndex, 'up')">↑</button>
               <button class="btn btn-secondary btn-sm" @click="moveRole(roleIndex, 'down')">↓</button>
-              <button class="btn btn-primary btn-sm" @click="showEditRoleModal(roleIndex)">✏️ Редактировать</button>
+              <button class="btn btn-primary btn-sm" @click="openEditRole(roleIndex)">✏️ Редактировать</button>
               <button class="btn btn-danger btn-sm" @click="deleteRole(roleIndex)">🗑️ Удалить роль</button>
             </div>
           </div>
@@ -127,11 +229,11 @@ onMounted(async () => {
   </main>
 
   <Teleport to="body">
-    <div id="addRoleModal" class="modal-overlay" ref="addRoleModalEl">
-      <div class="modal">
+    <div id="addRoleModal" class="modal-overlay" ref="addRoleModalEl" @mousedown="addRoleClose.onMousedown" @mouseup="addRoleClose.onMouseup">
+      <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title" id="addRoleModalTitle">🆕 Новая роль</div>
-          <button class="modal-close" @click="closeAddRoleModal">✕</button>
+          <button class="modal-close" @click="closeAddRoleModal(); document.body.classList.remove('modal-open')">✕</button>
         </div>
         <div class="modal-body">
           <input type="hidden" id="editRoleIndex" value="-1">
@@ -173,11 +275,11 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div id="addPlayerModal" class="modal-overlay">
-      <div class="modal">
+    <div id="addPlayerModal" class="modal-overlay" @mousedown="addPlayerClose.onMousedown" @mouseup="addPlayerClose.onMouseup">
+      <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title" id="addPlayerModalTitle">👤 Добавить игрока</div>
-          <button class="modal-close" @click="closeAddStaffPlayerModal">✕</button>
+          <button class="modal-close" @click="closeAddStaffPlayerModal(); document.body.classList.remove('modal-open')">✕</button>
         </div>
         <div class="modal-body">
           <input type="hidden" id="addPlayerRoleIndex" value="-1">
@@ -190,8 +292,8 @@ onMounted(async () => {
             <input type="text" id="playerDiscord" class="form-input" placeholder="Username#0000 or username">
           </div>
           <div style="display:flex;gap:var(--spacing-sm);margin-top:var(--spacing-md)">
-            <button class="btn btn-secondary" @click="closeAddStaffPlayerModal">Отмена</button>
-            <button class="btn btn-primary" @click="addPlayerToRole">Добавить игрока</button>
+            <button class="btn btn-secondary" @click="closeAddStaffPlayerModal(); document.body.classList.remove('modal-open')">Отмена</button>
+            <button class="btn btn-primary" @click="addPlayerToRole(); document.body.classList.remove('modal-open')">Добавить игрока</button>
           </div>
         </div>
       </div>

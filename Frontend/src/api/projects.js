@@ -347,7 +347,7 @@ export function updateParticipantsPreview() {
       const roles = newMatch[2].split(/\s+/).filter(Boolean)
       tag.appendChild(document.createTextNode(`${name} - `))
       roles.forEach((role, ri) => {
-        if (ri) tag.appendChild(document.createTextNode(' '))
+        if (ri) tag.appendChild(document.createTextNode(' · '))
         const roleSpan = document.createElement('span')
         roleSpan.className = 'role'
         const roleObj = (store.staffRoles || []).find(r => r.name === role)

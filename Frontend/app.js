@@ -326,8 +326,13 @@ function mountDelegatedClicks() {
     document.getElementById('countryList')?.addEventListener('click', (e) => {
         const item = e.target.closest('[data-country-token]');
         if (item) {
-            const country = decodeCountryToken(item.dataset.countryToken);
-            if (country) showCountryTop(country);
+            const token = item.dataset.countryToken;
+            if (token) {
+                const country = decodeCountryToken(token);
+                if (country) showCountryTop(country);
+            } else {
+                showCountryTop(null);
+            }
         }
     });
     document.getElementById('levelsTable')?.addEventListener('click', (e) => {
@@ -1185,9 +1190,9 @@ function ensureLeaderboardShell(table) {
     clearEl(table);
     const header = h('div', { className: 'table-header' }, [
         h('div', { className: 'cell cell-position' }, ['#']),
-        h('div', { className: 'cell cell-player' }, ['Игрок']),
         h('div', { className: 'cell cell-points' }, ['Очки']),
         h('div', { className: 'cell cell-records' }, ['Hardest']),
+        h('div', { className: 'cell cell-player' }, ['Игрок']),
     ]);
     const body = h('div', { className: 'js-leaderboard-body' });
     store._leaderboard.body = body;
@@ -1203,6 +1208,8 @@ function createPlayerRow(index, p) {
     const hardest = p.hardest?.level?.name || '—';
     return h('div', { className: 'player-row', dataset: { profileIndex: String(index) } }, [
         h('div', { className: `cell cell-position ${rc}` }, [String(index + 1)]),
+        h('div', { className: 'cell cell-points' }, [score]),
+        h('div', { className: 'cell cell-records' }, [hardest]),
         h('div', { className: 'cell cell-player' }, [
             h('span', { className: 'player-flag' }, [
                 getFlag(p.nationality),
@@ -1213,8 +1220,6 @@ function createPlayerRow(index, p) {
             ]),
             h('button', { className: 'btn btn-danger btn-xs player-delete-btn', attrs: { type: 'button' }, dataset: { action: 'remove-player', removePlayer: '', playerName: p.name } }, ['✕']),
         ]),
-        h('div', { className: 'cell cell-points' }, [score]),
-        h('div', { className: 'cell cell-records' }, [hardest]),
     ]);
 }
 
@@ -1224,16 +1229,16 @@ function updatePlayerRow(row, index, p) {
     const score = p.score ? p.score.toFixed(2) : '—';
     const rank = p.rank || '—';
     const hardest = p.hardest?.level?.name || '—';
-    const [cellPos, cellPlayer, cellPoints, cellRec] = row.children;
+    const [cellPos, cellPoints, cellRec, cellPlayer] = row.children;
     cellPos.className = `cell cell-position ${rc}`;
     cellPos.textContent = String(index + 1);
+    cellPoints.textContent = score;
+    cellRec.textContent = hardest;
     const flagSpan = cellPlayer.querySelector('.player-flag');
     flagSpan.textContent = '';
     flagSpan.append(getFlag(p.nationality));
     cellPlayer.querySelector('.player-name').textContent = p.name;
     cellPlayer.querySelector('.player-score').textContent = `${score} pts · #${rank}`;
-    cellPoints.textContent = score;
-    cellRec.textContent = hardest;
     const delBtn = cellPlayer.querySelector('[data-remove-player]');
     if (delBtn) delBtn.dataset.playerName = p.name;
 }
@@ -1281,32 +1286,30 @@ function renderPlayers() {
 
 function renderStats() {
     const statPlayers = document.getElementById('statPlayers');
-    const statPoints = document.getElementById('statPoints');
-    const statHardest = document.getElementById('statHardest');
+    const statAvg = document.getElementById('statAvg');
+    const statLevels = document.getElementById('statLevels');
+    const statTopLevel = document.getElementById('statTopLevel');
 
     if (statPlayers) statPlayers.textContent = store.players.length;
 
     const totalPoints = store.players.reduce((sum, p) => sum + (p.score || 0), 0);
-    if (statPoints) statPoints.textContent = totalPoints.toFixed(2);
+    const avg = store.players.length > 0 ? totalPoints / store.players.length : 0;
+    if (statAvg) statAvg.textContent = avg.toFixed(2);
 
-    let hardestLevel = null;
-    let hardestPlayer = null;
-    store.players.forEach(p => {
-        if (p.hardest && p.hardest.level) {
-            if (!hardestLevel || p.hardest.level.placement < hardestLevel.placement) {
-                hardestLevel = p.hardest.level;
-                hardestPlayer = p;
+    const levelsCount = store.levels.all ? store.levels.all.length : 0;
+    if (statLevels) statLevels.textContent = levelsCount;
+
+    let topLevel = null;
+    if (store.levels.all) {
+        store.levels.all.forEach(l => {
+            if (!topLevel || l.victors.length > topLevel.victors.length) {
+                topLevel = l;
             }
-        }
-    });
-
-    const hardestEl = document.getElementById('statHardest');
-    if (hardestLevel) {
-        const levelName = hardestLevel.name || '—';
-        hardestEl.textContent = levelName;
-        hardestEl.title = `${levelName} #${hardestLevel.placement} — ${hardestPlayer ? hardestPlayer.name : '—'}`;
-    } else {
-        hardestEl.textContent = '—';
+        });
+    }
+    if (statTopLevel) {
+        statTopLevel.textContent = topLevel ? topLevel.name : '—';
+        statTopLevel.title = topLevel ? `${topLevel.name} — ${topLevel.victors.length} victors` : '';
     }
 
     renderCountryStats();
@@ -1317,6 +1320,7 @@ function renderCountryStats() {
     if (!countryList) return;
 
     const countryCounts = {};
+    let unknownCount = 0;
     store.players.forEach(p => {
         const country = p.nationality;
         if (country) {
@@ -1326,6 +1330,8 @@ function renderCountryStats() {
             }
             countryCounts[key].count++;
             countryCounts[key].members.push(p);
+        } else {
+            unknownCount++;
         }
     });
 
@@ -1364,29 +1370,55 @@ function renderCountryStats() {
         );
         frag.appendChild(row);
     });
+    if (unknownCount > 0) {
+        const row = h(
+            'div',
+            {
+                className: 'country-item',
+                style: { cursor: 'pointer' },
+                dataset: { countryToken: '' },
+                title: 'Топ игроков Unknown',
+            },
+            [
+                h('div', { className: 'country-info' }, [
+                    h('span', { className: 'country-flag' }, [h('span', {}, ['🌍'])]),
+                    h('span', { className: 'country-name' }, ['Unknown']),
+                ]),
+                h('span', { className: 'country-count' }, [String(unknownCount)]),
+            ]
+        );
+        frag.appendChild(row);
+    }
     countryList.appendChild(frag);
 }
 
 function showCountryTop(raw) {
-    const country = resolveCountry(raw);
-    if (!country) {
-        showToast('Страна не найдена', 'error');
-        return;
-    }
-
-    const countryPlayers = store.allPlayers.filter(p => {
-        const pCountry = resolveCountry(p.nationality);
-        return pCountry === country;
-    }).sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
-
     const modal = document.getElementById('countryModal');
     const title = document.getElementById('countryTitle');
     const body = document.getElementById('countryBody');
 
     if (!modal || !title || !body) return;
 
-    const flagNode = getFlag(country);
-    const countryName = CODE_TO_NAME[country] || country;
+    let flagNode, countryName, countryPlayers;
+
+    if (!raw) {
+        countryPlayers = store.allPlayers.filter(p => !p.nationality)
+            .sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
+        flagNode = h('span', {}, ['🌍']);
+        countryName = 'Unknown';
+    } else {
+        const country = resolveCountry(raw);
+        if (!country) {
+            showToast('Страна не найдена', 'error');
+            return;
+        }
+        countryPlayers = store.allPlayers.filter(p => {
+            const pCountry = resolveCountry(p.nationality);
+            return pCountry === country;
+        }).sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
+        flagNode = getFlag(country);
+        countryName = CODE_TO_NAME[country] || country;
+    }
     
     clearEl(title);
     title.append(flagNode, ` Топ игроков: ${countryName}`);

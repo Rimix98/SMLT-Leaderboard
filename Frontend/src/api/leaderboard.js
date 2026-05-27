@@ -414,19 +414,32 @@ export function closeProfileModal(e) {
 
 export function showCountryTop(raw) {
   import('./utils').then(({ resolveCountry, CODE_TO_NAME }) => {
-    const country = resolveCountry(raw)
-    if (!country) { showToast('Страна не найдена', 'error'); return }
-
-    const countryPlayers = store.allPlayers.filter(p => resolveCountry(p.nationality) === country)
-      .sort((a, b) => (a.rank || 999999) - (b.rank || 999999))
-
     const modal = document.getElementById('countryModal')
     const title = document.getElementById('countryTitle')
     const body = document.getElementById('countryBody')
     if (!modal || !title || !body) return
 
-    const flagEl = createFlagElement(country)
-    const countryName = CODE_TO_NAME[country] || country
+    let countryPlayers
+    let flagEl
+    let countryName
+
+    if (!raw) {
+      countryPlayers = store.allPlayers.filter(p => !p.nationality)
+        .sort((a, b) => (a.rank || 999999) - (b.rank || 999999))
+      const span = document.createElement('span')
+      span.textContent = '🌍'
+      flagEl = span
+      countryName = 'Unknown'
+    } else {
+      const country = resolveCountry(raw)
+      if (!country) { showToast('Страна не найдена', 'error'); return }
+
+      countryPlayers = store.allPlayers.filter(p => resolveCountry(p.nationality) === country)
+        .sort((a, b) => (a.rank || 999999) - (b.rank || 999999))
+      flagEl = createFlagElement(country)
+      countryName = CODE_TO_NAME[country] || country
+    }
+
     while (title.firstChild) title.firstChild.remove()
     title.appendChild(flagEl)
     title.appendChild(document.createTextNode(` Топ игроков: ${countryName}`))
