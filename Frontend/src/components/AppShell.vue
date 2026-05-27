@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, provide } from 'vue'
+import { ref, onMounted, provide, watch } from 'vue'
 import { store, toggleTheme } from '../store'
 import { initHostStatus, initCaptcha, verifyHost, logoutHost } from '../api/auth'
 import { refreshCsrfToken } from '../api/utils'
@@ -12,6 +12,10 @@ const hostPassword = ref('')
 const captchaValue = ref('')
 const hostError = ref('')
 const infoModalOpen = ref(false)
+
+watch(() => store.isHost, (val) => {
+  document.body.classList.toggle('host-active', val)
+}, { immediate: true })
 
 onMounted(async () => {
   await refreshCsrfToken()
