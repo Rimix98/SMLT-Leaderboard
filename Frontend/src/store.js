@@ -22,9 +22,10 @@ export const store = reactive({
 
 let themeTransitionTimer = null
 
-export function toggleTheme() {
-  const current = store.theme
-  const next = current === 'dark' ? 'light' : 'dark'
+const themes = ['dark', 'light', 'gray']
+
+export function setTheme(theme) {
+  if (!themes.includes(theme)) return
 
   document.body.classList.add('theme-transitioning')
   if (themeTransitionTimer) clearTimeout(themeTransitionTimer)
@@ -32,12 +33,13 @@ export function toggleTheme() {
     document.body.classList.remove('theme-transitioning')
   }, 400)
 
-  store.theme = next
-  document.documentElement.setAttribute('data-theme', next)
-  localStorage.setItem('smlt-theme', next)
+  store.theme = theme
+  document.documentElement.setAttribute('data-theme', theme)
+  localStorage.setItem('smlt-theme', theme)
 }
 
 export function initTheme() {
-  const saved = store.theme
+  const saved = themes.includes(store.theme) ? store.theme : 'dark'
+  store.theme = saved
   document.documentElement.setAttribute('data-theme', saved)
 }

@@ -1,10 +1,26 @@
 <script setup>
-import { ref, onMounted, provide, watch, nextTick } from 'vue'
-import { store, toggleTheme } from '../store'
+import { ref, onMounted, onUnmounted, provide, watch, nextTick } from 'vue'
+import { store, setTheme } from '../store'
 import { initHostStatus, initCaptcha, verifyHost, logoutHost } from '../api/auth'
 import { refreshCsrfToken } from '../api/utils'
 
 const props = defineProps({ page: { type: String, default: '' } })
+
+const themeOpen = ref(false)
+const themeBtnRef = ref(null)
+
+function toggleThemeDropdown() {
+  themeOpen.value = !themeOpen.value
+}
+
+function onDocumentClick(e) {
+  if (themeOpen.value && themeBtnRef.value && !themeBtnRef.value.contains(e.target)) {
+    themeOpen.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('click', onDocumentClick))
+onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
 const navRef = ref(null)
 const navIndicatorStyle = ref({ left: '0px', width: '0px' })
@@ -100,9 +116,20 @@ provide('openHostModal', openHostModal)
 </script>
 
 <template>
-  <button class="theme-toggle" title="Сменить тему" @click="toggleTheme">
-    <span class="theme-icon">{{ store.theme === 'dark' ? '🌙' : '☀️' }}</span>
-  </button>
+  <div class="theme-dropdown" ref="themeBtnRef">
+    <button class="theme-toggle" title="Сменить тему" @click="toggleThemeDropdown">🎨</button>
+    <div class="theme-dropdown-menu" v-if="themeOpen">
+      <button class="theme-option" :class="{ active: store.theme === 'dark' }" @click="setTheme('dark'); themeOpen = false">
+        <span class="theme-option-icon">🌙</span> Тёмная
+      </button>
+      <button class="theme-option" :class="{ active: store.theme === 'light' }" @click="setTheme('light'); themeOpen = false">
+        <span class="theme-option-icon">☀️</span> Светлая
+      </button>
+      <button class="theme-option" :class="{ active: store.theme === 'gray' }" @click="setTheme('gray'); themeOpen = false">
+        <span class="theme-option-icon">🌫️</span> Серая
+      </button>
+    </div>
+  </div>
 
   <button
     class="host-btn host-btn-left"
