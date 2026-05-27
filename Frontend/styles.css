@@ -998,6 +998,17 @@ a:hover {
     border-radius: var(--border-radius-sm);
     font-size: var(--font-size-xs);
     border: 1px solid var(--color-border-light);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.nickname-glow {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 
 .participant-tag .role {
@@ -1945,6 +1956,8 @@ a:hover {
     font-size: var(--font-size-xs);
     position: relative;
     border: 1px solid var(--color-border-light);
+    max-width: 100%;
+    min-width: 0;
 }
 
 .staff-player-tag .staff-player-remove-tag,
