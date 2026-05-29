@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { store, initTheme } from '../store'
 import { refreshCsrfToken } from '../api/utils'
 import AppShell from './AppShell.vue'
@@ -23,6 +23,8 @@ import {
   editAddPlayer,
   closeAddStaffPlayerModal,
   addPlayerToRole,
+  initStaffDelegation,
+  destroyStaffDelegation,
 } from '../api/staff'
 
 // Modal close helpers with mousedown/mouseup tracking
@@ -91,6 +93,11 @@ onMounted(async () => {
   initTheme()
   await refreshCsrfToken()
   await Promise.all([loadStaffRoles(), loadStaffTiers()])
+  initStaffDelegation()
+})
+
+onUnmounted(() => {
+  destroyStaffDelegation()
 })
 </script>
 

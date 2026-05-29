@@ -423,6 +423,28 @@ export async function addPlayerFromRoleModal() {
   if (!nickname) { showToast('Введите ник игрока', 'error'); return }
   const discord = discordInput?.value?.trim() || ''
 
+  const editPlayerIdx = parseInt(document.getElementById('editRolePlayerIdx')?.value || '-1')
+  if (editPlayerIdx >= 0) {
+    const role = store.staffRoles[roleIndex]
+    if (role.players && role.players[editPlayerIdx]) {
+      role.players[editPlayerIdx].nickname = nickname
+      role.players[editPlayerIdx].discord = discord
+    }
+    try {
+      await saveStaffRoles()
+      await loadStaffTiers()
+      document.getElementById('editRolePlayerIdx').value = '-1'
+      nicknameInput.value = ''; discordInput.value = ''
+      const btn = document.getElementById('roleAddPlayerBtn')
+      if (btn) { btn.textContent = '➕ Добавить'; btn.dataset.action = 'role-add-player' }
+      renderRoleModalPlayerList(roleIndex)
+      showToast(`Игрок «${nickname}» обновлён`, 'success')
+    } catch (e) {
+      if (!isAbortError(e)) { showToast(e.message, 'error') }
+    }
+    return
+  }
+
   document.getElementById('editRolePlayerIdx').value = '-1'
   document.getElementById('roleAddPlayerNickname').value = ''
   document.getElementById('roleAddPlayerDiscord').value = ''
@@ -655,5 +677,159 @@ export async function editAddPlayer() {
     showToast(`Игрок «${nickname}» добавлен в роль «${store.staffRoles[roleIndex].name}»`, 'success')
   } catch (e) {
     if (!isAbortError(e)) { console.error('Ошибка добавления игрока:', e); showToast(e.message, 'error') }
+  }
+}
+
+/* ───────── Event delegation for dynamic staff UI ───────── */
+
+export function initStaffDelegation() {
+  document.addEventListener('click', handleStaffClick)
+}
+
+export function destroyStaffDelegation() {
+  document.removeEventListener('click', handleStaffClick)
+}
+
+function handleStaffClick(e) {
+  const el = e.target.closest('[data-action]')
+  if (!el) return
+  const action = el.dataset.action
+
+  if (action === 'role-modal-set-tier-direct') {
+    setPlayerTierFromModal(el)
+    return
+  }
+  if (action === 'role-modal-edit-player') {
+    modalEditPlayer(el)
+    return
+  }
+  if (action === 'role-modal-move-player') {
+    modalMovePlayer(el)
+    return
+  }
+  if (action === 'role-modal-remove-player') {
+    modalRemovePlayer(el)
+    return
+  }
+  if (action === 'edit-player-from-list') {
+    editPanelEditPlayer(el)
+    return
+  }
+  if (action === 'edit-remove-player') {
+    editPanelRemovePlayer(el)
+    return
+  }
+}
+
+async function setPlayerTierFromModal(el) {
+  const nickname = el.dataset.nickname
+  const tier = el.dataset.tier
+  if (!nickname || !tier) return
+  try {
+    const res = await fetchWithAbort(`${BACKEND_URL}/staff/tier`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ category: 'gp', nickname, tier })
+    }, 'set-tier')
+    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка установки тира') }
+    await Promise.all([loadStaffRoles(), loadStaffTiers()])
+    const roleIndex = parseInt(document.getElementById('editRoleIndex')?.value || '-1')
+    if (roleIndex >= 0) renderRoleModalPlayerList(roleIndex)
+    renderEditPlayerList()
+    showToast(`Тир для «${nickname}» установлен: ${TIER_CONFIG[tier]?.label || tier}`, 'success')
+  } catch (e) {
+    if (!isAbortError(e)) { console.error('Ошибка установки тира:', e); showToast(e.message, 'error') }
+  }
+}
+
+function modalEditPlayer(el) {
+  const roleIndex = parseInt(el.dataset.roleIndex)
+  const playerIndex = parseInt(el.dataset.playerIndex)
+  if (isNaN(roleIndex) || isNaN(playerIndex)) return
+  const role = store.staffRoles[roleIndex]
+  if (!role || !role.players || !role.players[playerIndex]) return
+  const player = role.players[playerIndex]
+  const nickInput = document.getElementById('roleAddPlayerNickname')
+  const discInput = document.getElementById('roleAddPlayerDiscord')
+  if (nickInput) nickInput.value = player.nickname
+  if (discInput) discInput.value = player.discord || ''
+  document.getElementById('editRolePlayerIdx').value = String(playerIndex)
+  const btn = document.getElementById('roleAddPlayerBtn')
+  if (btn) { btn.textContent = '💾 Сохранить'; btn.dataset.action = 'role-modal-save-player' }
+}
+
+function modalMovePlayer(el) {
+  const roleIndex = parseInt(el.dataset.roleIndex)
+  const playerIndex = parseInt(el.dataset.playerIndex)
+  const direction = el.dataset.direction
+  if (isNaN(roleIndex) || isNaN(playerIndex) || !direction) return
+  const role = store.staffRoles[roleIndex]
+  if (!role || !role.players) return
+  const target = direction === 'down' ? playerIndex + 1 : playerIndex - 1
+  if (target < 0 || target >= role.players.length) return
+  ;[role.players[playerIndex], role.players[target]] = [role.players[target], role.players[playerIndex]]
+  saveStaffRoles().catch(() => {})
+  renderRoleModalPlayerList(roleIndex)
+}
+
+async function modalRemovePlayer(el) {
+  const roleIndex = parseInt(el.dataset.roleIndex)
+  const nickname = el.dataset.nickname
+  if (isNaN(roleIndex) || !nickname) return
+  const role = store.staffRoles[roleIndex]
+  if (!role) return
+  if (!confirm(`Удалить игрока «${nickname}» из роли «${role.name}»?`)) return
+  try {
+    const res = await fetchWithAbort(`${BACKEND_URL}/staff/remove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ roleIndex, nickname })
+    }, 'remove-player-modal')
+    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка удаления игрока') }
+    await Promise.all([loadStaffRoles(), loadStaffTiers()])
+    renderRoleModalPlayerList(roleIndex)
+    showToast(`Игрок «${nickname}» удалён из роли`, 'success')
+  } catch (e) {
+    if (!isAbortError(e)) { console.error('Ошибка удаления игрока:', e); showToast(e.message, 'error') }
+  }
+}
+
+function editPanelEditPlayer(el) {
+  const roleIndex = parseInt(el.dataset.roleIndex)
+  const playerIndex = parseInt(el.dataset.playerIndex)
+  if (isNaN(roleIndex) || isNaN(playerIndex)) return
+  const role = store.staffRoles[roleIndex]
+  if (!role || !role.players || !role.players[playerIndex]) return
+  const player = role.players[playerIndex]
+  document.getElementById('editPlayerNickname').value = player.nickname
+  document.getElementById('editPlayerDiscord').value = player.discord || ''
+  document.getElementById('editPlayerRole').value = String(roleIndex)
+  document.getElementById('editPlayerKey').value = `${roleIndex}:${playerIndex}`
+  const btn = document.getElementById('editPanelSubmitBtn')
+  if (btn) { btn.textContent = '💾 Сохранить'; btn.dataset.action = 'edit-save-player' }
+}
+
+async function editPanelRemovePlayer(el) {
+  const roleIndex = parseInt(el.dataset.roleIndex)
+  const nickname = el.dataset.nickname
+  if (isNaN(roleIndex) || !nickname) return
+  const role = store.staffRoles[roleIndex]
+  if (!role) return
+  if (!confirm(`Удалить игрока «${nickname}» из роли «${role.name}»?`)) return
+  try {
+    const res = await fetchWithAbort(`${BACKEND_URL}/staff/remove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ roleIndex, nickname })
+    }, 'edit-remove-player')
+    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка удаления игрока') }
+    await Promise.all([loadStaffRoles(), loadStaffTiers()])
+    renderEditPlayerList()
+    showToast(`Игрок «${nickname}» удалён из роли`, 'success')
+  } catch (e) {
+    if (!isAbortError(e)) { console.error('Ошибка удаления игрока:', e); showToast(e.message, 'error') }
   }
 }
