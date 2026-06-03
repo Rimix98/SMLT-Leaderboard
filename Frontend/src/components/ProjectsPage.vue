@@ -1,10 +1,11 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { store, initTheme } from '../store'
 import { refreshCsrfToken } from '../api/utils'
 import AppShell from './AppShell.vue'
 import {
   loadProjects,
+  saveProjects,
   getStatusClass,
   toYoutubeId11,
   editProject,
@@ -13,11 +14,20 @@ import {
   showAddProjectModal,
   closeProjectModal,
   saveProject,
-  addProjectParticipant,
+  parseParticipantConfig,
+  serializeParticipantConfig,
+  autoFillParticipantConfig,
+  createDefaultParticipantConfig,
 } from '../api/projects'
-import { getRoleColor, loadStaffRoles } from '../api/staff'
+import {
+  fetchWithAbort,
+  showToast,
+  BACKEND_URL,
+} from '../api/utils'
 
 const selectedProject = ref(null)
+const showParticipantTab = ref(false)
+const participantConfig = ref(createDefaultParticipantConfig())
 
 onMounted(async () => {
   initTheme()
@@ -25,28 +35,14 @@ onMounted(async () => {
   await Promise.all([loadProjects(), loadStaffRoles()])
 })
 
-function parseParticipantRoles(participants) {
-  if (!participants || participants.length === 0) return []
-  return participants.map(line => {
-    const newMatch = line.match(/^(.+?)\s*-\s+(.+)$/)
-    const oldMatch = !newMatch ? line.match(/^(.+?)\s*\((.+?)\)$/) : null
-    if (newMatch) {
-      const name = newMatch[1].trim()
-      const roles = newMatch[2].split(/\s+/).filter(Boolean).map(r => ({
-        name: r,
-        color: getRoleColor(r)
-      }))
-      return { name, roles, type: 'dash' }
-    } else if (oldMatch) {
-      const name = oldMatch[1].trim()
-      const roles = oldMatch[2].split(',').map(r => {
-        const t = r.trim()
-        return { name: t, color: getRoleColor(t) }
-      })
-      return { name, roles, type: 'paren' }
+async function loadStaffRoles() {
+  try {
+    const res = await fetchWithAbort(`${BACKEND_URL}/staff`, {}, 'staff-list')
+    if (res.ok) {
+      const data = await res.json()
+      store.staffRoles = Array.isArray(data) ? data : []
     }
-    return { name: line, roles: [], type: 'plain' }
-  })
+  } catch {}
 }
 
 const projectDetailMousedown = ref(false)
@@ -85,6 +81,195 @@ function onProjectDetailMouseup(e) {
     closeProjectDetail()
   }
   projectDetailMousedown.value = false
+}
+
+function openParticipantTab() {
+  if (!selectedProject.value) return
+  const config = parseParticipantConfig(selectedProject.value)
+  if (config.parts.length === 0) {
+    const auto = autoFillParticipantConfig()
+    config.parts = auto.parts
+    config.host = auto.host
+  }
+  participantConfig.value = reactiveClone(config)
+  initParticipantTabState()
+  showParticipantTab.value = true
+  document.body.classList.add('modal-open')
+}
+
+function closeParticipantTab() {
+  showParticipantTab.value = false
+}
+
+function reactiveClone(obj) {
+  return JSON.parse(JSON.stringify(obj))
+}
+
+function addPart() {
+  participantConfig.value.parts.push({ gp: [], deco: [], transition: '' })
+}
+
+function removePart(index) {
+  participantConfig.value.parts.splice(index, 1)
+}
+
+function addPlaytestField() {
+  if (!participantConfig.value.playtest) participantConfig.value.playtest = []
+  participantConfig.value.playtest.push('')
+}
+
+function removePlaytestField(index) {
+  participantConfig.value.playtest.splice(index, 1)
+}
+
+function addVerifierField() {
+  if (!participantConfig.value.verifier) participantConfig.value.verifier = []
+  participantConfig.value.verifier.push('')
+}
+
+function removeVerifierField(index) {
+  participantConfig.value.verifier.splice(index, 1)
+}
+
+function addMergerField() {
+  if (!participantConfig.value.merger) participantConfig.value.merger = []
+  participantConfig.value.merger.push('')
+}
+
+function removeMergerField(index) {
+  participantConfig.value.merger.splice(index, 1)
+}
+
+function addMerger2Field() {
+  if (!participantConfig.value.merger2) participantConfig.value.merger2 = []
+  participantConfig.value.merger2.push('')
+}
+
+function removeMerger2Field(index) {
+  participantConfig.value.merger2.splice(index, 1)
+}
+
+const showEndScreen = ref(false)
+
+function toggleEndScreen() {
+  showEndScreen.value = !showEndScreen.value
+  if (!showEndScreen.value) {
+    participantConfig.value.endScreen = []
+  } else {
+    if (!participantConfig.value.endScreen) participantConfig.value.endScreen = []
+  }
+}
+
+const showShowcaser = ref(false)
+
+function toggleShowcaser() {
+  showShowcaser.value = !showShowcaser.value
+  if (!showShowcaser.value) {
+    participantConfig.value.showcaser = ''
+  }
+}
+
+const showSoloGp = ref(false)
+
+function toggleSoloGp() {
+  showSoloGp.value = !showSoloGp.value
+  if (!showSoloGp.value) {
+    participantConfig.value.soloGp = ''
+    participantConfig.value.parts.forEach(p => {
+      p.gp = []
+    })
+  } else {
+    participantConfig.value.soloGp = ''
+  }
+}
+
+function initParticipantTabState() {
+  const cfg = participantConfig.value
+  showEndScreen.value = !!(cfg.endScreen && cfg.endScreen.length > 0)
+  showShowcaser.value = !!cfg.showcaser
+  showSoloGp.value = !!cfg.soloGp
+}
+
+async function saveParticipantConfig() {
+  if (!selectedProject.value) return
+  const proj = store.projects.find(p => p.id === selectedProject.value.id)
+  if (!proj) return
+  proj.participants = serializeParticipantConfig(participantConfig.value)
+  try {
+    await saveProjects(store.projects)
+    await loadProjects()
+    selectedProject.value = store.projects.find(p => p.id === proj.id)
+    showParticipantTab.value = false
+    showToast('Участники сохранены!', 'success')
+  } catch {}
+}
+
+function getRoleByName(name) {
+  return (store.staffRoles || []).find(r => r.name === name)
+}
+
+function roleColor(name) {
+  const role = getRoleByName(name)
+  return role?.color || null
+}
+
+function getColoredLabel(label) {
+  const color = roleColor(label)
+  return color ? { color } : {}
+}
+
+function parseMultiField(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  return []
+}
+
+function stringifyMulti(value) {
+  if (!value) return ''
+  if (Array.isArray(value)) return value.filter(Boolean).join(' & ')
+  return ''
+}
+
+function updateMultiField(arr, str) {
+  arr.length = 0
+  str.split('&').forEach(s => {
+    const t = s.trim()
+    if (t) arr.push(t)
+  })
+}
+
+function renderParticipants(participants) {
+  if (!participants || participants.length === 0) return []
+  const config = parseParticipantConfig({ participants })
+  const items = []
+  if (config.host) items.push({ name: config.host, role: 'HOST', color: roleColor('HOST') })
+  config.parts.forEach((part, i) => {
+    ;(part.gp || []).forEach(g => {
+      if (g) items.push({ name: g, role: config.fxMode ? 'FX' : 'GP', color: config.fxMode ? roleColor('FX') : roleColor('GP') })
+    })
+    ;(part.deco || []).forEach(d => {
+      if (d) items.push({ name: d, role: config.fxMode ? 'FX' : 'DECO', color: config.fxMode ? roleColor('FX') : roleColor('DECO') })
+    })
+    if (part.transition) items.push({ name: part.transition, role: 'TRANSITION', color: roleColor('TRANSITION') })
+  })
+  ;(config.endScreen || []).forEach(e => {
+    if (e) items.push({ name: e, role: 'END SCREEN', color: roleColor('END SCREEN') || roleColor('DECO') })
+  })
+  ;(config.playtest || []).forEach(p => {
+    if (p) items.push({ name: p, role: 'PLAYTEST', color: roleColor('PLAYTEST') })
+  })
+  ;(config.verifier || []).forEach(v => {
+    if (v) items.push({ name: v, role: 'VERIFIER', color: roleColor('VERIFIER') })
+  })
+  ;(config.merger || []).forEach(m => {
+    if (m) items.push({ name: m, role: 'MERGER', color: roleColor('MERGER') })
+  })
+  ;(config.merger2 || []).forEach(m => {
+    if (m) items.push({ name: m, role: 'MERGER', color: roleColor('MERGER') })
+  })
+  if (config.showcaser) items.push({ name: config.showcaser, role: 'SHOWCASER', color: roleColor('SHOWCASER') })
+  if (config.soloGp) items.push({ name: config.soloGp, role: 'SOLO GP', color: roleColor('GP') })
+  return items
 }
 </script>
 
@@ -212,20 +397,6 @@ function onProjectDetailMouseup(e) {
               <label for="projectComment">Комментарий:</label>
               <textarea id="projectComment" class="form-textarea" placeholder="Комментарий к проекту"></textarea>
             </div>
-            <div class="form-group">
-              <label>Участники:</label>
-              <div class="participant-builder">
-                <div class="participant-add-row">
-                  <div class="participant-search-wrapper">
-                    <input type="text" id="participantSearchInput" class="form-input" placeholder="🔍 Поиск участника..." autocomplete="off">
-                    <div id="participantSearchResults" class="participant-search-results"></div>
-                  </div>
-                  <div id="participantRoleTags" class="participant-role-tags"></div>
-                  <button type="button" id="addParticipantBtn" class="btn btn-secondary btn-sm" @click="addProjectParticipant">➕ Добавить участника</button>
-                </div>
-                <div id="participantsPreview" class="participants-preview"></div>
-              </div>
-            </div>
             <div style="display:flex;gap:var(--spacing-sm);margin-top:var(--spacing-md)">
               <button type="button" class="btn btn-secondary" @click="closeProjectEditModal()">Отмена</button>
               <button type="submit" class="btn btn-primary">💾 Сохранить</button>
@@ -263,29 +434,152 @@ function onProjectDetailMouseup(e) {
           <div class="project-participants" style="margin-top:var(--spacing-md)">
             <div class="project-participants-title">Участники:</div>
             <div class="project-participants-list" style="display:flex;flex-direction:column;gap:var(--spacing-xs)">
-              <div v-for="(entry, ei) in parseParticipantRoles(selectedProject.participants)" :key="ei" class="participant-tag" style="display:flex;flex-wrap:wrap;gap:2px">
-                <strong>{{ entry.name }}</strong>
-                <template v-if="entry.type === 'dash'">
-                  <span v-for="(role, ri) in entry.roles" :key="ri" style="margin-left:2px">
-                    <span v-if="ri > 0" style="margin:0 2px">·</span>
-                    <span class="role" :style="role.color ? { color: role.color } : {}">{{ role.name }}</span>
+              <template v-if="renderParticipants(selectedProject.participants).length > 0">
+                <div v-for="(item, ei) in renderParticipants(selectedProject.participants)" :key="ei" class="participant-tag" style="display:flex;flex-wrap:wrap;gap:2px">
+                  <strong>{{ item.name }}</strong>
+                  <span v-if="item.role" style="margin-left:4px">
+                    <span class="role" :style="item.color ? { color: item.color } : {}">{{ item.role }}</span>
                   </span>
-                </template>
-                <template v-else-if="entry.type === 'paren'">
-                  <span v-for="(role, ri) in entry.roles" :key="ri" style="margin-left:2px">
-                    <span v-if="ri > 0">, </span>
-                    <span class="role" :style="role.color ? { color: role.color } : {}">{{ role.name }}</span>
-                  </span>
-                </template>
-              </div>
-              <div v-if="!selectedProject.participants || selectedProject.participants.length === 0" style="color:var(--color-text-muted);font-size:var(--font-size-xs)">Нет участников</div>
+                </div>
+              </template>
+              <div v-else style="color:var(--color-text-muted);font-size:var(--font-size-xs)">Нет участников</div>
             </div>
+          </div>
+          <div style="margin-top:var(--spacing-md);padding-top:var(--spacing-md);border-top:1px solid var(--color-border)">
+            <button class="btn btn-primary" @click="openParticipantTab()">👥 Добавить участников</button>
           </div>
           <template v-if="toYoutubeId11(selectedProject.videoId)">
             <div style="margin-top:var(--spacing-md);padding-top:var(--spacing-md);border-top:1px solid var(--color-border)">
               <a :href="`https://www.youtube.com/watch?v=${encodeURIComponent(toYoutubeId11(selectedProject.videoId))}`" target="_blank" rel="noopener noreferrer" style="color:var(--color-secondary)">🔗 Открыть на YouTube</a>
             </div>
           </template>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showParticipantTab && selectedProject" class="modal-overlay active">
+      <div class="modal modal-xl participant-modal">
+        <div class="modal-header">
+          <div class="modal-title">{{ selectedProject.name }} — Участники</div>
+          <button class="modal-close" @click="closeParticipantTab">✕</button>
+        </div>
+        <div class="modal-body participant-modal-body">
+          <div class="participant-layout">
+            <div class="participant-left">
+              <div class="participant-host">
+                <span class="field-label" :style="getColoredLabel('HOST')">HOST</span>
+                <input type="text" class="form-input participant-input" v-model="participantConfig.host" placeholder="HOST">
+              </div>
+
+              <div v-for="(part, i) in participantConfig.parts" :key="i" class="part-block">
+                <div class="part-header">
+                  <span>Парт {{ i + 1 }}</span>
+                  <button class="btn btn-danger btn-xs" @click="removePart(i)" title="Удалить парт">✕</button>
+                </div>
+                <div class="part-field">
+                  <span class="field-label" :style="getColoredLabel('GP')">GP</span>
+                  <input type="text" class="form-input participant-input" :value="stringifyMulti(part.gp)" @input="updateMultiField(part.gp, $event.target.value)" placeholder="GP (разделитель &)">
+                </div>
+                <div class="part-field">
+                  <span class="field-label" :style="getColoredLabel(participantConfig.fxMode ? 'FX' : 'DECO')">{{ participantConfig.fxMode ? 'FX' : 'DECO' }}</span>
+                  <input type="text" class="form-input participant-input" :value="stringifyMulti(part.deco)" @input="updateMultiField(part.deco, $event.target.value)" placeholder="DECO (разделитель &)">
+                </div>
+                <div class="part-transition">
+                  <span class="field-label">TRANSITION</span>
+                  <input type="text" class="form-input participant-input" v-model="part.transition" placeholder="TRANSITION">
+                </div>
+              </div>
+
+              <button class="btn btn-secondary btn-sm participant-add-btn" @click="addPart">➕ Добавить парт</button>
+
+              <div class="part-block end-screen-block" v-if="showEndScreen">
+                <div class="part-header">
+                  <span>END SCREEN</span>
+                </div>
+                <div class="part-field">
+                  <span class="field-label" :style="getColoredLabel('DECO')">END SCREEN</span>
+                  <input type="text" class="form-input participant-input" :value="stringifyMulti(participantConfig.endScreen)" @input="updateMultiField(participantConfig.endScreen, $event.target.value)" placeholder="END SCREEN (разделитель &)">
+                </div>
+              </div>
+              <button v-if="!showEndScreen" class="btn btn-deco btn-sm participant-add-btn" @click="toggleEndScreen">➕ Добавить END SCREEN</button>
+              <button v-else class="btn btn-deco btn-sm participant-add-btn" @click="toggleEndScreen">✕ Убрать END SCREEN</button>
+            </div>
+
+            <div class="participant-right">
+              <div class="participant-toggles">
+                <label class="toggle-label">
+                  <input type="checkbox" v-model="participantConfig.fxMode"> Режим FX
+                </label>
+                <label class="toggle-label">
+                  <input type="checkbox" v-model="showSoloGp" @change="toggleSoloGp"> Соло GP
+                </label>
+              </div>
+
+              <div v-if="showSoloGp" class="right-section">
+                <span class="field-label" :style="getColoredLabel('GP')">SOLO GP</span>
+                <input type="text" class="form-input participant-input" v-model="participantConfig.soloGp" placeholder="SOLO GP">
+              </div>
+
+              <div class="right-section">
+                <div class="right-section-header">
+                  <button class="btn btn-secondary btn-xs" @click="addPlaytestField">➕ PLAYTEST</button>
+                </div>
+                <div v-for="(_, i) in participantConfig.playtest" :key="'pt'+i" class="right-field-row">
+                  <span class="field-label">PLAYTEST</span>
+                  <input type="text" class="form-input participant-input" v-model="participantConfig.playtest[i]" placeholder="PLAYTEST">
+                  <button class="btn btn-danger btn-xs" @click="removePlaytestField(i)">✕</button>
+                </div>
+              </div>
+
+              <div class="right-section">
+                <div class="right-section-header">
+                  <button class="btn btn-secondary btn-xs" @click="addMergerField">➕ MERGER</button>
+                </div>
+                <div v-for="(_, i) in participantConfig.merger" :key="'mg'+i" class="right-field-row">
+                  <span class="field-label">MERGER</span>
+                  <input type="text" class="form-input participant-input" v-model="participantConfig.merger[i]" placeholder="MERGER">
+                  <button class="btn btn-danger btn-xs" @click="removeMergerField(i)">✕</button>
+                </div>
+              </div>
+
+              <div class="right-section">
+                <div class="right-section-header">
+                  <button v-if="!showShowcaser" class="btn btn-secondary btn-xs" @click="toggleShowcaser">➕ SHOWCASER</button>
+                  <button v-else class="btn btn-danger btn-xs" @click="toggleShowcaser">✕ SHOWCASER</button>
+                </div>
+                <div v-if="showShowcaser" class="right-field-row">
+                  <span class="field-label">SHOWCASER</span>
+                  <input type="text" class="form-input participant-input" v-model="participantConfig.showcaser" placeholder="SHOWCASER">
+                </div>
+              </div>
+
+              <div class="right-section">
+                <div class="right-section-header">
+                  <button class="btn btn-secondary btn-xs" @click="addMerger2Field">➕ MERGER</button>
+                </div>
+                <div v-for="(_, i) in participantConfig.merger2" :key="'mg2'+i" class="right-field-row">
+                  <span class="field-label">MERGER</span>
+                  <input type="text" class="form-input participant-input" v-model="participantConfig.merger2[i]" placeholder="MERGER">
+                  <button class="btn btn-danger btn-xs" @click="removeMerger2Field(i)">✕</button>
+                </div>
+              </div>
+
+              <div class="right-section">
+                <div class="right-section-header">
+                  <button class="btn btn-secondary btn-xs" @click="addVerifierField">➕ VERIFIER</button>
+                </div>
+                <div v-for="(_, i) in participantConfig.verifier" :key="'vr'+i" class="right-field-row">
+                  <span class="field-label">VERIFIER</span>
+                  <input type="text" class="form-input participant-input" v-model="participantConfig.verifier[i]" placeholder="VERIFIER">
+                  <button class="btn btn-danger btn-xs" @click="removeVerifierField(i)">✕</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="closeParticipantTab">Отмена</button>
+          <button class="btn btn-primary" @click="saveParticipantConfig">💾 Сохранить участников</button>
         </div>
       </div>
     </div>

@@ -1478,7 +1478,7 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, part := range projectList[i].Participants {
-			if len(part) > 50 {
+			if len(part) > 5000 {
 				sendError(w, http.StatusBadRequest, "Слишком длинное имя участника")
 				return
 			}

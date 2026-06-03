@@ -96,6 +96,56 @@ export function generateProjectId() {
   return 'proj_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8)
 }
 
+export function createDefaultParticipantConfig() {
+  return {
+    host: '',
+    parts: [],
+    endScreen: [],
+    playtest: [],
+    verifier: [],
+    merger: [],
+    merger2: [],
+    showcaser: '',
+    fxMode: false,
+    soloGp: null,
+  }
+}
+
+export function parseParticipantConfig(project) {
+  if (!project || !project.participants || project.participants.length === 0) {
+    return createDefaultParticipantConfig()
+  }
+  try {
+    const parsed = JSON.parse(project.participants[0])
+    if (parsed && typeof parsed === 'object') {
+      return { ...createDefaultParticipantConfig(), ...parsed }
+    }
+  } catch {}
+  return createDefaultParticipantConfig()
+}
+
+export function serializeParticipantConfig(config) {
+  return [JSON.stringify(config)]
+}
+
+export function autoFillParticipantConfig() {
+  const config = createDefaultParticipantConfig()
+  const hostRole = (store.staffRoles || []).find(r => r.name === 'HOST')
+  if (hostRole?.players?.[0]?.nickname) {
+    config.host = hostRole.players[0].nickname
+  }
+  const gpRole = (store.staffRoles || []).find(r => r.name === 'GP')
+  const decoRole = (store.staffRoles || []).find(r => r.name === 'DECO')
+  if (gpRole?.players?.[0]?.nickname || decoRole?.players?.[0]?.nickname) {
+    config.parts.push({
+      gp: gpRole?.players?.[0]?.nickname ? [gpRole.players[0].nickname] : [],
+      deco: decoRole?.players?.[0]?.nickname ? [decoRole.players[0].nickname] : [],
+      transition: '',
+    })
+  }
+  return config
+}
+
 export async function saveProject() {
   const idx = parseInt(document.getElementById('projectIndex').value)
   let projectId = document.getElementById('projectId').value.trim()
@@ -113,9 +163,7 @@ export async function saveProject() {
     comment: truncate(document.getElementById('projectComment').value.trim()),
     status: document.getElementById('projectStatus').value,
     verifier: truncate(document.getElementById('projectVerifier').value.trim()),
-    participants: Array.isArray(store.pendingProjectParticipants)
-      ? store.pendingProjectParticipants.filter(Boolean).map(p => truncate(p))
-      : []
+    participants: [],
   }
 
   if (projectId !== '-') {
@@ -171,17 +219,12 @@ export function editProject(idx) {
   document.getElementById('projectStatus').value = project.status || 'планируется'
   document.getElementById('projectVerifier').value = project.verifier || ''
 
-  store.pendingProjectParticipants = [...(project.participants || [])]
-  updateParticipantsPreview()
-
   document.getElementById('projectModal').classList.add('active')
-  setTimeout(initParticipantBuilder, 50)
 }
 
 export function closeProjectModal() {
   const modal = document.getElementById('projectModal')
   if (modal) modal.classList.remove('active')
-  resetParticipantBuilder()
 }
 
 export function showAddProjectModal() {
@@ -192,9 +235,7 @@ export function showAddProjectModal() {
     form.reset()
     document.getElementById('projectIndex').value = '-1'
     document.getElementById('projectModalTitle').textContent = 'Добавить проект'
-    resetParticipantBuilder()
     modal.classList.add('active')
-    setTimeout(initParticipantBuilder, 50)
   }
 }
 
@@ -210,167 +251,4 @@ export function moveProject(index, direction) {
   })
 }
 
-// Participant builder
-export function resetParticipantBuilder() {
-  store.pendingProjectParticipants = []
-  store._selectedParticipant = ''
-  const preview = document.getElementById('participantsPreview')
-  if (preview) preview.innerHTML = ''
-  const searchInput = document.getElementById('participantSearchInput')
-  if (searchInput) searchInput.value = ''
-  const results = document.getElementById('participantSearchResults')
-  if (results) results.innerHTML = ''
-  document.querySelectorAll('#participantRoleTags .role-tag-btn').forEach(b => {
-    b.classList.remove('active')
-    b.style.background = ''
-    b.style.color = b.dataset.color || 'var(--color-text-secondary)'
-    b.style.borderColor = b.dataset.color || 'var(--color-border)'
-  })
-}
 
-export async function initParticipantBuilder() {
-  if (!store.staffRoles || store.staffRoles.length === 0) {
-    try {
-      const res = await fetchWithAbort(`${BACKEND_URL}/staff`, {}, 'staff-list-part')
-      if (res.ok) {
-        const data = await res.json()
-        store.staffRoles = Array.isArray(data) ? data : []
-      }
-    } catch {}
-  }
-
-  const tagsContainer = document.getElementById('participantRoleTags')
-  if (tagsContainer) {
-    tagsContainer.innerHTML = ''
-    ;(store.staffRoles || []).forEach(role => {
-      const btn = document.createElement('button')
-      btn.type = 'button'
-      btn.className = 'role-tag-btn'
-      btn.dataset.action = 'toggle-role-tag'
-      btn.dataset.role = role.name
-      if (role.color) { btn.dataset.color = role.color; btn.style.borderColor = role.color; btn.style.color = role.color }
-      btn.textContent = role.name
-      tagsContainer.appendChild(btn)
-    })
-  }
-
-  updateParticipantsPreview()
-
-  const searchInput = document.getElementById('participantSearchInput')
-  const resultsContainer = document.getElementById('participantSearchResults')
-  if (searchInput && resultsContainer) {
-    searchInput.value = ''
-    resultsContainer.innerHTML = ''
-    searchInput.oninput = null
-    searchInput.oninput = function() {
-      const q = this.value.toLowerCase().trim()
-      resultsContainer.innerHTML = ''
-      if (!q) { resultsContainer.style.display = 'none'; return }
-      const matches = []
-      ;(store.staffRoles || []).forEach(role => {
-        ;(role.players || []).forEach(player => {
-          if (player.nickname.toLowerCase().includes(q) && !matches.some(m => m.nickname === player.nickname)) {
-            matches.push({ nickname: player.nickname, role: role.name, color: role.color })
-          }
-        })
-      })
-      matches.sort((a, b) => a.nickname.localeCompare(b.nickname))
-      if (matches.length === 0) { resultsContainer.style.display = 'none'; return }
-      resultsContainer.style.display = 'block'
-      matches.forEach(m => {
-        const item = document.createElement('div')
-        item.className = 'participant-search-result-item'
-        if (m.color) item.style.borderLeftColor = m.color
-        const psrName = document.createElement('span')
-        psrName.className = 'psr-name'
-        psrName.textContent = m.nickname
-        const psrRole = document.createElement('span')
-        psrRole.className = 'psr-role'
-        psrRole.textContent = m.role
-        item.appendChild(psrName)
-        item.appendChild(document.createTextNode(' '))
-        item.appendChild(psrRole)
-        item.addEventListener('click', () => {
-          document.querySelectorAll('.participant-search-result-item').forEach(el => el.classList.remove('selected'))
-          item.classList.add('selected')
-          store._selectedParticipant = m.nickname
-          resultsContainer.style.display = 'none'
-          searchInput.value = m.nickname
-        })
-        resultsContainer.appendChild(item)
-      })
-    }
-    searchInput.addEventListener('blur', () => setTimeout(() => { resultsContainer.style.display = 'none' }, 150))
-    searchInput.addEventListener('focus', () => { if (searchInput.value.trim()) searchInput.oninput() })
-  }
-  store._selectedParticipant = ''
-}
-
-export function addProjectParticipant() {
-  let name = store._selectedParticipant || document.getElementById('participantSearchInput')?.value?.trim()
-  if (!name) { showToast('Введите или выберите игрока', 'error'); return }
-  if (name.length > 100) name = name.slice(0, 100)
-  const activeRoles = []
-  document.querySelectorAll('#participantRoleTags .role-tag-btn.active').forEach(b => activeRoles.push(b.dataset.role))
-  let entry = name
-  if (activeRoles.length > 0) entry = name + ' - ' + activeRoles.join(' ')
-  store.pendingProjectParticipants.push(entry)
-  store._selectedParticipant = ''
-  const searchInput = document.getElementById('participantSearchInput')
-  if (searchInput) searchInput.value = ''
-  const results = document.getElementById('participantSearchResults')
-  if (results) results.innerHTML = ''
-  document.querySelectorAll('#participantRoleTags .role-tag-btn').forEach(b => {
-    b.classList.remove('active')
-    b.style.background = ''
-    b.style.color = b.dataset.color || 'var(--color-text-secondary)'
-    b.style.borderColor = b.dataset.color || 'var(--color-border)'
-  })
-  updateParticipantsPreview()
-}
-
-export function removeProjectParticipant(index) {
-  if (index >= 0 && index < store.pendingProjectParticipants.length) {
-    store.pendingProjectParticipants.splice(index, 1)
-    updateParticipantsPreview()
-  }
-}
-
-export function updateParticipantsPreview() {
-  const preview = document.getElementById('participantsPreview')
-  if (!preview) return
-  preview.innerHTML = ''
-  if (!store.pendingProjectParticipants || store.pendingProjectParticipants.length === 0) {
-    preview.innerHTML = '<span style="color:var(--color-text-muted);font-size:var(--font-size-xs)">Участники не добавлены</span>'
-    return
-  }
-  store.pendingProjectParticipants.forEach((entry, i) => {
-    const tag = document.createElement('span')
-    tag.className = 'participant-tag participant-preview-tag'
-    const newMatch = entry.match(/^(.+?)\s*-\s+(.+)$/)
-    if (newMatch) {
-      const name = newMatch[1].trim()
-      const roles = newMatch[2].split(/\s+/).filter(Boolean)
-      tag.appendChild(document.createTextNode(`${name} - `))
-      roles.forEach((role, ri) => {
-        if (ri) tag.appendChild(document.createTextNode(' · '))
-        const roleSpan = document.createElement('span')
-        roleSpan.className = 'role'
-        const roleObj = (store.staffRoles || []).find(r => r.name === role)
-        if (roleObj?.color) roleSpan.style.color = roleObj.color
-        roleSpan.textContent = role
-        tag.appendChild(roleSpan)
-      })
-    } else {
-      tag.textContent = entry
-    }
-    const removeBtn = document.createElement('button')
-    removeBtn.className = 'staff-player-remove-tag'
-    removeBtn.dataset.action = 'remove-project-participant'
-    removeBtn.dataset.index = String(i)
-    removeBtn.title = 'Удалить'
-    removeBtn.textContent = '✕'
-    tag.appendChild(removeBtn)
-    preview.appendChild(tag)
-  })
-}

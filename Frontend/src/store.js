@@ -16,8 +16,6 @@ export const store = reactive({
   staffRoles: [],
   staffTiers: [],
   selectedRoleColor: '#3b82f6',
-  pendingProjectParticipants: [],
-  _selectedParticipant: '',
 })
 
 let themeTransitionTimer = null
