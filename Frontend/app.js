@@ -1051,9 +1051,9 @@ function mapLeaderboardEntry(p) {
     }
 
     let hardest = null;
-    const acceptedRecs = pRecs.filter(r => r.status === 'accepted' && r.level);
-    if (acceptedRecs.length > 0) {
-        hardest = acceptedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
+    const completedRecs = pRecs.filter(r => r.status === 'accepted' && r.level && (r.percent ?? r.progress ?? 100) >= 100);
+    if (completedRecs.length > 0) {
+        hardest = completedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
     }
 
     return {
@@ -1139,9 +1139,9 @@ async function loadPlayersFromClientAPI() {
             const recs = await fetchRecords(fp.id);
 
             let hardest = null;
-            const acceptedRecs = recs.filter(r => r.status === 'accepted' && r.level);
-            if (acceptedRecs.length > 0) {
-                hardest = acceptedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
+            const completedRecs = recs.filter(r => r.status === 'accepted' && r.level && (r.percent ?? r.progress ?? 100) >= 100);
+            if (completedRecs.length > 0) {
+                hardest = completedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m);
             }
 
             return {
@@ -1480,7 +1480,7 @@ function renderHardestLevels() {
     store.players.forEach(player => {
         if (player.records) {
             player.records.forEach(record => {
-                if (record.status === 'accepted' && record.level) {
+                if (record.status === 'accepted' && record.level && (record.percent ?? record.progress ?? 100) >= 100) {
                     const levelId = record.level.id;
                     const levelName = record.level.name;
                     const placement = record.level.placement;
