@@ -128,10 +128,6 @@ function makeOverlayClose(closeFn) {
   }
 }
 
-function onModalOpen() {
-  document.body.classList.add('modal-open')
-}
-
 const profileModalClose = makeOverlayClose(() => {
   closeProfileModal()
   document.body.classList.remove('modal-open')
@@ -142,6 +138,10 @@ const countryModalClose = makeOverlayClose(() => {
 })
 const levelModalClose = makeOverlayClose(() => {
   closeLevelModal()
+  document.body.classList.remove('modal-open')
+})
+const addPlayerModalClose = makeOverlayClose(() => {
+  closeAddPlayerModal()
   document.body.classList.remove('modal-open')
 })
 
@@ -158,6 +158,36 @@ function onCountryTop(name) {
 function onLevelVictors(id) {
   showLevelVictors(id)
   document.body.classList.add('modal-open')
+}
+
+function showAddPlayerModalAndLock() {
+  showAddPlayerModal()
+  document.body.classList.add('modal-open')
+}
+
+function closeProfileAndUnlock() {
+  closeProfileModal()
+  document.body.classList.remove('modal-open')
+}
+
+function closeCountryAndUnlock() {
+  closeCountryModal()
+  document.body.classList.remove('modal-open')
+}
+
+function closeLevelAndUnlock() {
+  closeLevelModal()
+  document.body.classList.remove('modal-open')
+}
+
+function closeAddPlayerAndUnlock() {
+  closeAddPlayerModal()
+  document.body.classList.remove('modal-open')
+}
+
+function addPlayerAndClose() {
+  addPlayer()
+  document.body.classList.remove('modal-open')
 }
 </script>
 
@@ -192,7 +222,7 @@ function onLevelVictors(id) {
         <div v-if="store.isHost" class="admin-panel">
           <div class="admin-panel-header">👑 Управление игроками</div>
           <div class="admin-panel-content">
-            <button class="btn btn-primary" @click="showAddPlayerModal(); document.body.classList.add('modal-open')">➕ Добавить игрока</button>
+            <button class="btn btn-primary" @click="showAddPlayerModalAndLock()">➕ Добавить игрока</button>
           </div>
         </div>
 
@@ -331,7 +361,7 @@ function onLevelVictors(id) {
       <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title" id="profileTitle">Профиль</div>
-          <button class="modal-close" @click="closeProfileModal; document.body.classList.remove('modal-open')">✕</button>
+          <button class="modal-close" @click="closeProfileAndUnlock()">✕</button>
         </div>
         <div class="modal-body" id="profileBody"></div>
       </div>
@@ -341,7 +371,7 @@ function onLevelVictors(id) {
       <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title" id="countryTitle">Топ страны</div>
-          <button class="modal-close" @click="closeCountryModal; document.body.classList.remove('modal-open')">✕</button>
+          <button class="modal-close" @click="closeCountryAndUnlock()">✕</button>
         </div>
         <div class="modal-body" id="countryBody"></div>
       </div>
@@ -351,13 +381,13 @@ function onLevelVictors(id) {
       <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title" id="levelTitle">Викторы уровня</div>
-          <button class="modal-close" @click="closeLevelModal; document.body.classList.remove('modal-open')">✕</button>
+          <button class="modal-close" @click="closeLevelAndUnlock()">✕</button>
         </div>
         <div class="modal-body" id="levelBody"></div>
       </div>
     </div>
 
-    <div id="addPlayerModal" class="modal-overlay" @mousedown="(e) => { if (e.target === e.currentTarget) { closeAddPlayerModal(); document.body.classList.remove('modal-open') } }">
+    <div id="addPlayerModal" class="modal-overlay" @mousedown="addPlayerModalClose.onMousedown" @mouseup="addPlayerModalClose.onMouseup">
       <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title">➕ Добавить игрока</div>
@@ -369,8 +399,8 @@ function onLevelVictors(id) {
             <input type="text" id="newPlayerName" class="form-input" placeholder="Например: samoletik">
           </div>
           <div style="display:flex;gap:var(--spacing-sm)">
-            <button class="btn btn-secondary" @click="closeAddPlayerModal; document.body.classList.remove('modal-open')">Отмена</button>
-            <button class="btn btn-primary" @click="addPlayer; document.body.classList.remove('modal-open')">Добавить</button>
+            <button class="btn btn-secondary" @click="closeAddPlayerAndUnlock()">Отмена</button>
+            <button class="btn btn-primary" @click="addPlayerAndClose()">Добавить</button>
           </div>
         </div>
       </div>

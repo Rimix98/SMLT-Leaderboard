@@ -68,6 +68,21 @@ function openAddStaffPlayer(roleIndex) {
   document.body.classList.add('modal-open')
 }
 
+function closeAddRoleAndUnlock() {
+  closeAddRoleModal()
+  document.body.classList.remove('modal-open')
+}
+
+function closeAddStaffPlayerAndUnlock() {
+  closeAddStaffPlayerModal()
+  document.body.classList.remove('modal-open')
+}
+
+function addPlayerToRoleAndClose() {
+  addPlayerToRole()
+  document.body.classList.remove('modal-open')
+}
+
 const totalUniqueParticipants = computed(() => {
   const names = new Set()
   store.staffRoles.forEach(role => {
@@ -240,7 +255,7 @@ onUnmounted(() => {
       <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title" id="addRoleModalTitle">🆕 Новая роль</div>
-          <button class="modal-close" @click="closeAddRoleModal(); document.body.classList.remove('modal-open')">✕</button>
+          <button class="modal-close" @click="closeAddRoleAndUnlock()">✕</button>
         </div>
         <div class="modal-body">
           <input type="hidden" id="editRoleIndex" value="-1">
@@ -286,7 +301,7 @@ onUnmounted(() => {
       <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
           <div class="modal-title" id="addPlayerModalTitle">👤 Добавить игрока</div>
-          <button class="modal-close" @click="closeAddStaffPlayerModal(); document.body.classList.remove('modal-open')">✕</button>
+          <button class="modal-close" @click="closeAddStaffPlayerAndUnlock()">✕</button>
         </div>
         <div class="modal-body">
           <input type="hidden" id="addPlayerRoleIndex" value="-1">
@@ -299,8 +314,8 @@ onUnmounted(() => {
             <input type="text" id="playerDiscord" class="form-input" placeholder="Username#0000 or username">
           </div>
           <div style="display:flex;gap:var(--spacing-sm);margin-top:var(--spacing-md)">
-            <button class="btn btn-secondary" @click="closeAddStaffPlayerModal(); document.body.classList.remove('modal-open')">Отмена</button>
-            <button class="btn btn-primary" @click="addPlayerToRole(); document.body.classList.remove('modal-open')">Добавить игрока</button>
+            <button class="btn btn-secondary" @click="closeAddStaffPlayerAndUnlock()">Отмена</button>
+            <button class="btn btn-primary" @click="addPlayerToRoleAndClose()">Добавить игрока</button>
           </div>
         </div>
       </div>
