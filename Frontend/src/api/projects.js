@@ -112,17 +112,78 @@ export function createDefaultParticipantConfig() {
   }
 }
 
+const ROLE_MAP = {
+  HOST: 'host', GP: 'gp', DECO: 'deco', VERIFIER: 'verifier',
+  PLAYTEST: 'playtest', MERGER: 'merger', MERGER2: 'merger2',
+  TRANSITION: 'transition', SHOWCASER: 'showcaser', 'SOLO GP': 'soloGp',
+  'END SCREEN': 'endScreen', ENDSCREEN: 'endScreen', FX: 'fx',
+}
+
+function assignOldRole(config, name, roles) {
+  const upper = roles.map(r => r.toUpperCase())
+  if (upper.includes('HOST')) { config.host = name; return }
+  if (upper.includes('FX')) config.fxMode = true
+  if (upper.includes('SOLO GP')) { config.soloGp = name; return }
+  if (upper.includes('SHOWCASER')) { config.showcaser = name; return }
+  if (upper.includes('TRANSITION') && config.parts.length > 0) {
+    config.parts[config.parts.length - 1].transition = name; return
+  }
+  let hasKey = false
+  for (const k of ['VERIFIER', 'PLAYTEST', 'MERGER', 'MERGER2', 'END SCREEN', 'ENDSCREEN']) {
+    if (upper.includes(k)) {
+      const key = ROLE_MAP[k]
+      if (key && Array.isArray(config[key])) { config[key].push(name); hasKey = true; break }
+    }
+  }
+  if (hasKey) return
+  const gp = roles.some(r => r.toUpperCase() === 'GP')
+  const deco = roles.some(r => r.toUpperCase() === 'DECO')
+  if (gp || deco) {
+    config.parts.push({ gp: gp ? [name] : [], deco: deco ? [name] : [], transition: '' })
+    return
+  }
+  if (!config.host) config.host = name
+  else config.parts.push({ gp: [name], deco: [], transition: '' })
+}
+
+function parseOldParticipantFormat(participants) {
+  const config = createDefaultParticipantConfig()
+  for (const line of participants) {
+    if (typeof line !== 'string' || !line.trim()) continue
+    const dashMatch = line.match(/^(.+?)\s*-\s+(.+)$/)
+    if (dashMatch) {
+      assignOldRole(config, dashMatch[1].trim(), dashMatch[2].split(/\s+/).filter(Boolean))
+      continue
+    }
+    const parenMatch = line.match(/^(.+?)\s*\((.+?)\)$/)
+    if (parenMatch) {
+      assignOldRole(config, parenMatch[1].trim(), [parenMatch[2].trim()])
+      continue
+    }
+    assignOldRole(config, line.trim(), [])
+  }
+  return config
+}
+
 export function parseParticipantConfig(project) {
   if (!project || !project.participants || project.participants.length === 0) {
     return createDefaultParticipantConfig()
   }
+  if (project.participants.length > 1) {
+    return parseOldParticipantFormat(project.participants)
+  }
   try {
     const parsed = JSON.parse(project.participants[0])
-    if (parsed && typeof parsed === 'object') {
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return { ...createDefaultParticipantConfig(), ...parsed }
     }
+    if (Array.isArray(parsed)) {
+      const config = createDefaultParticipantConfig()
+      const parts = parsed.map(name => ({ gp: [String(name)], deco: [], transition: '' }))
+      return { ...config, parts }
+    }
   } catch {}
-  return createDefaultParticipantConfig()
+  return parseOldParticipantFormat(project.participants)
 }
 
 export function serializeParticipantConfig(config) {
