@@ -148,6 +148,7 @@ export function autoFillParticipantConfig() {
 }
 
 export async function saveProject() {
+  if (!store.isHost) { showToast('Только хост может сохранять проекты', 'error'); return }
   const idx = parseInt(document.getElementById('projectIndex').value)
   let projectId = document.getElementById('projectId').value.trim()
   if (idx === -1 && !projectId) {
@@ -241,6 +242,7 @@ export function showAddProjectModal() {
 }
 
 export function moveProject(index, direction) {
+  if (!store.isHost) { showToast('Только хост может перемещать проекты', 'error'); return }
   const target = direction === 'down' ? index + 1 : index - 1
   if (target < 0 || target >= store.projects.length) return
   ;[store.projects[index], store.projects[target]] = [store.projects[target], store.projects[index]]

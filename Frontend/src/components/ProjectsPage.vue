@@ -459,7 +459,7 @@ function renderParticipants(participants) {
       </div>
     </div>
 
-    <div v-if="showParticipantTab && selectedProject" class="modal-overlay active">
+    <div v-if="store.isHost && showParticipantTab && selectedProject" class="modal-overlay active">
       <div class="modal modal-xl participant-modal">
         <div class="modal-header">
           <div class="modal-title">{{ selectedProject.name }} — Участники</div>
