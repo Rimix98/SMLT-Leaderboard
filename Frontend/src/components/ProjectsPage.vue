@@ -85,6 +85,7 @@ function onProjectDetailMouseup(e) {
 
 function openParticipantTab() {
   if (!selectedProject.value) return
+  if (!store.isHost) { showToast('Только хост может редактировать участников', 'error'); return }
   const config = parseParticipantConfig(selectedProject.value)
   if (config.parts.length === 0) {
     const auto = autoFillParticipantConfig()
@@ -192,6 +193,7 @@ function initParticipantTabState() {
 
 async function saveParticipantConfig() {
   if (!selectedProject.value) return
+  if (!store.isHost) { showToast('Только хост может сохранять участников', 'error'); return }
   const proj = store.projects.find(p => p.id === selectedProject.value.id)
   if (!proj) return
   proj.participants = serializeParticipantConfig(participantConfig.value)
@@ -445,7 +447,7 @@ function renderParticipants(participants) {
               <div v-else style="color:var(--color-text-muted);font-size:var(--font-size-xs)">Нет участников</div>
             </div>
           </div>
-          <div style="margin-top:var(--spacing-md);padding-top:var(--spacing-md);border-top:1px solid var(--color-border)">
+          <div v-if="store.isHost" style="margin-top:var(--spacing-md);padding-top:var(--spacing-md);border-top:1px solid var(--color-border)">
             <button class="btn btn-primary" @click="openParticipantTab()">👥 Добавить участников</button>
           </div>
           <template v-if="toYoutubeId11(selectedProject.videoId)">
