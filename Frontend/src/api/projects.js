@@ -13,6 +13,7 @@ export async function getProjects() {
 }
 
 export async function saveProjects(data) {
+  if (!store.isHost) throw new Error('Только хост может сохранять проекты')
   for (let attempt = 0; attempt < 2; attempt++) {
     if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/projects/save`, {
