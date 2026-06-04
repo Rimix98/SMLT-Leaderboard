@@ -279,8 +279,8 @@ onUnmounted(() => {
             <input type="hidden" id="editRolePlayerIdx" value="-1">
             <div style="display:flex;gap:var(--spacing-xs);margin-bottom:var(--spacing-sm);flex-wrap:wrap">
               <input type="text" id="rolePlayerSearch" class="form-input" placeholder="🔍 Поиск участника..." style="flex:1;min-width:100px">
-              <button class="btn btn-secondary btn-sm" @click="roleModalSortByTiers">📊 Сорт. по тирам</button>
-              <button class="btn btn-secondary btn-sm" id="roleToggleTiersBtn" @click="roleModalToggleTiers">🎯 Тир: вкл</button>
+              <button class="btn btn-secondary btn-sm" @click="roleModalSortByTiers()">📊 Сорт. по тирам</button>
+              <button class="btn btn-secondary btn-sm" id="roleToggleTiersBtn" @click="roleModalToggleTiers()">🎯 Тир: вкл</button>
             </div>
             <div id="rolePlayerList" style="margin-bottom:var(--spacing-md)"></div>
             <div style="display:flex;gap:var(--spacing-sm);flex-wrap:wrap">
