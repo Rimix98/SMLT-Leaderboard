@@ -226,7 +226,7 @@ export async function saveProject() {
     comment: truncate(document.getElementById('projectComment').value.trim()),
     status: document.getElementById('projectStatus').value,
     verifier: truncate(document.getElementById('projectVerifier').value.trim()),
-    participants: [],
+    participants: idx === -1 ? [] : (store.projects[idx]?.participants || []),
   }
 
   if (projectId !== '-') {

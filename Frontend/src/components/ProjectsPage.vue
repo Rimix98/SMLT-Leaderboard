@@ -28,6 +28,7 @@ import {
 const selectedProject = ref(null)
 const showParticipantTab = ref(false)
 const participantConfig = ref(createDefaultParticipantConfig())
+const editingIdx = ref(-1)
 
 onMounted(async () => {
   initTheme()
@@ -58,18 +59,29 @@ function closeProjectDetail() {
 }
 
 function openAddProject() {
+  editingIdx.value = -1
   showAddProjectModal()
   document.body.classList.add('modal-open')
 }
 
 function onEditProject(idx) {
+  editingIdx.value = idx
   editProject(idx)
   document.body.classList.add('modal-open')
 }
 
 function closeProjectEditModal() {
+  editingIdx.value = -1
   closeProjectModal()
   document.body.classList.remove('modal-open')
+}
+
+function openParticipantTabFromEditModal() {
+  const idx = editingIdx.value
+  if (idx !== -1) {
+    selectedProject.value = store.projects[idx]
+    openParticipantTab()
+  }
 }
 
 function onProjectDetailMousedown(e) {
@@ -400,6 +412,7 @@ function renderParticipants(participants) {
               <textarea id="projectComment" class="form-textarea" placeholder="Комментарий к проекту"></textarea>
             </div>
             <div style="display:flex;gap:var(--spacing-sm);margin-top:var(--spacing-md)">
+              <button v-if="editingIdx !== -1" type="button" class="btn btn-primary" @click="openParticipantTabFromEditModal()">👥 Добавить участников</button>
               <button type="button" class="btn btn-secondary" @click="closeProjectEditModal()">Отмена</button>
               <button type="submit" class="btn btn-primary">💾 Сохранить</button>
             </div>
@@ -446,9 +459,6 @@ function renderParticipants(participants) {
               </template>
               <div v-else style="color:var(--color-text-muted);font-size:var(--font-size-xs)">Нет участников</div>
             </div>
-          </div>
-          <div v-if="store.isHost" style="margin-top:var(--spacing-md);padding-top:var(--spacing-md);border-top:1px solid var(--color-border)">
-            <button class="btn btn-primary" @click="openParticipantTab()">👥 Добавить участников</button>
           </div>
           <template v-if="toYoutubeId11(selectedProject.videoId)">
             <div style="margin-top:var(--spacing-md);padding-top:var(--spacing-md);border-top:1px solid var(--color-border)">
