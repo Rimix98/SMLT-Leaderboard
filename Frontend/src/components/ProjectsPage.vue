@@ -76,9 +76,12 @@ function closeProjectEditModal() {
   document.body.classList.remove('modal-open')
 }
 
-function openParticipantTabForProject(idx) {
-  selectedProject.value = store.projects[idx]
-  openParticipantTab()
+function openParticipantTabFromEditModal() {
+  const idx = editingIdx.value
+  if (idx !== -1) {
+    selectedProject.value = store.projects[idx]
+    openParticipantTab()
+  }
 }
 
 function onProjectDetailMousedown(e) {
@@ -353,7 +356,6 @@ function renderParticipants(participants) {
               <button class="btn btn-secondary btn-sm" @click="moveProject(idx, 'up')">↑</button>
               <button class="btn btn-secondary btn-sm" @click="moveProject(idx, 'down')">↓</button>
               <button class="btn btn-secondary btn-sm" @click="onEditProject(idx)">✏️ Редактировать</button>
-              <button class="btn btn-primary btn-sm" @click="openParticipantTabForProject(idx)">👥 Добавить участников</button>
               <button class="btn btn-danger btn-sm" @click="deleteProject(idx)">🗑️ Удалить</button>
             </div>
           </div>
@@ -408,6 +410,9 @@ function renderParticipants(participants) {
             <div class="form-group">
               <label for="projectComment">Комментарий:</label>
               <textarea id="projectComment" class="form-textarea" placeholder="Комментарий к проекту"></textarea>
+            </div>
+            <div v-if="editingIdx !== -1" class="form-group">
+              <button type="button" class="btn btn-primary" style="width:100%" @click="openParticipantTabFromEditModal">👥 Добавить участников</button>
             </div>
             <div style="display:flex;gap:var(--spacing-sm);margin-top:var(--spacing-md)">
               <button type="button" class="btn btn-secondary" @click="closeProjectEditModal()">Отмена</button>
