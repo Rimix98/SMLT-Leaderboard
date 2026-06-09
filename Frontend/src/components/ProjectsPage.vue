@@ -411,8 +411,10 @@ function renderParticipants(participants) {
               <label for="projectComment">Комментарий:</label>
               <textarea id="projectComment" class="form-textarea" placeholder="Комментарий к проекту"></textarea>
             </div>
+            <div v-if="editingIdx !== -1" class="form-group">
+              <button type="button" class="btn btn-primary" style="width:100%" @click="openParticipantTabFromEditModal()">👥 Добавить участников</button>
+            </div>
             <div style="display:flex;gap:var(--spacing-sm);margin-top:var(--spacing-md)">
-              <button v-if="editingIdx !== -1" type="button" class="btn btn-primary" @click="openParticipantTabFromEditModal()">👥 Добавить участников</button>
               <button type="button" class="btn btn-secondary" @click="closeProjectEditModal()">Отмена</button>
               <button type="submit" class="btn btn-primary">💾 Сохранить</button>
             </div>
