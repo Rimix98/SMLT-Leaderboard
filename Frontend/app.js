@@ -270,15 +270,18 @@ function decodeCountryToken(token) {
 
 let csrfToken = '';
 
+function getCsrfTokenFromCookie() {
+    const match = document.cookie.split('; ').find(r => r.startsWith('__Host-csrf_token='));
+    return match ? match.split('=')[1] : '';
+}
+
 async function refreshCsrfToken() {
     for (let attempt = 0; attempt < 2; attempt++) {
         try {
             const res = await fetch(`${BACKEND_URL}/csrf-token`, { credentials: 'include' });
-            const data = await res.json();
-            if (data.token) {
-                csrfToken = data.token;
-            }
-            return data.token || null;
+            if (!res.ok) throw new Error('csrf fetch failed');
+            csrfToken = getCsrfTokenFromCookie();
+            return csrfToken || null;
         } catch (e) {
             if (attempt === 0) {
                 await new Promise(r => setTimeout(r, 1000));
@@ -719,7 +722,7 @@ async function doAdminKnock() {
             adminKnockKey = data.key;
             if (adminKnockRefreshTimer) clearTimeout(adminKnockRefreshTimer);
             const ttl = (data.ttl || 900) * 1000;
-            adminKnockRefreshTimer = setTimeout(() => doAdminKnock(), ttl - 60000);
+            adminKnockRefreshTimer = setTimeout(() => doAdminKnock(), Math.max(ttl - 60000, 30000));
             return true;
         }
         return false;

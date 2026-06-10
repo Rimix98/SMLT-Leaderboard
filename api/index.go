@@ -472,7 +472,7 @@ func (u *upstashLimiter) allow(ctx context.Context, key string, max int, window 
 	return count <= max, nil
 }
 
-func (u *upstashLimiter) getOrCreate(ctx context.Context, key string, max int, windowSec int) (ttl int, count int, err error) {
+func (u *upstashLimiter) getOrCreate(ctx context.Context, key string, _ int, windowSec int) (ttl int, count int, err error) {
 	cmd := url.PathEscape(fmt.Sprintf("SET %s 1 EX %d NX", key, windowSec))
 	reqURL := fmt.Sprintf("%s/%s", u.url, cmd)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
@@ -1169,7 +1169,7 @@ func handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
 	}
 	tokenStr := hex.EncodeToString(token)
 	setSecureCookie(w, "csrf_token", tokenStr, 3600)
-	writeJSON(w, map[string]string{"token": tokenStr})
+	writeJSON(w, map[string]bool{"success": true})
 }
 
 // ──────────────────────────────────────────────
@@ -1245,14 +1245,14 @@ func getCurrentTokenVersion(ctx context.Context) int64 {
 	return cfg.TokenVersion
 }
 
-func generateJTI() string {
+func generateJTI() (string, error) {
 	buf := make([]byte, 16)
 	for tries := 0; tries < 3; tries++ {
 		if _, err := rand.Read(buf); err == nil {
-			return hex.EncodeToString(buf)
+			return hex.EncodeToString(buf), nil
 		}
 	}
-	return fmt.Sprintf("%x-%d", time.Now().UnixNano(), os.Getpid())
+	return "", errors.New("crypto/rand unavailable")
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -1299,7 +1299,12 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	tokenVersion := getCurrentTokenVersion(r.Context())
 	exp := time.Now().Add(24 * time.Hour)
 	now := time.Now()
-	jti := generateJTI()
+	jti, err := generateJTI()
+	if err != nil {
+		log.Printf("[login] jti generation failed: %v", err)
+		sendError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
+		return
+	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"admin": true,
@@ -1394,7 +1399,7 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w, http.MethodPost)
 		return
 	}
-	if cookie, err := r.Cookie("auth_token"); err == nil {
+	if cookie, err := r.Cookie("__Host-auth_token"); err == nil {
 		claims := &jwt.MapClaims{}
 		if _, parseErr := jwt.ParseWithClaims(cookie.Value, claims, func(t *jwt.Token) (interface{}, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -1686,6 +1691,10 @@ func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
 		return
 	}
+	if len(players) > 200 {
+		sendError(w, http.StatusBadRequest, "Слишком много игроков")
+		return
+	}
 	for i, p := range players {
 		players[i].Name = sanitizeString(p.Name)
 		if len(p.Name) == 0 || len(p.Name) > 32 {
@@ -1693,6 +1702,7 @@ func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 	ctx := r.Context()
 	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		docRef := fsClient.Collection("config").Doc("players")
@@ -1868,7 +1878,7 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auditLog(r.Context(), AuditEntry{
-		Action:  "staff.add",
+		Action: "staff.add",
 
 		Details: map[string]interface{}{
 			"roleIndex": req.RoleIndex,
@@ -1941,7 +1951,7 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auditLog(r.Context(), AuditEntry{
-		Action:  "staff.createRole",
+		Action: "staff.createRole",
 
 		Details: map[string]string{"name": req.Name, "color": req.Color},
 	})
@@ -1993,7 +2003,7 @@ func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auditLog(r.Context(), AuditEntry{
-		Action:  "staff.deleteRole",
+		Action: "staff.deleteRole",
 
 		Details: map[string]int{"roleIndex": req.RoleIndex},
 	})
@@ -2066,7 +2076,7 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auditLog(r.Context(), AuditEntry{
-		Action:  "staff.updateRole",
+		Action: "staff.updateRole",
 
 		Details: map[string]interface{}{"roleIndex": req.RoleIndex, "name": req.Name, "color": req.Color},
 	})
@@ -2140,7 +2150,7 @@ func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auditLog(r.Context(), AuditEntry{
-		Action:  "staff.removePlayer",
+		Action: "staff.removePlayer",
 
 		Details: map[string]interface{}{
 			"roleIndex": req.RoleIndex,
@@ -2200,7 +2210,7 @@ func handleReorderStaffRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auditLog(r.Context(), AuditEntry{
-		Action:  "staff.reorder",
+		Action: "staff.reorder",
 
 		Details: map[string]interface{}{
 			"roleIndex": req.RoleIndex,
@@ -2310,8 +2320,8 @@ func handleSetStaffTier(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		var data struct {
-			Roles    []StaffRole     `json:"roles" firestore:"roles"`
-			GPTiers  []StaffTierEntry `json:"gp_tiers" firestore:"gp_tiers"`
+			Roles     []StaffRole      `json:"roles" firestore:"roles"`
+			GPTiers   []StaffTierEntry `json:"gp_tiers" firestore:"gp_tiers"`
 			DecoTiers []StaffTierEntry `json:"deco_tiers" firestore:"deco_tiers"`
 		}
 		if err := doc.DataTo(&data); err != nil {
@@ -2348,7 +2358,7 @@ func handleSetStaffTier(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auditLog(r.Context(), AuditEntry{
-		Action:  "staff.setTier",
+		Action: "staff.setTier",
 
 		Details: map[string]interface{}{
 			"category": req.Category,
@@ -2530,8 +2540,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	if origin != "" {
 		allowedOrigins := map[string]bool{
 			"https://smltdemonlist.vercel.app": true,
-			"https://smlt-demonlist.ru":         true,
-			"https://www.smlt-demonlist.ru":     true,
+			"https://smlt-demonlist.ru":        true,
+			"https://www.smlt-demonlist.ru":    true,
 		}
 		if allowedOrigins[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
@@ -2550,25 +2560,25 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	path := requestPath(r)
 
 	mux := map[string]http.HandlerFunc{
-		"/api/captcha":            rateLimitMiddleware(30)(handleCaptcha),
-		"/api/login":              rateLimitLoginMiddleware(handleLogin),
-		"/api/logout":             rateLimitLoginMiddleware(handleLogout),
-		"/api/verify":             rateLimitMiddleware(60)(handleVerify),
-		"/api/csrf-token":         rateLimitMiddleware(30)(handleGetCSRFToken),
-		"/api/leaderboard":        rateLimitMiddleware(30)(handleLeaderboard),
-		"/api/staff":              rateLimitMiddleware(60)(handleGetStaff),
-		"/api/knock-knock-admin":  rateLimitMiddleware(10)(authMiddleware(handleAdminKnock)),
-		"/api/staff/add":          rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd)))),
-		"/api/staff/role":         rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRole)))),
-		"/api/staff/remove":       rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRemove)))),
-		"/api/staff/reorder":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleReorderStaffRoles)))),
-		"/api/staff/tiers":         rateLimitMiddleware(60)(handleGetStaffTiers),
-		"/api/staff/tier":          rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSetStaffTier)))),
-		"/api/projects":            rateLimitMiddleware(60)(handleGetProjects),
-		"/api/projects/save":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveProjects)))),
-		"/api/players":             rateLimitMiddleware(60)(handleGetPlayers),
-		"/api/players/save":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSavePlayers)))),
-		"/api/players/delete":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),
+		"/api/captcha":           rateLimitMiddleware(30)(handleCaptcha),
+		"/api/login":             rateLimitLoginMiddleware(handleLogin),
+		"/api/logout":            rateLimitLoginMiddleware(handleLogout),
+		"/api/verify":            rateLimitMiddleware(60)(handleVerify),
+		"/api/csrf-token":        rateLimitMiddleware(30)(handleGetCSRFToken),
+		"/api/leaderboard":       rateLimitMiddleware(30)(handleLeaderboard),
+		"/api/staff":             rateLimitMiddleware(60)(handleGetStaff),
+		"/api/knock-knock-admin": rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleAdminKnock))),
+		"/api/staff/add":         rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd)))),
+		"/api/staff/role":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRole)))),
+		"/api/staff/remove":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRemove)))),
+		"/api/staff/reorder":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleReorderStaffRoles)))),
+		"/api/staff/tiers":       rateLimitMiddleware(60)(handleGetStaffTiers),
+		"/api/staff/tier":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSetStaffTier)))),
+		"/api/projects":          rateLimitMiddleware(60)(handleGetProjects),
+		"/api/projects/save":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveProjects)))),
+		"/api/players":           rateLimitMiddleware(60)(handleGetPlayers),
+		"/api/players/save":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSavePlayers)))),
+		"/api/players/delete":    rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),
 	}
 
 	h, ok := mux[path]
