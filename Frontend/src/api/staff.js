@@ -479,6 +479,7 @@ export async function roleModalSortByTiers(roleIndex) {
     if (ta !== tb) return ta - tb
     return a.nickname.localeCompare(b.nickname)
   })
+  await saveStaffRoles()
   renderRoleModalPlayerList(roleIndex)
   showToast('Участники отсортированы по тирам', 'success')
 }
