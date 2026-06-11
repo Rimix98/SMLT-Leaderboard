@@ -3191,9 +3191,26 @@ async function roleModalSortByTiers(roleIndex) {
         return a.nickname.localeCompare(b.nickname);
     });
 
-    await roleModalSavePlayers(roleIndex);
-    renderRoleModalPlayerList(roleIndex);
-    showToast('Участники отсортированы по тирам', 'success');
+    try {
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                roleIndex,
+                name: role.name,
+                color: role.color,
+                tiersEnabled: role.tiersEnabled,
+                players: role.players
+            })
+        }, 'role-sort-tiers');
+        if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка сохранения'); }
+        await loadStaffRoles();
+        renderRoleModalPlayerList(roleIndex);
+        showToast('Участники отсортированы по тирам', 'success');
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
 }
 
 async function roleModalToggleTiers(roleIndex) {
