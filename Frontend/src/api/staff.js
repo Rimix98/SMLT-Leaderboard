@@ -25,6 +25,24 @@ export function getTierConfig(nickname) {
   return TIER_CONFIG[getPlayerTier(nickname)] || TIER_CONFIG.na
 }
 
+function sortRolePlayersByTiers(role) {
+  if (!role || !role.players) return
+  const tierOrder = { priority: 0, base: 1, reserve: 2, na: 3 }
+  role.players.sort((a, b) => {
+    const ta = tierOrder[getPlayerTier(a.nickname)] ?? 3
+    const tb = tierOrder[getPlayerTier(b.nickname)] ?? 3
+    if (ta !== tb) return ta - tb
+    return a.nickname.localeCompare(b.nickname)
+  })
+}
+
+export function sortAllRolesByTiers() {
+  if (!store.staffRoles) return
+  for (const role of store.staffRoles) {
+    sortRolePlayersByTiers(role)
+  }
+}
+
 export async function loadStaffRoles() {
   const loadingState = document.getElementById('staffLoadingState')
   if (loadingState) loadingState.style.display = 'flex'
@@ -472,13 +490,7 @@ export async function roleModalSortByTiers(roleIndex) {
   if (roleIndex == null) roleIndex = parseInt(document.getElementById('editRoleIndex')?.value || '-1')
   const role = store.staffRoles[roleIndex]
   if (!role || !role.players) return
-  const tierOrder = { priority: 0, base: 1, reserve: 2, na: 3 }
-  role.players.sort((a, b) => {
-    const ta = tierOrder[getPlayerTier(a.nickname)] ?? 3
-    const tb = tierOrder[getPlayerTier(b.nickname)] ?? 3
-    if (ta !== tb) return ta - tb
-    return a.nickname.localeCompare(b.nickname)
-  })
+  sortRolePlayersByTiers(role)
   await saveStaffRoles()
   renderRoleModalPlayerList(roleIndex)
   showToast('Участники отсортированы по тирам', 'success')
