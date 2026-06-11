@@ -1823,6 +1823,61 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, data.Roles)
 }
 
+func handleSaveStaff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+	var roles []StaffRole
+	if err := decodeRequestJSON(w, r, &roles); err != nil {
+		sendError(w, http.StatusBadRequest, "Кривой JSON")
+		return
+	}
+	if len(roles) > 50 {
+		sendError(w, http.StatusBadRequest, "Слишком много ролей")
+		return
+	}
+	for i := range roles {
+		roles[i].Name = sanitizeString(roles[i].Name)
+		roles[i].Color = sanitizeString(roles[i].Color)
+		if err := validateRoleName(roles[i].Name); err != nil {
+			sendError(w, http.StatusBadRequest, "Некорректные данные")
+			return
+		}
+		if roles[i].Color == "" {
+			roles[i].Color = "#3b82f6"
+		} else if !reHexColor.MatchString(roles[i].Color) {
+			sendError(w, http.StatusBadRequest, "Некорректный цвет")
+			return
+		} else if !strings.HasPrefix(roles[i].Color, "#") {
+			roles[i].Color = "#" + roles[i].Color
+		}
+		for j := range roles[i].Players {
+			roles[i].Players[j].Nickname = sanitizeString(roles[i].Players[j].Nickname)
+			roles[i].Players[j].Discord = sanitizeString(roles[i].Players[j].Discord)
+		}
+	}
+
+	ctx := r.Context()
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("staff")
+		return tx.Set(docRef, map[string]interface{}{"roles": roles})
+	})
+	if err != nil {
+		log.Printf("[staff] save roles: %v", err)
+		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		return
+	}
+	auditLog(r.Context(), AuditEntry{
+		Action:  "staff.save",
+		Details: map[string]int{"count": len(roles)},
+	})
+	writeJSON(w, map[string]bool{"success": true})
+}
+
 func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
@@ -2574,6 +2629,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/staff/reorder":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleReorderStaffRoles)))),
 		"/api/staff/tiers":       rateLimitMiddleware(60)(handleGetStaffTiers),
 		"/api/staff/tier":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSetStaffTier)))),
+		"/api/staff/save":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveStaff)))),
 		"/api/projects":          rateLimitMiddleware(60)(handleGetProjects),
 		"/api/projects/save":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveProjects)))),
 		"/api/players":           rateLimitMiddleware(60)(handleGetPlayers),

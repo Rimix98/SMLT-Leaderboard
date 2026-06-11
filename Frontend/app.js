@@ -2612,7 +2612,7 @@ async function loadStaffRoles() {
 
 async function saveStaffRoles() {
     try {
-        const res = await fetchWithAbort(`${BACKEND_URL}/staff`, {
+        const res = await fetchWithAbort(`${BACKEND_URL}/staff/save`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
