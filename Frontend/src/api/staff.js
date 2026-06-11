@@ -36,8 +36,33 @@ function sortRolePlayersByTiers(role) {
   })
 }
 
+function sortRolesByTierDistribution(roleA, roleB) {
+  const tierOrder = { priority: 0, base: 1, reserve: 2, na: 3 }
+  
+  const getCounts = (role) => {
+    const counts = { priority: 0, base: 0, reserve: 0, na: 0 }
+    ;(role.players || []).forEach(p => {
+      const tier = getPlayerTier(p.nickname)
+      if (counts[tier] !== undefined) counts[tier]++
+    })
+    return counts
+  }
+  
+  const countsA = getCounts(roleA)
+  const countsB = getCounts(roleB)
+  
+  for (const tier of ['priority', 'base', 'reserve']) {
+    if (countsA[tier] !== countsB[tier]) {
+      return countsB[tier] - countsA[tier]
+    }
+  }
+  
+  return (roleA.name || '').localeCompare(roleB.name || '')
+}
+
 export function sortAllRolesByTiers() {
   if (!store.staffRoles) return
+  store.staffRoles.sort(sortRolesByTierDistribution)
   for (const role of store.staffRoles) {
     sortRolePlayersByTiers(role)
   }
