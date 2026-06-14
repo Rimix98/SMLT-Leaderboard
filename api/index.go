@@ -300,6 +300,7 @@ func init() {
 	initJWTSecrets()
 	initAdminKnock()
 	startTokenBlacklistCleanup()
+	StartAlertWorker()
 }
 
 func initAdminKnock() {
@@ -2645,14 +2646,8 @@ func securityEvent(ctx context.Context, eventType, ip, path string, detail inter
 }
 
 // ──────────────────────────────────────────────
-// DISCORD WEBHOOK ALERTS
+// DISCORD WEBHOOK ALERTS (Worker Pool)
 // ──────────────────────────────────────────────
-
-var (
-	discordWebhookURL string
-	discordOnce       sync.Once
-	discordHTTP       = &http.Client{Timeout: 5 * time.Second}
-)
 
 type discordEmbed struct {
 	Title       string         `json:"title"`
@@ -2671,6 +2666,25 @@ type discordField struct {
 type discordPayload struct {
 	Embeds []discordEmbed `json:"embeds"`
 }
+
+type alertMessage struct {
+	eventType string
+	ip        string
+	path      string
+	detail    interface{}
+	body      []byte
+}
+
+var (
+	alertQueue    chan alertMessage
+	discordHTTP   = &http.Client{Timeout: 5 * time.Second}
+	discordActive atomic.Bool
+)
+
+const (
+	alertQueueCapacity = 300
+	discordRateDelay   = 220 * time.Millisecond
+)
 
 var alertColors = map[string]int{
 	"honeypot_triggered":         0xff0000,
@@ -2714,20 +2728,47 @@ var criticalEvents = map[string]bool{
 	"backoff_blocked":            true,
 }
 
-func initDiscordWebhook() {
-	discordOnce.Do(func() {
-		discordWebhookURL = os.Getenv("DISCORD_SECURITY_WEBHOOK")
-		if discordWebhookURL == "" {
-			log.Println("[discord] DISCORD_SECURITY_WEBHOOK not set, alerts disabled")
-		} else {
-			log.Println("[discord] security alerts enabled")
+func StartAlertWorker() {
+	webhookURL := os.Getenv("DISCORD_SECURITY_WEBHOOK")
+	if webhookURL == "" {
+		log.Println("[discord] DISCORD_SECURITY_WEBHOOK not set, alerts disabled")
+		return
+	}
+
+	alertQueue = make(chan alertMessage, alertQueueCapacity)
+	discordActive.Store(true)
+	log.Printf("[discord] worker started (queue=%d, rate=%v)", alertQueueCapacity, discordRateDelay)
+
+	go func() {
+		for msg := range alertQueue {
+			if err := sendDiscordPayload(msg.body); err != nil {
+				log.Printf("[discord] send failed: %v", err)
+			}
+			time.Sleep(discordRateDelay)
 		}
-	})
+	}()
+}
+
+func sendDiscordPayload(body []byte) error {
+	webhookURL := os.Getenv("DISCORD_SECURITY_WEBHOOK")
+	if webhookURL == "" {
+		return nil
+	}
+	resp, err := discordHTTP.Post(webhookURL, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func alertSecurityEvent(eventType, ip, path string, detail interface{}) {
-	initDiscordWebhook()
-	if discordWebhookURL == "" {
+	log.Printf("[security] %s ip=%s path=%s", eventType, ip, path)
+
+	if !discordActive.Load() {
 		return
 	}
 
@@ -2778,20 +2819,15 @@ func alertSecurityEvent(eventType, ip, path string, detail interface{}) {
 	payload := discordPayload{Embeds: []discordEmbed{embed}}
 	body, err := json.Marshal(payload)
 	if err != nil {
+		log.Printf("[discord] marshal failed: %v", err)
 		return
 	}
 
-	go func() {
-		resp, err := discordHTTP.Post(discordWebhookURL, "application/json", strings.NewReader(string(body)))
-		if err != nil {
-			log.Printf("[discord] alert send failed: %v", err)
-			return
-		}
-		resp.Body.Close()
-		if resp.StatusCode >= 300 {
-			log.Printf("[discord] alert returned status %d", resp.StatusCode)
-		}
-	}()
+	select {
+	case alertQueue <- alertMessage{eventType: eventType, body: body}:
+	default:
+		log.Printf("[discord] queue full, dropping alert: %s", eventType)
+	}
 }
 
 func alertLoginFailure(ip string, reason string) {
