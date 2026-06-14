@@ -820,6 +820,18 @@ func setSecureCookie(w http.ResponseWriter, name, value string, maxAge int) {
 	})
 }
 
+func setCSRFCookie(w http.ResponseWriter, value string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "__Host-csrf_token",
+		Value:    value,
+		Path:     "/",
+		HttpOnly: false,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   maxAge,
+	})
+}
+
 func clearCookie(w http.ResponseWriter, name string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "__Host-" + name,
@@ -971,7 +983,7 @@ func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		newToken := make([]byte, 32)
 		if _, randErr := rand.Read(newToken); randErr == nil {
 			tokenStr := hex.EncodeToString(newToken)
-			setSecureCookie(w, "csrf_token", tokenStr, 3600)
+			setCSRFCookie(w, tokenStr, 3600)
 			w.Header().Set("X-CSRF-Token", tokenStr)
 		}
 		next.ServeHTTP(w, r)
@@ -1168,7 +1180,7 @@ func handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tokenStr := hex.EncodeToString(token)
-	setSecureCookie(w, "csrf_token", tokenStr, 3600)
+	setCSRFCookie(w, tokenStr, 3600)
 	writeJSON(w, map[string]bool{"success": true})
 }
 
@@ -1610,6 +1622,10 @@ func fetchAPIWithRetry(ctx context.Context, apiURL string, maxRetries int) ([]by
 }
 
 func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
 	ctx := r.Context()
 	players := playersForLeaderboard(ctx)
 
@@ -2588,6 +2604,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-XSS-Protection", "1; mode=block")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-src https://www.youtube.com; object-src 'none'; base-uri 'none'; form-action 'self'")
 	w.Header().Del("Server")
 

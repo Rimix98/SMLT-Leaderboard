@@ -245,10 +245,11 @@ export function getFlagCode(c) {
   return code.toLowerCase()
 }
 
-export function getFlagHTML(c) {
-  const code = getFlagCode(c)
-  if (!code) return !resolveCountry(c) && c === null ? '❌' : '🌍'
-  return `<img src="https://flagcdn.com/w20/${code}.png" alt="${code.toUpperCase()}" width="20" style="vertical-align:middle;border-radius:2px;margin-right:4px">`
+export function getFlagElement(c) {
+  const span = document.createElement('span')
+  const el = createFlagElement(c)
+  span.appendChild(el)
+  return span
 }
 
 export function createFlagElement(c) {

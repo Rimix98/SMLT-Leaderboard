@@ -2160,11 +2160,11 @@ function resetParticipantBuilder() {
     store.pendingProjectParticipants = [];
     store._selectedParticipant = '';
     const preview = document.getElementById('participantsPreview');
-    if (preview) preview.innerHTML = '';
+    if (preview) clearEl(preview);
     const searchInput = document.getElementById('participantSearchInput');
     if (searchInput) searchInput.value = '';
     const results = document.getElementById('participantSearchResults');
-    if (results) results.innerHTML = '';
+    if (results) clearEl(results);
     document.querySelectorAll('#participantRoleTags .role-tag-btn').forEach(b => {
         b.classList.remove('active');
         b.style.background = '';
@@ -2209,11 +2209,11 @@ async function initParticipantBuilder() {
     const resultsContainer = document.getElementById('participantSearchResults');
     if (searchInput && resultsContainer) {
         searchInput.value = '';
-        resultsContainer.innerHTML = '';
+        clearEl(resultsContainer);
         searchInput.oninput = null;
         searchInput.oninput = function() {
             const q = this.value.toLowerCase().trim();
-            resultsContainer.innerHTML = '';
+            clearEl(resultsContainer);
             if (!q) { resultsContainer.style.display = 'none'; return; }
 
             const matches = [];
@@ -2288,7 +2288,7 @@ function addProjectParticipant() {
     const searchInput = document.getElementById('participantSearchInput');
     if (searchInput) searchInput.value = '';
     const results = document.getElementById('participantSearchResults');
-    if (results) results.innerHTML = '';
+    if (results) clearEl(results);
     document.querySelectorAll('#participantRoleTags .role-tag-btn').forEach(b => {
         b.classList.remove('active');
         b.style.background = '';

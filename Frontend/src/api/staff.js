@@ -571,7 +571,7 @@ export function closeEditPanel() {
 function populateEditRoleSelect() {
   const select = document.getElementById('editPlayerRole')
   if (!select) return
-  select.innerHTML = ''
+  while (select.firstChild) select.removeChild(select.firstChild)
   const placeholder = document.createElement('option')
   placeholder.value = ''; placeholder.disabled = true; placeholder.selected = true
   placeholder.textContent = 'Выберите роль...'
