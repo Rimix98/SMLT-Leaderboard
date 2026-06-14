@@ -921,8 +921,6 @@ var blockedBotPatterns = []string{
 	"wget/",
 	"python-requests/",
 	"python-urllib/",
-	"go-http-client/",
-	"java/",
 	"perl",
 	"ruby",
 	"php/",
