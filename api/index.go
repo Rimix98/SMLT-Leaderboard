@@ -305,6 +305,7 @@ func init() {
 	initAdminKnock()
 	startTokenBlacklistCleanup()
 	StartAlertWorker()
+	go cleanupCaptchaEscalation()
 }
 
 func initAdminKnock() {
@@ -1219,7 +1220,7 @@ func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 		headerToken := r.Header.Get("X-CSRF-Token")
 		cookie, err := r.Cookie("__Host-csrf_token")
-		if err != nil || cookie.Value == "" || headerToken == "" || headerToken != cookie.Value {
+		if err != nil || cookie.Value == "" || headerToken == "" || subtle.ConstantTimeCompare([]byte(headerToken), []byte(cookie.Value)) != 1 {
 			sendError(w, http.StatusForbidden, "Доступ запрещен")
 			return
 		}
@@ -1415,15 +1416,23 @@ func getCaptchaDifficulty(ip string) (int, int, float64, int) {
 }
 
 func recordCaptchaFailure(ip string) {
-	val, loaded := captchaEscalation.LoadOrStore(ip, new(int))
-	if !loaded {
-		p := val.(*int)
-		p = new(int)
-		captchaEscalation.Store(ip, p)
-		val = p
-	}
+	val, _ := captchaEscalation.LoadOrStore(ip, new(int))
 	p := val.(*int)
 	*p++
+}
+
+func cleanupCaptchaEscalation() {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		captchaEscalation.Range(func(key, value interface{}) bool {
+			p := value.(*int)
+			if *p > 20 {
+				captchaEscalation.Delete(key)
+			}
+			return true
+		})
+	}
 }
 
 func clearCaptchaEscalation(ip string) {
@@ -1501,6 +1510,13 @@ func handleVerify(w http.ResponseWriter, r *http.Request) {
 	if err := verifyTokenVersion(r.Context(), claims); err != nil {
 		writeJSON(w, map[string]bool{"success": false})
 		return
+	}
+	if ipHash, ok := (*claims)["ip"].(string); ok && ipHash != "" {
+		currentHash := hashIPWithSalt(getRealIP(r))
+		if subtle.ConstantTimeCompare([]byte(ipHash), []byte(currentHash)) != 1 {
+			writeJSON(w, map[string]bool{"success": false})
+			return
+		}
 	}
 	writeJSON(w, map[string]bool{"success": true})
 }
@@ -3692,7 +3708,7 @@ func (t *backoffTracker) cleanup() {
 			now := time.Now()
 			t.mu.Lock()
 			for ip, e := range t.entries {
-				if now.After(e.blockedUntil) && e.violations < 3 {
+				if now.After(e.blockedUntil) {
 					delete(t.entries, ip)
 				}
 			}
@@ -3804,7 +3820,7 @@ func handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		"ip":    ipHash,
 	})
 	newToken.Header["kid"] = primaryJWTID
-	tokenString, err := token.SignedString(primaryJWTKey)
+	tokenString, err := newToken.SignedString(primaryJWTKey)
 	if err != nil {
 		sendError(w, http.StatusInternalServerError, "Ошибка подписи")
 		return
