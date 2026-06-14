@@ -2088,8 +2088,8 @@ func respondInteraction(w http.ResponseWriter, message string) {
 	resp := discordInteractionResponse{
 		Type: 4,
 		Data: map[string]interface{}{
-			"content":    message,
-			"flags":      64,
+			"content": message,
+			"flags":   64,
 		},
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -3833,6 +3833,13 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			sendError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 		}
 	}()
+
+	var reqID string
+	idBytes := make([]byte, 6)
+	if _, err := rand.Read(idBytes); err == nil {
+		reqID = hex.EncodeToString(idBytes)
+	}
+	w.Header().Set("X-Request-ID", reqID)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
