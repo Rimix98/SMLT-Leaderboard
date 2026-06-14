@@ -2673,21 +2673,38 @@ type discordPayload struct {
 }
 
 var alertColors = map[string]int{
-	"honeypot_triggered":       0xff0000,
+	"honeypot_triggered":         0xff0000,
 	"honeypot_token_blacklisted": 0xff4444,
-	"ip_mismatch":              0xff6600,
-	"login_failed":             0xffaa00,
-	"rate_limit_exceeded":      0xffcc00,
-	"backoff_blocked":          0xff0000,
+	"ip_mismatch":                0xff6600,
+	"login_failed":               0xffaa00,
+	"rate_limit_exceeded":        0xffcc00,
+	"backoff_blocked":            0xff0000,
 }
 
 var alertEmoji = map[string]string{
-	"honeypot_triggered":       "陷阱",
+	"honeypot_triggered":         "🚨",
 	"honeypot_token_blacklisted": "🔒",
-	"ip_mismatch":              "⚠️",
-	"login_failed":             "🔐",
-	"rate_limit_exceeded":      "🚫",
-	"backoff_blocked":          "⛔",
+	"ip_mismatch":                "⚠️",
+	"login_failed":               "🔐",
+	"rate_limit_exceeded":        "🚫",
+	"backoff_blocked":            "⛔",
+}
+
+var alertTitles = map[string]string{
+	"honeypot_triggered":         "Обнаружена попытка взлома",
+	"honeypot_token_blacklisted": "Токен заблокирован",
+	"ip_mismatch":                "Смена IP-адреса",
+	"login_failed":               "Неудачный вход",
+	"rate_limit_exceeded":        "Превышен лимит запросов",
+	"backoff_blocked":            "Заблокирован за нарушения",
+}
+
+var alertFieldNames = map[string]string{
+	"method": "Метод",
+	"ua":     "Браузер",
+	"reason": "Причина",
+	"jti":    "ID токена",
+	"max":    "Лимит",
 }
 
 var criticalEvents = map[string]bool{
@@ -2722,25 +2739,37 @@ func alertSecurityEvent(eventType, ip, path string, detail interface{}) {
 	if color == 0 {
 		color = 0x3b82f6
 	}
+	title := alertTitles[eventType]
+	if title == "" {
+		title = eventType
+	}
 
 	fields := []discordField{
 		{Name: "IP", Value: "`" + ip + "`", Inline: true},
-		{Name: "Path", Value: "`" + path + "`", Inline: true},
+		{Name: "Путь", Value: "`" + path + "`", Inline: true},
 	}
 
 	if detailMap, ok := detail.(map[string]string); ok {
 		for k, v := range detailMap {
-			fields = append(fields, discordField{Name: k, Value: "`" + v + "`", Inline: true})
+			fieldName := alertFieldNames[k]
+			if fieldName == "" {
+				fieldName = k
+			}
+			fields = append(fields, discordField{Name: fieldName, Value: "`" + v + "`", Inline: true})
 		}
 	} else if detailMap, ok := detail.(map[string]int); ok {
 		for k, v := range detailMap {
-			fields = append(fields, discordField{Name: k, Value: fmt.Sprintf("`%d`", v), Inline: true})
+			fieldName := alertFieldNames[k]
+			if fieldName == "" {
+				fieldName = k
+			}
+			fields = append(fields, discordField{Name: fieldName, Value: fmt.Sprintf("`%d`", v), Inline: true})
 		}
 	}
 
 	embed := discordEmbed{
-		Title:       emoji + " " + eventType,
-		Description: "SMLT Leaderboard Security Alert",
+		Title:       emoji + " " + title,
+		Description: "SMLT Leaderboard — Тревога безопасности",
 		Color:       color,
 		Fields:      fields,
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
@@ -2785,38 +2814,38 @@ func alertIPMismatch(ip, path string) {
 // ──────────────────────────────────────────────
 
 var honeypotPaths = map[string]bool{
-	"/api/admin":          true,
-	"/api/admin/":         true,
-	"/api/admin/login":    true,
-	"/api/admin/panel":    true,
-	"/api/debug":          true,
-	"/api/debug/":         true,
-	"/api/internal":       true,
-	"/api/internal/":      true,
-	"/api/health":         true,
-	"/api/config":         true,
-	"/api/users":          true,
-	"/api/users/":         true,
-	"/api/user":           true,
-	"/api/auth":           true,
-	"/api/auth/":          true,
-	"/api/v1":             true,
-	"/api/v1/":            true,
-	"/_debug":             true,
-	"/wp-admin":           true,
-	"/wp-login.php":       true,
-	"/.env":               true,
-	"/.git/config":        true,
-	"/.git/HEAD":          true,
-	"/phpmyadmin":         true,
-	"/admin":              true,
-	"/admin/":             true,
-	"/debug":              true,
-	"/server-status":      true,
-	"/.well-known":        true,
-	"/api/swagger":        true,
-	"/api/docs":           true,
-	"/api/graphql":        true,
+	"/api/admin":       true,
+	"/api/admin/":      true,
+	"/api/admin/login": true,
+	"/api/admin/panel": true,
+	"/api/debug":       true,
+	"/api/debug/":      true,
+	"/api/internal":    true,
+	"/api/internal/":   true,
+	"/api/health":      true,
+	"/api/config":      true,
+	"/api/users":       true,
+	"/api/users/":      true,
+	"/api/user":        true,
+	"/api/auth":        true,
+	"/api/auth/":       true,
+	"/api/v1":          true,
+	"/api/v1/":         true,
+	"/_debug":          true,
+	"/wp-admin":        true,
+	"/wp-login.php":    true,
+	"/.env":            true,
+	"/.git/config":     true,
+	"/.git/HEAD":       true,
+	"/phpmyadmin":      true,
+	"/admin":           true,
+	"/admin/":          true,
+	"/debug":           true,
+	"/server-status":   true,
+	"/.well-known":     true,
+	"/api/swagger":     true,
+	"/api/docs":        true,
+	"/api/graphql":     true,
 }
 
 func isHoneypot(path string) bool {
@@ -2871,7 +2900,7 @@ func handleHoneypot(w http.ResponseWriter, r *http.Request) {
 // ──────────────────────────────────────────────
 
 type backoffEntry struct {
-	violations int
+	violations   int
 	blockedUntil time.Time
 }
 
