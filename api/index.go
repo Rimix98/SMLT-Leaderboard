@@ -931,6 +931,14 @@ func verifyTokenVersion(ctx context.Context, claims *jwt.MapClaims) error {
 	return nil
 }
 
+func hashIPWithSalt(ip string) string {
+	if rateLimitSalt == "" {
+		initRateLimitSalt()
+	}
+	h := sha256.Sum256([]byte("jwt-bind:" + ip + ":" + rateLimitSalt))
+	return hex.EncodeToString(h[:16])
+}
+
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("__Host-auth_token")
@@ -962,6 +970,18 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		if err := verifyTokenVersion(r.Context(), claims); err != nil {
 			sendError(w, http.StatusUnauthorized, "Сессия устарела, войдите заново")
 			return
+		}
+
+		if ipHash, ok := (*claims)["ip"].(string); ok && ipHash != "" {
+			currentHash := hashIPWithSalt(getRealIP(r))
+			if subtle.ConstantTimeCompare([]byte(ipHash), []byte(currentHash)) != 1 {
+				if jti, ok := (*claims)["jti"].(string); ok && jti != "" {
+					blacklistToken(r.Context(), jti)
+				}
+				log.Printf("[auth] IP mismatch — possible token hijack attempt")
+				sendError(w, http.StatusUnauthorized, "Сессия недействительна, войдите заново")
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	}
@@ -1324,6 +1344,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		"iat":   now.Unix(),
 		"ver":   tokenVersion,
 		"jti":   jti,
+		"ip":    hashIPWithSalt(getRealIP(r)),
 	})
 	token.Header["kid"] = primaryJWTID
 	tokenString, err := token.SignedString(primaryJWTKey)
@@ -2605,6 +2626,9 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
 	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+	w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+	w.Header().Set("Cross-Origin-Embedder-Policy", "credentialless")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-src https://www.youtube.com; object-src 'none'; base-uri 'none'; form-action 'self'")
 	w.Header().Del("Server")
 
