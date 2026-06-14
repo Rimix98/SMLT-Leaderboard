@@ -17,6 +17,32 @@ function fetchWithTimeout(url, opts, ms) {
   return p
 }
 
+let autoRefreshTimer = null
+
+export function startTokenAutoRefresh() {
+  if (autoRefreshTimer) return
+  autoRefreshTimer = setInterval(async () => {
+    try {
+      const res = await fetchWithTimeout(`${BACKEND_URL}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+      }, 10000)
+      if (res.status === 401) {
+        const { store } = await import('../store')
+        store.isHost = false
+        stopTokenAutoRefresh()
+      }
+    } catch {}
+  }, 30 * 60 * 1000)
+}
+
+export function stopTokenAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer)
+    autoRefreshTimer = null
+  }
+}
+
 export async function refreshCsrfToken() {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {

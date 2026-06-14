@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	mathrand "math/rand/v2"
 	"net"
 	"net/http"
 	"net/url"
@@ -978,7 +979,7 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 				if jti, ok := (*claims)["jti"].(string); ok && jti != "" {
 					blacklistToken(r.Context(), jti)
 				}
-				log.Printf("[auth] IP mismatch — possible token hijack attempt")
+				securityEvent(r.Context(), "ip_mismatch", getRealIP(r), r.URL.Path, nil)
 				sendError(w, http.StatusUnauthorized, "Сессия недействительна, войдите заново")
 				return
 			}
@@ -1325,6 +1326,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(adminHash), []byte(req.Password)); err != nil {
+		securityEvent(r.Context(), "login_failed", getRealIP(r), "/api/login", nil)
 		sendError(w, http.StatusUnauthorized, "Неверные учетные данные")
 		return
 	}
@@ -1354,6 +1356,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setSecureCookie(w, "auth_token", tokenString, 86400)
+	securityEvent(r.Context(), "login_success", getRealIP(r), "/api/login", nil)
 	writeJSON(w, map[string]bool{"success": true})
 }
 
@@ -2609,6 +2612,282 @@ func auditLog(ctx context.Context, entry AuditEntry) {
 }
 
 // ──────────────────────────────────────────────
+// SECURITY EVENT LOG
+// ──────────────────────────────────────────────
+
+type SecurityEvent struct {
+	Type      string      `firestore:"type" json:"type"`
+	IP        string      `firestore:"ip" json:"ip"`
+	Path      string      `firestore:"path" json:"path"`
+	Detail    interface{} `firestore:"detail,omitempty" json:"detail,omitempty"`
+	CreatedAt time.Time   `firestore:"createdAt" json:"createdAt"`
+}
+
+func securityEvent(ctx context.Context, eventType, ip, path string, detail interface{}) {
+	log.Printf("[security] %s ip=%s path=%s", eventType, ip, path)
+	if fsClient == nil {
+		return
+	}
+	_, err := fsClient.Collection("security_events").NewDoc().Set(ctx, SecurityEvent{
+		Type:      eventType,
+		IP:        ip,
+		Path:      path,
+		Detail:    detail,
+		CreatedAt: time.Now(),
+	})
+	if err != nil {
+		log.Printf("[security] write failed: %v", err)
+	}
+}
+
+// ──────────────────────────────────────────────
+// HONEYPOT TRAPS
+// ──────────────────────────────────────────────
+
+var honeypotPaths = map[string]bool{
+	"/api/admin":          true,
+	"/api/admin/":         true,
+	"/api/admin/login":    true,
+	"/api/admin/panel":    true,
+	"/api/debug":          true,
+	"/api/debug/":         true,
+	"/api/internal":       true,
+	"/api/internal/":      true,
+	"/api/health":         true,
+	"/api/config":         true,
+	"/api/users":          true,
+	"/api/users/":         true,
+	"/api/user":           true,
+	"/api/auth":           true,
+	"/api/auth/":          true,
+	"/api/v1":             true,
+	"/api/v1/":            true,
+	"/_debug":             true,
+	"/wp-admin":           true,
+	"/wp-login.php":       true,
+	"/.env":               true,
+	"/.git/config":        true,
+	"/.git/HEAD":          true,
+	"/phpmyadmin":         true,
+	"/admin":              true,
+	"/admin/":             true,
+	"/debug":              true,
+	"/server-status":      true,
+	"/.well-known":        true,
+	"/api/swagger":        true,
+	"/api/docs":           true,
+	"/api/graphql":        true,
+}
+
+func isHoneypot(path string) bool {
+	cleaned := strings.TrimSuffix(path, "/")
+	if honeypotPaths[cleaned] || honeypotPaths[cleaned+"/"] {
+		return true
+	}
+	for p := range honeypotPaths {
+		if strings.HasPrefix(cleaned, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func handleHoneypot(w http.ResponseWriter, r *http.Request) {
+	ip := getRealIP(r)
+
+	securityEvent(r.Context(), "honeypot_triggered", ip, r.URL.Path, map[string]string{
+		"method": r.Method,
+		"ua":     r.UserAgent(),
+	})
+
+	if cookie, err := r.Cookie("__Host-auth_token"); err == nil && cookie.Value != "" {
+		claims := &jwt.MapClaims{}
+		if _, parseErr := jwt.ParseWithClaims(cookie.Value, claims, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method")
+			}
+			kid, _ := t.Header["kid"].(string)
+			return lookupJWTSecret(kid)
+		}); parseErr == nil {
+			if jti, ok := (*claims)["jti"].(string); ok && jti != "" {
+				blacklistToken(r.Context(), jti)
+				securityEvent(r.Context(), "honeypot_token_blacklisted", ip, r.URL.Path, map[string]string{
+					"jti": jti,
+				})
+			}
+		}
+	}
+
+	time.Sleep(time.Duration(50+mathrand.IntN(200)) * time.Millisecond)
+	sendError(w, http.StatusNotFound, "Роут не найден")
+}
+
+// ──────────────────────────────────────────────
+// EXPONENTIAL BACKOFF TRACKER
+// ──────────────────────────────────────────────
+
+type backoffEntry struct {
+	violations int
+	blockedUntil time.Time
+}
+
+type backoffTracker struct {
+	mu      sync.Mutex
+	entries map[string]*backoffEntry
+	stopCh  chan struct{}
+}
+
+var globalBackoff = newBackoffTracker()
+
+func newBackoffTracker() *backoffTracker {
+	t := &backoffTracker{
+		entries: make(map[string]*backoffEntry),
+		stopCh:  make(chan struct{}),
+	}
+	go t.cleanup()
+	return t
+}
+
+func (t *backoffTracker) cleanup() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now()
+			t.mu.Lock()
+			for ip, e := range t.entries {
+				if now.After(e.blockedUntil) && e.violations < 3 {
+					delete(t.entries, ip)
+				}
+			}
+			t.mu.Unlock()
+		case <-t.stopCh:
+			return
+		}
+	}
+}
+
+func (t *backoffTracker) recordViolation(ip string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	now := time.Now()
+	e, ok := t.entries[ip]
+	if !ok {
+		t.entries[ip] = &backoffEntry{violations: 1}
+		return false
+	}
+	if now.Before(e.blockedUntil) {
+		return true
+	}
+	e.violations++
+	if e.violations >= 5 {
+		e.blockedUntil = now.Add(30 * time.Minute)
+	} else if e.violations >= 3 {
+		e.blockedUntil = now.Add(time.Duration(e.violations) * time.Minute)
+	}
+	return now.Before(e.blockedUntil)
+}
+
+func backoffMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ip := getRealIP(r)
+		if globalBackoff.recordViolation(ip) {
+			securityEvent(r.Context(), "backoff_blocked", ip, r.URL.Path, nil)
+			sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// ──────────────────────────────────────────────
+// HANDLER: SILENT TOKEN REFRESH
+// ──────────────────────────────────────────────
+
+func handleRefreshToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	cookie, err := r.Cookie("__Host-auth_token")
+	if err != nil {
+		sendError(w, http.StatusUnauthorized, "Нет доступа")
+		return
+	}
+
+	claims := &jwt.MapClaims{}
+	token, err := jwt.ParseWithClaims(cookie.Value, claims, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		kid, _ := t.Header["kid"].(string)
+		return lookupJWTSecret(kid)
+	})
+	if err != nil || !token.Valid {
+		sendError(w, http.StatusUnauthorized, "Невалидный токен")
+		return
+	}
+
+	if jti, ok := (*claims)["jti"].(string); ok && jti != "" {
+		if isTokenBlacklisted(r.Context(), jti) {
+			sendError(w, http.StatusUnauthorized, "Сессия завершена")
+			return
+		}
+	}
+
+	if err := verifyTokenVersion(r.Context(), claims); err != nil {
+		sendError(w, http.StatusUnauthorized, "Сессия устарела")
+		return
+	}
+
+	exp, _ := (*claims)["exp"].(float64)
+	remaining := time.Until(time.Unix(int64(exp), 0))
+	if remaining > 1*time.Hour {
+		writeJSON(w, map[string]interface{}{"success": true, "refreshed": false, "remaining_seconds": int(remaining.Seconds())})
+		return
+	}
+
+	ipHash, _ := (*claims)["ip"].(string)
+	newJTI, err := generateJTI()
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка обновления")
+		return
+	}
+
+	tokenVersion := getCurrentTokenVersion(r.Context())
+	newExp := time.Now().Add(24 * time.Hour)
+	now := time.Now()
+
+	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"admin": true,
+		"exp":   newExp.Unix(),
+		"iat":   now.Unix(),
+		"ver":   tokenVersion,
+		"jti":   newJTI,
+		"ip":    ipHash,
+	})
+	newToken.Header["kid"] = primaryJWTID
+	tokenString, err := token.SignedString(primaryJWTKey)
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка подписи")
+		return
+	}
+
+	if oldJTI, ok := (*claims)["jti"].(string); ok && oldJTI != "" {
+		blacklistToken(r.Context(), oldJTI)
+	}
+
+	setSecureCookie(w, "auth_token", tokenString, 86400)
+	securityEvent(r.Context(), "token_refreshed", getRealIP(r), "/api/auth/refresh", map[string]string{
+		"old_jti": func() string { j, _ := (*claims)["jti"].(string); return j }(),
+		"new_jti": newJTI,
+	})
+	writeJSON(w, map[string]interface{}{"success": true, "refreshed": true})
+}
+
+// ──────────────────────────────────────────────
 // MAIN HANDLER (Vercel entry point)
 // ──────────────────────────────────────────────
 
@@ -2655,12 +2934,18 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	path := requestPath(r)
 
+	if isHoneypot(path) {
+		handleHoneypot(w, r)
+		return
+	}
+
 	mux := map[string]http.HandlerFunc{
 		"/api/captcha":           rateLimitMiddleware(30)(handleCaptcha),
 		"/api/login":             rateLimitLoginMiddleware(handleLogin),
 		"/api/logout":            rateLimitLoginMiddleware(handleLogout),
 		"/api/verify":            rateLimitMiddleware(60)(handleVerify),
 		"/api/csrf-token":        rateLimitMiddleware(30)(handleGetCSRFToken),
+		"/api/auth/refresh":      rateLimitMiddleware(10)(handleRefreshToken),
 		"/api/leaderboard":       rateLimitMiddleware(30)(handleLeaderboard),
 		"/api/staff":             rateLimitMiddleware(60)(handleGetStaff),
 		"/api/knock-knock-admin": rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleAdminKnock))),

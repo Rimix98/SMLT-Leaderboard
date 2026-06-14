@@ -1,5 +1,5 @@
 import { store } from '../store'
-import { fetchWithAbort, parseJsonResponse, isAbortError, BACKEND_URL, refreshCsrfToken, doAdminKnock, showToast } from './utils'
+import { fetchWithAbort, parseJsonResponse, isAbortError, BACKEND_URL, refreshCsrfToken, doAdminKnock, startTokenAutoRefresh, stopTokenAutoRefresh, showToast } from './utils'
 
 export { refreshCsrfToken, doAdminKnock }
 
@@ -34,6 +34,7 @@ export async function initHostStatus() {
     store.isHost = res.ok && data.success === true
     if (store.isHost) {
       await doAdminKnock()
+      startTokenAutoRefresh()
     }
   } catch (err) {
     if (isAbortError(err)) return
@@ -82,6 +83,7 @@ export async function verifyHost(inputPassword) {
     if (res.ok && data.success === true) {
       store.isHost = true
       await doAdminKnock()
+      startTokenAutoRefresh()
       showToast('Доступ предоставлен! Вы вошли как хост.', 'success')
 
       const modal = document.getElementById('hostModal')
@@ -107,6 +109,7 @@ export async function verifyHost(inputPassword) {
 
 export async function logoutHost() {
   store.isHost = false
+  stopTokenAutoRefresh()
   try {
     await fetchWithAbort(`${BACKEND_URL}/logout`, { method: 'POST', credentials: 'include' }, 'host-logout')
   } catch (e) {
