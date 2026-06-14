@@ -3,6 +3,7 @@ package handler
 import (
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -1038,25 +1039,34 @@ func botDetectionMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		ua := r.UserAgent()
 		ip := getRealIP(r)
 
+		if isDeviceBanned(r.Context(), generateFingerprint(r)) {
+			securityEvent(r.Context(), "device_banned", ip, r.URL.Path, map[string]string{
+				"ua":          ua,
+				"fingerprint": generateFingerprint(r),
+			})
+			sendError(w, http.StatusForbidden, "Устройство заблокировано")
+			return
+		}
+
 		if isBlockedBot(ua) {
+			fp := generateFingerprint(r)
 			securityEvent(r.Context(), "bot_blocked", ip, r.URL.Path, map[string]string{
-				"ua": ua,
+				"ua":          ua,
+				"fingerprint": fp,
 			})
-			alertSecurityEvent("bot_blocked", ip, r.URL.Path, map[string]string{
-				"ua": ua,
-			})
+			alertWithBanButtons("bot_blocked", ip, r.URL.Path, ua, fp)
 			time.Sleep(time.Duration(mathrand.IntN(500)+200) * time.Millisecond)
 			sendError(w, http.StatusForbidden, "Доступ запрещен")
 			return
 		}
 
 		if isBlockedPath(r.URL.Path) {
+			fp := generateFingerprint(r)
 			securityEvent(r.Context(), "blocked_path", ip, r.URL.Path, map[string]string{
-				"ua": ua,
+				"ua":          ua,
+				"fingerprint": fp,
 			})
-			alertSecurityEvent("blocked_path", ip, r.URL.Path, map[string]string{
-				"ua": ua,
-			})
+			alertWithBanButtons("blocked_path", ip, r.URL.Path, ua, fp)
 			time.Sleep(time.Duration(mathrand.IntN(500)+200) * time.Millisecond)
 			sendError(w, http.StatusForbidden, "Доступ запрещен")
 			return
@@ -1845,6 +1855,245 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		Details: map[string]int{"count": len(projectList)},
 	})
 	writeJSON(w, map[string]bool{"success": true})
+}
+
+// ──────────────────────────────────────────────
+// DEVICE FINGERPRINTING & BAN SYSTEM
+// ──────────────────────────────────────────────
+
+type DeviceBan struct {
+	Fingerprint string    `firestore:"fingerprint" json:"fingerprint"`
+	IP          string    `firestore:"ip" json:"ip"`
+	UA          string    `firestore:"ua" json:"ua"`
+	Reason      string    `firestore:"reason" json:"reason"`
+	BannedAt    time.Time `firestore:"bannedAt" json:"bannedAt"`
+	ExpiresAt   time.Time `firestore:"expiresAt" json:"expiresAt"`
+	BannedBy    string    `firestore:"bannedBy" json:"bannedBy"`
+}
+
+func generateFingerprint(r *http.Request) string {
+	ua := r.UserAgent()
+	al := r.Header.Get("Accept-Language")
+	ae := r.Header.Get("Accept-Encoding")
+	accept := r.Header.Get("Accept")
+
+	raw := strings.ToLower(ua + "|" + al + "|" + ae + "|" + accept)
+	h := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(h[:12])
+}
+
+func isDeviceBanned(ctx context.Context, fingerprint string) bool {
+	if fsClient == nil || fingerprint == "" {
+		return false
+	}
+	doc, err := fsClient.Collection("device_bans").Doc(fingerprint).Get(ctx)
+	if err != nil {
+		return false
+	}
+	var ban DeviceBan
+	if err := doc.DataTo(&ban); err != nil {
+		return false
+	}
+	if time.Now().Before(ban.ExpiresAt) {
+		return true
+	}
+	doc.Ref.Delete(ctx)
+	return false
+}
+
+func banDevice(ctx context.Context, fingerprint, ip, ua, reason, bannedBy string, duration time.Duration) error {
+	if fsClient == nil {
+		return errors.New("firestore not available")
+	}
+	ban := DeviceBan{
+		Fingerprint: fingerprint,
+		IP:          ip,
+		UA:          ua,
+		Reason:      reason,
+		BannedAt:    time.Now(),
+		ExpiresAt:   time.Now().Add(duration),
+		BannedBy:    bannedBy,
+	}
+	_, err := fsClient.Collection("device_bans").Doc(fingerprint).Set(ctx, ban)
+	return err
+}
+
+func unbanDevice(ctx context.Context, fingerprint string) error {
+	if fsClient == nil {
+		return errors.New("firestore not available")
+	}
+	_, err := fsClient.Collection("device_bans").Doc(fingerprint).Delete(ctx)
+	return err
+}
+
+// ──────────────────────────────────────────────
+// DISCORD INTERACTION HANDLER
+// ──────────────────────────────────────────────
+
+var (
+	discordPublicKey     ed25519.PublicKey
+	discordPublicKeyOnce sync.Once
+)
+
+func getDiscordPublicKey() ed25519.PublicKey {
+	discordPublicKeyOnce.Do(func() {
+		keyHex := os.Getenv("DISCORD_PUBLIC_KEY")
+		if keyHex == "" {
+			log.Println("[discord] DISCORD_PUBLIC_KEY not set, interactions disabled")
+			return
+		}
+		keyBytes, err := hex.DecodeString(keyHex)
+		if err != nil {
+			log.Printf("[discord] invalid DISCORD_PUBLIC_KEY: %v", err)
+			return
+		}
+		discordPublicKey = ed25519.PublicKey(keyBytes)
+	})
+	return discordPublicKey
+}
+
+func verifyDiscordSignature(signature, timestamp, body string) bool {
+	pubKey := getDiscordPublicKey()
+	if pubKey == nil {
+		return false
+	}
+	msg := []byte(timestamp + body)
+	sig, err := hex.DecodeString(signature)
+	if err != nil {
+		return false
+	}
+	return ed25519.Verify(pubKey, msg, sig)
+}
+
+type discordInteraction struct {
+	ID            string                 `json:"id"`
+	Type          int                    `json:"type"`
+	Token         string                 `json:"token"`
+	Member        *discordMember         `json:"member,omitempty"`
+	Data          *discordInteractionData `json:"data,omitempty"`
+}
+
+type discordMember struct {
+	User discordUser `json:"user"`
+}
+
+type discordUser struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}
+
+type discordInteractionData struct {
+	CustomID string `json:"custom_id"`
+	Values   []string `json:"values,omitempty"`
+}
+
+type discordInteractionResponse struct {
+	Type int         `json:"type"`
+	Data interface{} `json:"data,omitempty"`
+}
+
+func handleDiscordInteraction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	signature := r.Header.Get("X-Signature-Ed25519")
+	timestamp := r.Header.Get("X-Signature-Timestamp")
+	if signature == "" || timestamp == "" {
+		sendError(w, http.StatusUnauthorized, "Missing signature")
+		return
+	}
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 1024*1024))
+	if err != nil {
+		sendError(w, http.StatusBadRequest, "Cannot read body")
+		return
+	}
+	body := string(bodyBytes)
+
+	if !verifyDiscordSignature(signature, timestamp, body) {
+		sendError(w, http.StatusUnauthorized, "Invalid signature")
+		return
+	}
+
+	var interaction discordInteraction
+	if err := json.Unmarshal(bodyBytes, &interaction); err != nil {
+		sendError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+
+	if interaction.Type == 1 {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"type":1}`))
+		return
+	}
+
+	if interaction.Type == 3 && interaction.Data != nil {
+		customID := interaction.Data.CustomID
+		parts := strings.SplitN(customID, "|", 3)
+		if len(parts) == 3 && parts[0] == "ban" {
+			action := parts[1]
+			fingerprint := parts[2]
+
+			var duration time.Duration
+			var label string
+			switch action {
+			case "1h":
+				duration = 1 * time.Hour
+				label = "1 час"
+			case "24h":
+				duration = 24 * time.Hour
+				label = "24 часа"
+			case "7d":
+				duration = 7 * 24 * time.Hour
+				label = "7 дней"
+			case "perm":
+				duration = 365 * 24 * time.Hour
+				label = "навсегда"
+			case "unban":
+				err := unbanDevice(r.Context(), fingerprint)
+				if err != nil {
+				 respondInteraction(w, "❌ Ошибка: "+err.Error())
+				 return
+				}
+				respondInteraction(w, fmt.Sprintf("✅ Устройство `%s` разбанено", fingerprint[:12]))
+				return
+			default:
+				respondInteraction(w, "❌ Неизвестное действие")
+				return
+			}
+
+			user := "unknown"
+			if interaction.Member != nil {
+				user = interaction.Member.User.Username
+			}
+
+			err := banDevice(r.Context(), fingerprint, "", "", "Discord ban", user, duration)
+			if err != nil {
+				respondInteraction(w, "❌ Ошибка: "+err.Error())
+				return
+			}
+
+			respondInteraction(w, fmt.Sprintf("🔨 Устройство `%s` забанено на %s", fingerprint[:12], label))
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"type":5}`))
+}
+
+func respondInteraction(w http.ResponseWriter, message string) {
+	resp := discordInteractionResponse{
+		Type: 4,
+		Data: map[string]interface{}{
+			"content":    message,
+			"flags":      64,
+		},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 // ──────────────────────────────────────────────
@@ -3212,6 +3461,85 @@ func alertIPMismatch(ip, path string) {
 	alertSecurityEvent("ip_mismatch", ip, path, nil)
 }
 
+type discordComponent struct {
+	Type       int              `json:"type"`
+	Style      int              `json:"style,omitempty"`
+	Label      string           `json:"label,omitempty"`
+	CustomID   string           `json:"custom_id,omitempty"`
+	Components []discordComponent `json:"components,omitempty"`
+}
+
+type discordPayloadWithComponents struct {
+	Embeds     []discordEmbed      `json:"embeds"`
+	Components []discordComponent  `json:"components,omitempty"`
+}
+
+func alertWithBanButtons(eventType, ip, path, ua, fingerprint string) {
+	if !discordActive.Load() {
+		return
+	}
+
+	emoji := alertEmoji[eventType]
+	if emoji == "" {
+		emoji = "🛡️"
+	}
+	color := alertColors[eventType]
+	if color == 0 {
+		color = 0x3b82f6
+	}
+	title := alertTitles[eventType]
+	if title == "" {
+		title = eventType
+	}
+
+	fields := []discordField{
+		{Name: "IP", Value: "`" + ip + "`", Inline: true},
+		{Name: "Путь", Value: "`" + path + "`", Inline: true},
+		{Name: "Устройство", Value: "`" + fingerprint + "`", Inline: false},
+	}
+	if ua != "" {
+		fields = append(fields, discordField{Name: "Браузер", Value: "`" + ua + "`", Inline: false})
+	}
+
+	embed := discordEmbed{
+		Title:       emoji + " " + title,
+		Description: "SMLT Leaderboard — Тревога безопасности",
+		Color:       color,
+		Fields:      fields,
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+	}
+
+	fp := fingerprint
+	components := []discordComponent{
+		{
+			Type: 1,
+			Components: []discordComponent{
+				{Type: 2, Style: 1, Label: "ban 1ч", CustomID: "ban|1h|" + fp},
+				{Type: 2, Style: 1, Label: "ban 24ч", CustomID: "ban|24h|" + fp},
+				{Type: 2, Style: 1, Label: "ban 7д", CustomID: "ban|7d|" + fp},
+				{Type: 2, Style: 4, Label: "ban навсегда", CustomID: "ban|perm|" + fp},
+				{Type: 2, Style: 3, Label: "unban", CustomID: "ban|unban|" + fp},
+			},
+		},
+	}
+
+	payload := discordPayloadWithComponents{
+		Embeds:     []discordEmbed{embed},
+		Components: components,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("[discord] marshal failed: %v", err)
+		return
+	}
+
+	select {
+	case alertQueue <- alertMessage{eventType: eventType, body: body}:
+	default:
+		log.Printf("[discord] queue full, dropping alert: %s", eventType)
+	}
+}
+
 // ──────────────────────────────────────────────
 // HONEYPOT TRAPS
 // ──────────────────────────────────────────────
@@ -3524,6 +3852,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/leaderboard":       rateLimitMiddleware(30)(handleLeaderboard),
 		"/api/staff":             rateLimitMiddleware(60)(handleGetStaff),
 		"/api/security/dashboard": rateLimitMiddleware(10)(authMiddleware(handleSecurityDashboard)),
+		"/api/discord/interactions": handleDiscordInteraction,
 		"/api/knock-knock-admin": rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleAdminKnock))),
 		"/api/staff/add":         rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd)))),
 		"/api/staff/role":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRole)))),
