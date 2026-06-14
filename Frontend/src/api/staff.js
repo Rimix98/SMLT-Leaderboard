@@ -28,7 +28,7 @@ export function getTierConfig(nickname) {
 function sortRolePlayersByTiers(role) {
   if (!role || !role.players) return
   const tierOrder = { priority: 0, base: 1, reserve: 2, na: 3 }
-  role.players.sort((a, b) => {
+  role.players = [...role.players].sort((a, b) => {
     const ta = tierOrder[getPlayerTier(a.nickname)] ?? 3
     const tb = tierOrder[getPlayerTier(b.nickname)] ?? 3
     if (ta !== tb) return ta - tb
@@ -62,7 +62,7 @@ function sortRolesByTierDistribution(roleA, roleB) {
 
 export function sortAllRolesByTiers() {
   if (!store.staffRoles) return
-  store.staffRoles.sort(sortRolesByTierDistribution)
+  store.staffRoles = [...store.staffRoles].sort(sortRolesByTierDistribution)
   for (const role of store.staffRoles) {
     sortRolePlayersByTiers(role)
   }
