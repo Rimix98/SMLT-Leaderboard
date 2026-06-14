@@ -917,15 +917,13 @@ var blockedBotPatterns = []string{
 	"slowhttptest",
 	"rudy",
 	"tor",
-	"curl/",
-	"wget/",
-	"python-requests/",
-	"python-urllib/",
+	"curl",
+	"wget",
+	"python",
 	"perl",
 	"ruby",
 	"php/",
 	"scrapy",
-	"bot/",
 	"crawler",
 	"spider",
 	"scraper",
@@ -936,11 +934,98 @@ var blockedBotPatterns = []string{
 	"hack",
 	"crack",
 	"brute",
+	"go-http-client",
+	"java/",
+	"libwww",
+	"lwp-trivial",
+	"webbandit",
+	"webcopier",
+	"webzip",
+	"teleport",
+	"sitecopy",
+	"httrack",
+	"clixboard",
+	"cms探测",
+	"dirbuster",
+	"nmap",
+	"masscan",
+	"zmap",
+	"unicornsql",
+	"sqlbf",
+	"sqlbrute",
+	"sqlsmack",
+	"sqlfury",
+	"sqlninja",
+	"bbqsql",
+	"jsql",
+	"wapiti",
+	"arachni",
+	"skipfish",
+	"nikto",
+	"openvas",
+	"nessus",
+	"qualys",
+	"ratproxy",
+	"w3af",
+	"websecurify",
+	"netsparker",
+}
+
+var blockedPathPatterns = []string{
+	"wp-admin",
+	"wp-login",
+	"xmlrpc.php",
+	"wp-content",
+	"wp-includes",
+	"administrator",
+	"config.php",
+	"config.inc",
+	"setup.php",
+	"install.php",
+	"shell.php",
+	"cmd.php",
+	"backdoor",
+	"webshell",
+	"c99",
+	"r57",
+	"b374k",
+	" FilesMan",
+	"File manager",
+	".htaccess",
+	"web.config",
+	"crossdomain.xml",
 }
 
 func isBlockedBot(ua string) bool {
+	if ua == "" {
+		return true
+	}
 	lower := strings.ToLower(ua)
 	for _, pattern := range blockedBotPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	browserPrefixes := []string{
+		"mozilla/", "chrome/", "safari/", "firefox/", "edge/", "opera/",
+		"webkit/", "blink/",
+	}
+	isBrowser := false
+	for _, prefix := range browserPrefixes {
+		if strings.HasPrefix(lower, prefix) {
+			isBrowser = true
+			break
+		}
+	}
+	if !isBrowser {
+		return true
+	}
+	return false
+}
+
+func isBlockedPath(path string) bool {
+	lower := strings.ToLower(path)
+	for _, pattern := range blockedPathPatterns {
 		if strings.Contains(lower, pattern) {
 			return true
 		}
@@ -951,17 +1036,40 @@ func isBlockedBot(ua string) bool {
 func botDetectionMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ua := r.UserAgent()
-		if ua == "" || isBlockedBot(ua) {
-			ip := getRealIP(r)
+		ip := getRealIP(r)
+
+		if isBlockedBot(ua) {
 			securityEvent(r.Context(), "bot_blocked", ip, r.URL.Path, map[string]string{
 				"ua": ua,
 			})
 			alertSecurityEvent("bot_blocked", ip, r.URL.Path, map[string]string{
 				"ua": ua,
 			})
+			time.Sleep(time.Duration(mathrand.IntN(500)+200) * time.Millisecond)
 			sendError(w, http.StatusForbidden, "Доступ запрещен")
 			return
 		}
+
+		if isBlockedPath(r.URL.Path) {
+			securityEvent(r.Context(), "blocked_path", ip, r.URL.Path, map[string]string{
+				"ua": ua,
+			})
+			alertSecurityEvent("blocked_path", ip, r.URL.Path, map[string]string{
+				"ua": ua,
+			})
+			time.Sleep(time.Duration(mathrand.IntN(500)+200) * time.Millisecond)
+			sendError(w, http.StatusForbidden, "Доступ запрещен")
+			return
+		}
+
+		if r.ContentLength > 5*1024*1024 {
+			securityEvent(r.Context(), "oversized_request", ip, r.URL.Path, map[string]int{
+				"size": int(r.ContentLength),
+			})
+			sendError(w, http.StatusRequestEntityTooLarge, "Слишком большой запрос")
+			return
+		}
+
 		next(w, r)
 	}
 }
@@ -2939,7 +3047,9 @@ var alertColors = map[string]int{
 	"rate_limit_exceeded":        0xffcc00,
 	"backoff_blocked":            0xff0000,
 	"bot_blocked":                0x9933ff,
+	"blocked_path":               0x9933ff,
 	"captcha_failed":             0xffaa00,
+	"oversized_request":          0xff3333,
 }
 
 var alertEmoji = map[string]string{
@@ -2950,7 +3060,9 @@ var alertEmoji = map[string]string{
 	"rate_limit_exceeded":        "🚫",
 	"backoff_blocked":            "⛔",
 	"bot_blocked":                "🤖",
+	"blocked_path":               "🗂️",
 	"captcha_failed":             "🧩",
+	"oversized_request":          "📦",
 }
 
 var alertTitles = map[string]string{
@@ -2961,7 +3073,9 @@ var alertTitles = map[string]string{
 	"rate_limit_exceeded":        "Превышен лимит запросов",
 	"backoff_blocked":            "Заблокирован за нарушения",
 	"bot_blocked":                "Заблокирован бот",
+	"blocked_path":               "Заблокирован путь",
 	"captcha_failed":             "Неверная CAPTCHA",
+	"oversized_request":          "Слишком большой запрос",
 }
 
 var alertFieldNames = map[string]string{
@@ -2978,6 +3092,7 @@ var criticalEvents = map[string]bool{
 	"ip_mismatch":                true,
 	"backoff_blocked":            true,
 	"bot_blocked":                true,
+	"blocked_path":               true,
 }
 
 func StartAlertWorker() {
