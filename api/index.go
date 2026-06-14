@@ -3837,6 +3837,11 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	path := requestPath(r)
 
+	if path == "/api/discord/interactions" {
+		handleDiscordInteraction(w, r)
+		return
+	}
+
 	if isHoneypot(path) {
 		handleHoneypot(w, r)
 		return
@@ -3852,7 +3857,6 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/leaderboard":       rateLimitMiddleware(30)(handleLeaderboard),
 		"/api/staff":             rateLimitMiddleware(60)(handleGetStaff),
 		"/api/security/dashboard": rateLimitMiddleware(10)(authMiddleware(handleSecurityDashboard)),
-		"/api/discord/interactions": handleDiscordInteraction,
 		"/api/knock-knock-admin": rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleAdminKnock))),
 		"/api/staff/add":         rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd)))),
 		"/api/staff/role":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRole)))),
