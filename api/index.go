@@ -980,6 +980,7 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 					blacklistToken(r.Context(), jti)
 				}
 				securityEvent(r.Context(), "ip_mismatch", getRealIP(r), r.URL.Path, nil)
+				alertIPMismatch(getRealIP(r), r.URL.Path)
 				sendError(w, http.StatusUnauthorized, "Сессия недействительна, войдите заново")
 				return
 			}
@@ -1327,6 +1328,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(adminHash), []byte(req.Password)); err != nil {
 		securityEvent(r.Context(), "login_failed", getRealIP(r), "/api/login", nil)
+		alertLoginFailure(getRealIP(r), "wrong_password")
 		sendError(w, http.StatusUnauthorized, "Неверные учетные данные")
 		return
 	}
@@ -2638,6 +2640,144 @@ func securityEvent(ctx context.Context, eventType, ip, path string, detail inter
 	if err != nil {
 		log.Printf("[security] write failed: %v", err)
 	}
+
+	alertSecurityEvent(eventType, ip, path, detail)
+}
+
+// ──────────────────────────────────────────────
+// DISCORD WEBHOOK ALERTS
+// ──────────────────────────────────────────────
+
+var (
+	discordWebhookURL string
+	discordOnce       sync.Once
+	discordHTTP       = &http.Client{Timeout: 5 * time.Second}
+)
+
+type discordEmbed struct {
+	Title       string         `json:"title"`
+	Description string         `json:"description"`
+	Color       int            `json:"color"`
+	Fields      []discordField `json:"fields,omitempty"`
+	Timestamp   string         `json:"timestamp"`
+}
+
+type discordField struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Inline bool   `json:"inline"`
+}
+
+type discordPayload struct {
+	Embeds []discordEmbed `json:"embeds"`
+}
+
+var alertColors = map[string]int{
+	"honeypot_triggered":       0xff0000,
+	"honeypot_token_blacklisted": 0xff4444,
+	"ip_mismatch":              0xff6600,
+	"login_failed":             0xffaa00,
+	"rate_limit_exceeded":      0xffcc00,
+	"backoff_blocked":          0xff0000,
+}
+
+var alertEmoji = map[string]string{
+	"honeypot_triggered":       "陷阱",
+	"honeypot_token_blacklisted": "🔒",
+	"ip_mismatch":              "⚠️",
+	"login_failed":             "🔐",
+	"rate_limit_exceeded":      "🚫",
+	"backoff_blocked":          "⛔",
+}
+
+var criticalEvents = map[string]bool{
+	"honeypot_triggered":         true,
+	"honeypot_token_blacklisted": true,
+	"ip_mismatch":                true,
+	"backoff_blocked":            true,
+}
+
+func initDiscordWebhook() {
+	discordOnce.Do(func() {
+		discordWebhookURL = os.Getenv("DISCORD_SECURITY_WEBHOOK")
+		if discordWebhookURL == "" {
+			log.Println("[discord] DISCORD_SECURITY_WEBHOOK not set, alerts disabled")
+		} else {
+			log.Println("[discord] security alerts enabled")
+		}
+	})
+}
+
+func alertSecurityEvent(eventType, ip, path string, detail interface{}) {
+	initDiscordWebhook()
+	if discordWebhookURL == "" {
+		return
+	}
+
+	emoji := alertEmoji[eventType]
+	if emoji == "" {
+		emoji = "🛡️"
+	}
+	color := alertColors[eventType]
+	if color == 0 {
+		color = 0x3b82f6
+	}
+
+	fields := []discordField{
+		{Name: "IP", Value: "`" + ip + "`", Inline: true},
+		{Name: "Path", Value: "`" + path + "`", Inline: true},
+	}
+
+	if detailMap, ok := detail.(map[string]string); ok {
+		for k, v := range detailMap {
+			fields = append(fields, discordField{Name: k, Value: "`" + v + "`", Inline: true})
+		}
+	} else if detailMap, ok := detail.(map[string]int); ok {
+		for k, v := range detailMap {
+			fields = append(fields, discordField{Name: k, Value: fmt.Sprintf("`%d`", v), Inline: true})
+		}
+	}
+
+	embed := discordEmbed{
+		Title:       emoji + " " + eventType,
+		Description: "SMLT Leaderboard Security Alert",
+		Color:       color,
+		Fields:      fields,
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+	}
+
+	payload := discordPayload{Embeds: []discordEmbed{embed}}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	go func() {
+		resp, err := discordHTTP.Post(discordWebhookURL, "application/json", strings.NewReader(string(body)))
+		if err != nil {
+			log.Printf("[discord] alert send failed: %v", err)
+			return
+		}
+		resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			log.Printf("[discord] alert returned status %d", resp.StatusCode)
+		}
+	}()
+}
+
+func alertLoginFailure(ip string, reason string) {
+	alertSecurityEvent("login_failed", ip, "/api/login", map[string]string{"reason": reason})
+}
+
+func alertHoneypot(ip, path, method, ua string) {
+	alertSecurityEvent("honeypot_triggered", ip, path, map[string]string{
+		"method": method,
+		"ua":     ua,
+	})
+}
+
+func alertIPMismatch(ip, path string) {
+	alertSecurityEvent("ip_mismatch", ip, path, nil)
 }
 
 // ──────────────────────────────────────────────
@@ -2699,6 +2839,7 @@ func handleHoneypot(w http.ResponseWriter, r *http.Request) {
 		"method": r.Method,
 		"ua":     r.UserAgent(),
 	})
+	alertHoneypot(ip, r.URL.Path, r.Method, r.UserAgent())
 
 	if cookie, err := r.Cookie("__Host-auth_token"); err == nil && cookie.Value != "" {
 		claims := &jwt.MapClaims{}
@@ -2712,6 +2853,9 @@ func handleHoneypot(w http.ResponseWriter, r *http.Request) {
 			if jti, ok := (*claims)["jti"].(string); ok && jti != "" {
 				blacklistToken(r.Context(), jti)
 				securityEvent(r.Context(), "honeypot_token_blacklisted", ip, r.URL.Path, map[string]string{
+					"jti": jti,
+				})
+				alertSecurityEvent("honeypot_token_blacklisted", ip, r.URL.Path, map[string]string{
 					"jti": jti,
 				})
 			}
