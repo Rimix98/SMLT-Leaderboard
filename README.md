@@ -17,7 +17,7 @@
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Hosting-Vercel-000?logo=vercel&logoColor=white)
 ![Firebase](https://img.shields.io/badge/DB-Firestore-FFCA28?logo=firebase&logoColor=black)
-![Vanilla JS](https://img.shields.io/badge/Frontend-Vanilla_JS-F7DF1E?logo=javascript&logoColor=black)
+![Vue JS](https://img.shields.io/badge/Frontend-Vanilla_JS-F7DF1E?logo=javascript&logoColor=black)
 
 [Содержание](#содержание) · [Возможности](#-возможности) · [Архитектура](#-архитектура) · [Разработка](#-для-разработчиков) · [Discord](https://discord.gg/VK56W7ZzdA)
 
@@ -112,11 +112,12 @@ docs/screenshots/
 
 | Слой | Технологии |
 |------|------------|
-| **Backend** | Go, Vercel Serverless (`Handler` в `api/index.go`) |
+| **Backend** | Go 1.26, Vercel Serverless (`api/index.go`) |
 | **База данных** | Google Cloud Firestore |
-| **Авторизация** | JWT (HS256) + bcrypt |
-| **Rate limiting** | Upstash Redis REST (прод) / in-memory (fallback) |
-| **Frontend** | HTML, CSS, Vanilla JS |
+| **Авторизация** | JWT (HS256) + bcrypt + IP-привязка + CSRF |
+| **Rate limiting** | Upstash Redis REST (прод) / in-memory (fallback) + exponential backoff |
+| **Frontend** | Vue 3, HTML, CSS, Vanilla JS |
+| **Алерты** | Discord Webhooks (worker pool, buffered channel) |
 | **Внешние API** | Demonlist.org |
 | **Хостинг** | Vercel |
 
@@ -155,18 +156,24 @@ flowchart LR
 ```
 SMLT-Demonlist/
 ├── api/
-│   ├── index.go       # Роутинг, auth, Firestore, leaderboard
-│   └── ratelimit.go   # Распределённый rate limit
+│   └── index.go           # Роутинг, auth, Firestore, leaderboard, security alerts
+├── cmd/
+│   └── server/
+│       └── main.go        # Локальный dev-сервер
 ├── Frontend/
+│   ├── src/
+│   │   ├── api/           # Модули: auth, staff, projects, leaderboard, utils
+│   │   ├── components/    # Vue-компоненты: AppShell, HomePage, LeaderboardPage и др.
+│   │   ├── store.js       # Реактивное состояние
+│   │   └── main.*.js      # Точки входа (home, leaderboard, projects, staff)
 │   ├── index.html
 │   ├── leaderboard.html
 │   ├── projects.html
-│   ├── app.js
+│   ├── staff.html
 │   └── styles.css
-├── tools/
-│   └── hash.go        # Генерация bcrypt для ADMIN_HASH
+├── Secret/                # (gitignored) serviceAccountKey.json, .env.local
 ├── docs/
-│   └── screenshots/   # (опционально) для README на GitHub
+│   └── screenshots/       # (опционально) для README на GitHub
 ├── vercel.json
 ├── go.mod
 └── README.md
@@ -220,6 +227,7 @@ git push origin main
 |------------|----------|
 | `UPSTASH_REDIS_REST_URL` | REST URL Upstash |
 | `UPSTASH_REDIS_REST_TOKEN` | REST token Upstash |
+| `DISCORD_SECURITY_WEBHOOK` | URL Discord webhook для security-алертов (создать в Channel Settings → Integrations → Webhooks) |
 
 #### Опциональные
 
@@ -247,8 +255,9 @@ go run tools/hash.go "ваш_надёжный_пароль"
 
 | Endpoint | Лимит |
 |----------|--------|
-| Все `/api/*` | 60 req/min на IP |
-| `/api/login` | 10 req/min на IP |
+| Все `/api/*` | 30–60 req/min на IP |
+| `/api/login` | 5 req/min на IP + CAPTCHA |
+| Honeypot-пути | Немедленная блокировка токена + алерт в Discord |
 
 ### Firebase / Firestore
 
@@ -297,14 +306,21 @@ cd api && go build .
 | Метод | Путь | Auth | Описание |
 |-------|------|:----:|----------|
 | `POST` | `/api/login` | — | Вход хоста, кука `auth_token` |
-| `POST` | `/api/logout` | — | Выход |
-| `GET` | `/api/auth/verify` | 🍪 | Проверка JWT |
+| `POST` | `/api/logout` | — | Выход, чёрный список токена |
+| `POST` | `/api/auth/refresh` | 🍪 | Тихое обновление JWT (если <1ч до истечения) |
+| `GET` | `/api/verify` | 🍪 | Проверка JWT |
+| `GET` | `/api/csrf-token` | — | Получение CSRF-токена |
 | `GET` | `/api/leaderboard` | — | Данные Demonlist по игрокам |
 | `GET` | `/api/players` | — | Список ников |
-| `POST` | `/api/players` | 🍪 | Сохранить список |
-| `DELETE` | `/api/players` | 🍪 | Удалить игрока |
+| `POST` | `/api/players/save` | 🍪🔑 | Сохранить список |
+| `POST` | `/api/players/delete` | 🍪🔑 | Удалить игрока |
 | `GET` | `/api/projects` | — | Проекты |
-| `POST` | `/api/projects` | 🍪 | Сохранить проекты |
+| `POST` | `/api/projects/save` | 🍪🔑 | Сохранить проекты |
+| `GET` | `/api/staff` | — | Стафф-роли |
+| `POST` | `/api/staff/save` | 🍪🔑 | Сохранить роли |
+| `GET` | `/api/captcha` | — | Генерация CAPTCHA |
+
+> 🍪 = требует куку `auth_token` · 🔑 = требует admin knock key
 
 ```bash
 curl -X POST https://smltdemonlist.vercel.app/api/login \
@@ -316,15 +332,45 @@ curl -X POST https://smltdemonlist.vercel.app/api/login \
 
 ## 🔒 Безопасность
 
-- Пароль хоста только как **bcrypt** (`ADMIN_HASH`)
-- JWT в **HttpOnly**, **Secure**, **SameSite=Strict** куке
-- Rate limit по IP (Upstash на проде)
-- Валидация IP за прокси только при `VERCEL` / `TRUST_PROXY`
-- JSON: `DisallowUnknownFields`, лимит размера тела
-- UI: без `innerHTML` для пользовательских данных
-- Секреты не в git; не логировать токены
+### Аутентификация и сессии
 
-Нашли уязвимость — создайте [Issue](issues) или напишите админу в Discord (см. ниже).
+- Пароль хоста хранится как **bcrypt** (`ADMIN_HASH`, cost 10)
+- JWT (HS256) с **IP-привязкой**: при смене IP токен автоматически блокируется
+- Куки `auth_token`: **HttpOnly**, **Secure**, **SameSite=Strict**, префикс `__Host-`
+- **CSRF** — двойная отправка cookie (токен в `HttpOnly`-куке + заголовок `X-CSRF-Token`)
+- **Автоматическое обновление токена** — фронтенд молча обновляет JWT каждые 30 минут
+- Чёрный список токенов (`token_blacklist` в Firestore) с TTL 24 часа
+
+### Защита от взлома
+
+- **Honeypot-ловушки** — 40+ фейковых путей (`/api/admin`, `/.env`, `/wp-admin`, `/phpmyadmin`, `/api/debug` и др.), которые логируют IP и User-Agent атакующего и немедленно блокируют украденный токен
+- **Экспоненциальный бэк-off** — повторные нарушители получают прогрессивные блокировки (1 мин → 5 мин → 30 мин)
+- **COOP/CORP/COEP** — защита от cross-origin атак и Spectre
+- **Permissions-Policy** — отключены камера, микрофон, геолокация, платежи
+
+### Rate Limiting
+
+- **Upstash Redis** (прод) / in-memory (fallback)
+- 30–60 req/min на IP для общих эндпоинтов
+- 5 req/min на `/api/login` с обязательной CAPTCHA
+- **Exponential backoff** для повторных нарушителей
+
+### Мониторинг
+
+- **Discord webhook-алерты** в реальном времени (цветные embeds на русском)
+- **Security event log** — все события (вход, honeypot, смена IP, rate limit) пишутся в Firestore
+- **Аудит-лог** — все действия хоста записываются в `audit_log`
+- Worker pool для алертов (буфер 300, rate limit 4.5 req/s — без блокировки сервера)
+
+### Валидация и санитизация
+
+- JSON: `DisallowUnknownFields`, лимит тела 1 MB
+- Все строковые данные очищаются через **bluemonday** UGCPolicy
+- Регулярные выражения для ID проектов, видео, ников, Discord-тегов, цветов
+- **Нет `innerHTML`** для пользовательских данных на фронтенде
+- CSP: `default-src 'self'`, `frame-src https://www.youtube.com`
+
+Нашли уязвимость — свяжитесь с командой безопасности напрямую (Discord **@rimix.98**). Не создавайте публичных Issue.
 
 ---
 
@@ -337,6 +383,8 @@ curl -X POST https://smltdemonlist.vercel.app/api/login \
 | `База данных недоступна` | `FIREBASE_CREDENTIALS`, Firestore включён |
 | 429 Too Many Requests | Подождать 1 мин; не брутфорсить `/api/login` |
 | HTML вместо JSON на `/api` | Vercel → Logs → Functions |
+| Сессия сбрасывается при входе | JWT привязан к IP — смена WiFi/cellular требует повторного входа |
+| Honeypot-срабатывания в Discord | Автоматический сканер бота — можно игнорировать |
 
 ---
 
@@ -376,6 +424,6 @@ curl -X POST https://smltdemonlist.vercel.app/api/login \
 
 [⬆ Наверх](#smlt-demonlist)
 
-**Последнее обновление:** май 2026
+**Последнее обновление:** июнь 2026
 
 </div>
