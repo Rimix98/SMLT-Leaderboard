@@ -19,6 +19,7 @@ import (
 	"os"
 	"regexp"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -134,6 +135,8 @@ var (
 
 	adminKnockStore knockStore
 	adminKnockOnce  sync.Once
+
+	captchaEscalation sync.Map
 )
 
 type knockStore interface {
@@ -864,6 +867,108 @@ func requireFirestore(w http.ResponseWriter) bool {
 }
 
 // ──────────────────────────────────────────────
+// BOT DETECTION
+// ──────────────────────────────────────────────
+
+var blockedBotPatterns = []string{
+	"sqlmap",
+	"nikto",
+	"nessus",
+	"openvas",
+	"w3af",
+	"arachni",
+	"skipfish",
+	"whatweb",
+	"dirbuster",
+	"gobuster",
+	"ffuf",
+	"wfuzz",
+	"masscan",
+	"zgrab",
+	"httpx",
+	"nuclei",
+	"jaeles",
+	"xray",
+	"vulmap",
+	"pocsuite",
+	"hydra",
+	"medusa",
+	"ncrack",
+	"patator",
+	"brutus",
+	"metasploit",
+	"burpsuite",
+	"owasp",
+	"acunetix",
+	"appscan",
+	"webinspect",
+	"paros",
+	"wparos",
+	"webscarab",
+	"mitmproxy",
+	"charles",
+	"fiddler",
+	"grabber",
+	"wapiti",
+	"havij",
+	"canari",
+	"slowloris",
+	"goldeneye",
+	"slowhttptest",
+	"rudy",
+	"tor",
+	"curl/",
+	"wget/",
+	"python-requests/",
+	"python-urllib/",
+	"go-http-client/",
+	"java/",
+	"perl",
+	"ruby",
+	"php/",
+	"scrapy",
+	"bot/",
+	"crawler",
+	"spider",
+	"scraper",
+	"harvest",
+	"extract",
+	"scan",
+	"exploit",
+	"hack",
+	"crack",
+	"brute",
+}
+
+func isBlockedBot(ua string) bool {
+	lower := strings.ToLower(ua)
+	for _, pattern := range blockedBotPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func botDetectionMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ua := r.UserAgent()
+		if ua == "" || isBlockedBot(ua) {
+			ip := getRealIP(r)
+			securityEvent(r.Context(), "bot_blocked", ip, r.URL.Path, map[string]string{
+				"ua": ua,
+			})
+			alertSecurityEvent("bot_blocked", ip, r.URL.Path, map[string]string{
+				"ua": ua,
+			})
+			sendError(w, http.StatusForbidden, "Доступ запрещен")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// ──────────────────────────────────────────────
 // JWT / AUTH
 // ──────────────────────────────────────────────
 
@@ -1174,21 +1279,63 @@ func handleAdminKnock(w http.ResponseWriter, r *http.Request) {
 // HANDLER: CAPTCHA
 // ──────────────────────────────────────────────
 
+func getCaptchaDifficulty(ip string) (int, int, float64, int) {
+	val, _ := captchaEscalation.Load(ip)
+	failures := 0
+	if v, ok := val.(*int); ok {
+		failures = *v
+	}
+
+	switch {
+	case failures >= 10:
+		return 80, 240, 0.5, 8
+	case failures >= 5:
+		return 80, 240, 0.6, 7
+	case failures >= 3:
+		return 80, 240, 0.65, 6
+	default:
+		return 80, 240, 0.7, 5
+	}
+}
+
+func recordCaptchaFailure(ip string) {
+	val, loaded := captchaEscalation.LoadOrStore(ip, new(int))
+	if !loaded {
+		p := val.(*int)
+		p = new(int)
+		captchaEscalation.Store(ip, p)
+		val = p
+	}
+	p := val.(*int)
+	*p++
+}
+
+func clearCaptchaEscalation(ip string) {
+	captchaEscalation.Delete(ip)
+}
+
 func handleCaptcha(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
 	ensureCaptcha()
-	id, b64s, _, err := captchaInst.Generate()
+
+	ip := getRealIP(r)
+	h, cw, noise, len := getCaptchaDifficulty(ip)
+
+	drv := base64Captcha.NewDriverDigit(h, cw, len, noise, 80)
+	c := base64Captcha.NewCaptcha(drv, captchaStore)
+	id, b64s, _, err := c.Generate()
 	if err != nil {
 		log.Printf("[captcha] generate: %v", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка генерации капчи")
 		return
 	}
-	writeJSON(w, map[string]string{
+	writeJSON(w, map[string]interface{}{
 		"captchaId":    id,
 		"captchaImage": b64s,
+		"difficulty":   len,
 	})
 }
 
@@ -1313,6 +1460,8 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !captchaStore.Verify(req.CaptchaID, req.CaptchaValue, true) {
+		recordCaptchaFailure(getRealIP(r))
+		securityEvent(r.Context(), "captcha_failed", getRealIP(r), "/api/login", nil)
 		sendError(w, http.StatusUnauthorized, "Неверные учетные данные")
 		return
 	}
@@ -1328,11 +1477,14 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(adminHash), []byte(req.Password)); err != nil {
+		recordCaptchaFailure(getRealIP(r))
 		securityEvent(r.Context(), "login_failed", getRealIP(r), "/api/login", nil)
 		alertLoginFailure(getRealIP(r), "wrong_password")
 		sendError(w, http.StatusUnauthorized, "Неверные учетные данные")
 		return
 	}
+
+	clearCaptchaEscalation(getRealIP(r))
 	tokenVersion := getCurrentTokenVersion(r.Context())
 	exp := time.Now().Add(24 * time.Hour)
 	now := time.Now()
@@ -1587,6 +1739,101 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		Details: map[string]int{"count": len(projectList)},
 	})
 	writeJSON(w, map[string]bool{"success": true})
+}
+
+// ──────────────────────────────────────────────
+// HANDLER: SECURITY DASHBOARD
+// ──────────────────────────────────────────────
+
+func handleSecurityDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+
+	type eventCount struct {
+		Type  string `json:"type"`
+		Count int    `json:"count"`
+	}
+	type recentEvent struct {
+		Type      string    `json:"type"`
+		IP        string    `json:"ip"`
+		Path      string    `json:"path"`
+		CreatedAt time.Time `json:"createdAt"`
+	}
+
+	ctx := r.Context()
+	since := time.Now().Add(-24 * time.Hour)
+
+	iter := fsClient.Collection("security_events").
+		Where("createdAt", ">=", since).
+		Documents(ctx)
+	defer iter.Stop()
+
+	total := 0
+	byType := make(map[string]int)
+	topIPs := make(map[string]int)
+	var recent []recentEvent
+
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			log.Printf("[dashboard] iter error: %v", err)
+			break
+		}
+		var ev SecurityEvent
+		if err := doc.DataTo(&ev); err != nil {
+			continue
+		}
+		total++
+		byType[ev.Type]++
+		topIPs[ev.IP]++
+		if len(recent) < 20 {
+			recent = append(recent, recentEvent{
+				Type:      ev.Type,
+				IP:        ev.IP,
+				Path:      ev.Path,
+				CreatedAt: ev.CreatedAt,
+			})
+		}
+	}
+
+	typeCounts := make([]eventCount, 0, len(byType))
+	for t, c := range byType {
+		typeCounts = append(typeCounts, eventCount{Type: t, Count: c})
+	}
+	sort.Slice(typeCounts, func(i, j int) bool {
+		return typeCounts[i].Count > typeCounts[j].Count
+	})
+
+	type ipCount struct {
+		IP    string `json:"ip"`
+		Count int    `json:"count"`
+	}
+	ipCounts := make([]ipCount, 0, len(topIPs))
+	for ip, c := range topIPs {
+		ipCounts = append(ipCounts, ipCount{IP: ip, Count: c})
+	}
+	sort.Slice(ipCounts, func(i, j int) bool {
+		return ipCounts[i].Count > ipCounts[j].Count
+	})
+	if len(ipCounts) > 10 {
+		ipCounts = ipCounts[:10]
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"period": "24h",
+		"total":  total,
+		"byType": typeCounts,
+		"topIPs": ipCounts,
+		"recent": recent,
+	})
 }
 
 // ──────────────────────────────────────────────
@@ -2693,6 +2940,8 @@ var alertColors = map[string]int{
 	"login_failed":               0xffaa00,
 	"rate_limit_exceeded":        0xffcc00,
 	"backoff_blocked":            0xff0000,
+	"bot_blocked":                0x9933ff,
+	"captcha_failed":             0xffaa00,
 }
 
 var alertEmoji = map[string]string{
@@ -2702,6 +2951,8 @@ var alertEmoji = map[string]string{
 	"login_failed":               "🔐",
 	"rate_limit_exceeded":        "🚫",
 	"backoff_blocked":            "⛔",
+	"bot_blocked":                "🤖",
+	"captcha_failed":             "🧩",
 }
 
 var alertTitles = map[string]string{
@@ -2711,6 +2962,8 @@ var alertTitles = map[string]string{
 	"login_failed":               "Неудачный вход",
 	"rate_limit_exceeded":        "Превышен лимит запросов",
 	"backoff_blocked":            "Заблокирован за нарушения",
+	"bot_blocked":                "Заблокирован бот",
+	"captcha_failed":             "Неверная CAPTCHA",
 }
 
 var alertFieldNames = map[string]string{
@@ -2726,6 +2979,7 @@ var criticalEvents = map[string]bool{
 	"honeypot_token_blacklisted": true,
 	"ip_mismatch":                true,
 	"backoff_blocked":            true,
+	"bot_blocked":                true,
 }
 
 func StartAlertWorker() {
@@ -3156,6 +3410,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/auth/refresh":      rateLimitMiddleware(10)(handleRefreshToken),
 		"/api/leaderboard":       rateLimitMiddleware(30)(handleLeaderboard),
 		"/api/staff":             rateLimitMiddleware(60)(handleGetStaff),
+		"/api/security/dashboard": rateLimitMiddleware(10)(authMiddleware(handleSecurityDashboard)),
 		"/api/knock-knock-admin": rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleAdminKnock))),
 		"/api/staff/add":         rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd)))),
 		"/api/staff/role":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRole)))),
@@ -3177,7 +3432,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		h, ok = mux[path]
 	}
 	if ok {
-		gzipMiddleware(h)(w, r)
+		gzipMiddleware(botDetectionMiddleware(h))(w, r)
 		return
 	}
 	sendError(w, http.StatusNotFound, "Роут не найден")
