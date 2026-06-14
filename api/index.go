@@ -3345,19 +3345,26 @@ var criticalEvents = map[string]bool{
 }
 
 func StartAlertWorker() {
-	webhookURL := os.Getenv("DISCORD_SECURITY_WEBHOOK")
-	if webhookURL == "" {
-		log.Println("[discord] DISCORD_SECURITY_WEBHOOK not set, alerts disabled")
-		return
+	botToken := os.Getenv("DISCORD_BOT_TOKEN")
+	channelID := os.Getenv("DISCORD_CHANNEL_ID")
+
+	if botToken == "" || channelID == "" {
+		webhookURL := os.Getenv("DISCORD_SECURITY_WEBHOOK")
+		if webhookURL == "" {
+			log.Println("[discord] no DISCORD_BOT_TOKEN or DISCORD_SECURITY_WEBHOOK, alerts disabled")
+			return
+		}
+		log.Println("[discord] using webhook fallback (no bot token)")
+	} else {
+		log.Printf("[discord] bot worker started (channel=%s, queue=%d, rate=%v)", channelID, alertQueueCapacity, discordRateDelay)
 	}
 
 	alertQueue = make(chan alertMessage, alertQueueCapacity)
 	discordActive.Store(true)
-	log.Printf("[discord] worker started (queue=%d, rate=%v)", alertQueueCapacity, discordRateDelay)
 
 	go func() {
 		for msg := range alertQueue {
-			if err := sendDiscordPayload(msg.body); err != nil {
+			if err := sendDiscordMessage(msg.body); err != nil {
 				log.Printf("[discord] send failed: %v", err)
 			}
 			time.Sleep(discordRateDelay)
@@ -3365,7 +3372,31 @@ func StartAlertWorker() {
 	}()
 }
 
-func sendDiscordPayload(body []byte) error {
+func sendDiscordMessage(body []byte) error {
+	botToken := os.Getenv("DISCORD_BOT_TOKEN")
+	channelID := os.Getenv("DISCORD_CHANNEL_ID")
+
+	if botToken != "" && channelID != "" {
+		apiURL := fmt.Sprintf("https://discord.com/api/v10/channels/%s/messages", channelID)
+		req, err := http.NewRequest("POST", apiURL, strings.NewReader(string(body)))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bot "+botToken)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := discordHTTP.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			return fmt.Errorf("status %d: %s", resp.StatusCode, string(respBody))
+		}
+		return nil
+	}
+
 	webhookURL := os.Getenv("DISCORD_SECURITY_WEBHOOK")
 	if webhookURL == "" {
 		return nil
