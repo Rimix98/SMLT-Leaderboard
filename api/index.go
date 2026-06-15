@@ -1155,16 +1155,7 @@ func verifyTokenVersion(ctx context.Context, claims *jwt.MapClaims) error {
 	return nil
 }
 
-func hashIPWithSalt(ip string) string {
-	if rateLimitSalt == "" {
-		initRateLimitSalt()
-	}
-	h := sha256.Sum256([]byte("jwt-bind:" + ip + ":" + rateLimitSalt))
-	return hex.EncodeToString(h[:16])
-}
-
 func rotateToken(w http.ResponseWriter, r *http.Request, claims *jwt.MapClaims) {
-	ipHash, _ := (*claims)["ip"].(string)
 	newJTI, err := generateJTI()
 	if err != nil {
 		return
@@ -1180,7 +1171,6 @@ func rotateToken(w http.ResponseWriter, r *http.Request, claims *jwt.MapClaims) 
 		"iat":   now.Unix(),
 		"ver":   tokenVersion,
 		"jti":   newJTI,
-		"ip":    ipHash,
 	})
 	newToken.Header["kid"] = primaryJWTID
 	tokenString, err := newToken.SignedString(primaryJWTKey)
@@ -1226,19 +1216,6 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		if err := verifyTokenVersion(r.Context(), claims); err != nil {
 			sendError(w, http.StatusUnauthorized, "Сессия устарела, войдите заново")
 			return
-		}
-
-		if ipHash, ok := (*claims)["ip"].(string); ok && ipHash != "" {
-			currentHash := hashIPWithSalt(getRealIP(r))
-			if subtle.ConstantTimeCompare([]byte(ipHash), []byte(currentHash)) != 1 {
-				if jti, ok := (*claims)["jti"].(string); ok && jti != "" {
-					blacklistToken(r.Context(), jti)
-				}
-				securityEvent(r.Context(), "ip_mismatch", getRealIP(r), r.URL.Path, nil)
-				alertIPMismatch(getRealIP(r), r.URL.Path)
-				sendError(w, http.StatusUnauthorized, "Сессия недействительна, войдите заново")
-				return
-			}
 		}
 
 		rotateToken(w, r, claims)
@@ -1546,13 +1523,6 @@ func handleVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]bool{"success": false})
 		return
 	}
-	if ipHash, ok := (*claims)["ip"].(string); ok && ipHash != "" {
-		currentHash := hashIPWithSalt(getRealIP(r))
-		if subtle.ConstantTimeCompare([]byte(ipHash), []byte(currentHash)) != 1 {
-			writeJSON(w, map[string]bool{"success": false})
-			return
-		}
-	}
 	writeJSON(w, map[string]bool{"success": true})
 }
 
@@ -1668,7 +1638,6 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		"iat":   now.Unix(),
 		"ver":   tokenVersion,
 		"jti":   jti,
-		"ip":    hashIPWithSalt(getRealIP(r)),
 	})
 	token.Header["kid"] = primaryJWTID
 	tokenString, err := token.SignedString(primaryJWTKey)
@@ -3544,10 +3513,6 @@ func alertHoneypot(ip, path, method, ua string) {
 	})
 }
 
-func alertIPMismatch(ip, path string) {
-	alertSecurityEvent("ip_mismatch", ip, path, nil)
-}
-
 type discordComponent struct {
 	Type       int              `json:"type"`
 	Style      int              `json:"style,omitempty"`
@@ -3840,7 +3805,6 @@ func handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ipHash, _ := (*claims)["ip"].(string)
 	newJTI, err := generateJTI()
 	if err != nil {
 		sendError(w, http.StatusInternalServerError, "Ошибка обновления")
@@ -3857,7 +3821,6 @@ func handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		"iat":   now.Unix(),
 		"ver":   tokenVersion,
 		"jti":   newJTI,
-		"ip":    ipHash,
 	})
 	newToken.Header["kid"] = primaryJWTID
 	tokenString, err := newToken.SignedString(primaryJWTKey)
