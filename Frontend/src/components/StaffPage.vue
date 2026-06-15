@@ -18,7 +18,6 @@ import {
   createRole,
   addPlayerFromRoleModal,
   roleModalSortByTiers,
-  sortAllRolesByTiers,
   roleModalToggleTiers,
   closeEditPanel,
   editAddPlayer,
@@ -109,7 +108,6 @@ onMounted(async () => {
   initTheme()
   await refreshCsrfToken()
   await Promise.all([loadStaffRoles(), loadStaffTiers()])
-  sortAllRolesByTiers()
   initStaffDelegation()
 })
 

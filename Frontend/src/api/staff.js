@@ -76,6 +76,7 @@ export async function loadStaffRoles() {
     const res = await fetchWithAbort(`${BACKEND_URL}/staff`, {}, 'staff-list')
     if (!res.ok) { console.warn('GET /api/staff вернул', res.status); store.staffRoles = [] }
     else { const data = await res.json(); store.staffRoles = Array.isArray(data) ? data : [] }
+    sortAllRolesByTiers()
   } catch (e) {
     if (!isAbortError(e)) { console.error('Ошибка загрузки staff ролей:', e); store.staffRoles = [] }
   } finally {
@@ -88,6 +89,7 @@ export async function loadStaffTiers() {
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/tiers`, {}, 'staff-tiers')
     if (res.ok) { const data = await res.json(); store.staffTiers = Array.isArray(data.gp) ? data.gp : [] }
     else { store.staffTiers = [] }
+    sortAllRolesByTiers()
   } catch (e) {
     if (!isAbortError(e)) { console.error('Ошибка загрузки тиров:', e); store.staffTiers = [] }
   }
