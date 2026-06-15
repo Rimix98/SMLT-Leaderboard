@@ -1511,7 +1511,7 @@ func handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
 	}
 	tokenStr := hex.EncodeToString(token)
 	setCSRFCookie(w, tokenStr, 3600)
-	writeJSON(w, map[string]bool{"success": true})
+	writeJSON(w, map[string]interface{}{"success": true, "token": tokenStr})
 }
 
 // ──────────────────────────────────────────────
