@@ -90,11 +90,11 @@ const countryStats = computed(() => {
   const result = Object.values(counts)
     .map(c => {
       const code = resolveCountry(c.name)
-      return { ...c, code, displayName: code ? (CODE_TO_NAME[code] || code) : 'Unknown' }
+      return { ...c, code, displayName: code ? (CODE_TO_NAME[code] || code) : 'Неизвестно' }
     })
     .sort((a, b) => b.count - a.count)
   if (unknownCount > 0) {
-    result.push({ name: null, code: null, count: unknownCount, displayName: 'Unknown' })
+    result.push({ name: null, code: null, count: unknownCount, displayName: 'Неизвестно' })
   }
   return result
 })

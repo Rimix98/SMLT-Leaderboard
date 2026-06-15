@@ -429,7 +429,7 @@ export function showCountryTop(raw) {
       const span = document.createElement('span')
       span.textContent = '🌍'
       flagEl = span
-      countryName = 'Unknown'
+      countryName = 'Неизвестно'
     } else {
       const country = resolveCountry(raw)
       if (!country) { showToast('Страна не найдена', 'error'); return }
