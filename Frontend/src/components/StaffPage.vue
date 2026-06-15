@@ -25,6 +25,7 @@ import {
   addPlayerToRole,
   initStaffDelegation,
   destroyStaffDelegation,
+  syncDiscordRoles,
 } from '../api/staff'
 
 // Modal close helpers with mousedown/mouseup tracking
@@ -135,6 +136,7 @@ onUnmounted(() => {
         <div class="admin-panel-header">👑 Управление ролями</div>
         <div class="admin-panel-content">
           <button class="btn btn-primary" @click="openAddRole()">➕ Создать роль</button>
+          <button class="btn btn-secondary" @click="syncDiscordRoles()">🔄 Синхронизировать Discord</button>
         </div>
       </div>
 

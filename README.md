@@ -234,6 +234,7 @@ git push origin main
 | Переменная | Описание |
 |------------|----------|
 | `TRUST_PROXY` | `true` — доверять `X-Forwarded-For` (на Vercel также при `VERCEL=1`) |
+| `DISCORD_GUILD_ID` | ID Discord сервера для синхронизации ролей (нужен `DISCORD_BOT_TOKEN`) |
 
 #### Генерация `ADMIN_HASH`
 
@@ -318,6 +319,7 @@ cd api && go build .
 | `POST` | `/api/projects/save` | 🍪🔑 | Сохранить проекты |
 | `GET` | `/api/staff` | — | Стафф-роли |
 | `POST` | `/api/staff/save` | 🍪🔑 | Сохранить роли |
+| `POST` | `/api/staff/sync-discord` | 🍪🔑 | Синхронизировать роли из Discord |
 | `GET` | `/api/captcha` | — | Генерация CAPTCHA |
 
 > 🍪 = требует куку `auth_token` · 🔑 = требует admin knock key

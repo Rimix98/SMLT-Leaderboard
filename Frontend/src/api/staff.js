@@ -325,11 +325,6 @@ export function showEditRoleModal(roleIndex) {
   }
 }
 
-function escapeAttr(s) {
-  if (!s) return ''
-  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
 function createTierSquare(key, cfg, nickname) {
   const isActive = getPlayerTier(nickname) === key
   const el = document.createElement('span')
@@ -721,6 +716,24 @@ export async function editAddPlayer() {
 }
 
 /* ───────── Event delegation for dynamic staff UI ───────── */
+
+export async function syncDiscordRoles() {
+  if (!confirm('Синхронизировать роли из Discord? Текущие роли будут обновлены.')) return
+  try {
+    showToast('Синхронизация с Discord...', 'info')
+    const res = await fetchWithAbort(`${BACKEND_URL}/staff/sync-discord`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }, 'sync-discord')
+    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка синхронизации') }
+    const data = await res.json()
+    await Promise.all([loadStaffRoles(), loadStaffTiers()])
+    showToast(`Синхронизировано ${data.count || 0} ролей из Discord`, 'success')
+  } catch (e) {
+    if (!isAbortError(e)) { console.error('Ошибка синхронизации Discord:', e); showToast(e.message, 'error') }
+  }
+}
 
 export function initStaffDelegation() {
   document.addEventListener('click', handleStaffClick)

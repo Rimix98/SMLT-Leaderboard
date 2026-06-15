@@ -1163,6 +1163,38 @@ func hashIPWithSalt(ip string) string {
 	return hex.EncodeToString(h[:16])
 }
 
+func rotateToken(w http.ResponseWriter, r *http.Request, claims *jwt.MapClaims) {
+	ipHash, _ := (*claims)["ip"].(string)
+	newJTI, err := generateJTI()
+	if err != nil {
+		return
+	}
+
+	tokenVersion := getCurrentTokenVersion(r.Context())
+	newExp := time.Now().Add(24 * time.Hour)
+	now := time.Now()
+
+	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"admin": true,
+		"exp":   newExp.Unix(),
+		"iat":   now.Unix(),
+		"ver":   tokenVersion,
+		"jti":   newJTI,
+		"ip":    ipHash,
+	})
+	newToken.Header["kid"] = primaryJWTID
+	tokenString, err := newToken.SignedString(primaryJWTKey)
+	if err != nil {
+		return
+	}
+
+	if oldJTI, ok := (*claims)["jti"].(string); ok && oldJTI != "" {
+		blacklistToken(r.Context(), oldJTI)
+	}
+
+	setSecureCookie(w, "auth_token", tokenString, 86400)
+}
+
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("__Host-auth_token")
@@ -1208,6 +1240,9 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 		}
+
+		rotateToken(w, r, claims)
+
 		next.ServeHTTP(w, r)
 	}
 }
@@ -2164,11 +2199,12 @@ func handleSecurityDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		total++
 		byType[ev.Type]++
-		topIPs[ev.IP]++
+		ipHash := hashIP(ev.IP)
+		topIPs[ipHash]++
 		if len(recent) < 20 {
 			recent = append(recent, recentEvent{
 				Type:      ev.Type,
-				IP:        ev.IP,
+				IP:        ipHash,
 				Path:      ev.Path,
 				CreatedAt: ev.CreatedAt,
 			})
@@ -2779,6 +2815,10 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 		data.Roles[req.RoleIndex].Name = req.Name
 		data.Roles[req.RoleIndex].Color = req.Color
 		if req.Players != nil {
+			for j := range req.Players {
+				req.Players[j].Nickname = sanitizeString(req.Players[j].Nickname)
+				req.Players[j].Discord = sanitizeString(req.Players[j].Discord)
+			}
 			data.Roles[req.RoleIndex].Players = req.Players
 		}
 		if req.TiersEnabled != nil {
@@ -3839,6 +3879,153 @@ func handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // ──────────────────────────────────────────────
+// HANDLER: DISCORD ROLE SYNC
+// ──────────────────────────────────────────────
+
+type discordGuildRole struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Color       int    `json:"color"`
+	Position    int    `json:"position"`
+	Managed     bool   `json:"managed"`
+	Mentionable bool   `json:"mentionable"`
+}
+
+func discordColorToHex(colorInt int) string {
+	if colorInt == 0 {
+		return "#99aab5"
+	}
+	r := (colorInt >> 16) & 0xFF
+	g := (colorInt >> 8) & 0xFF
+	b := colorInt & 0xFF
+	return fmt.Sprintf("#%02x%02x%02x", r, g, b)
+}
+
+func handleSyncDiscordRoles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+
+	botToken := os.Getenv("DISCORD_BOT_TOKEN")
+	guildID := os.Getenv("DISCORD_GUILD_ID")
+	if botToken == "" || guildID == "" {
+		sendError(w, http.StatusBadRequest, "Discord не настроен (нет DISCORD_BOT_TOKEN или DISCORD_GUILD_ID)")
+		return
+	}
+
+	apiURL := fmt.Sprintf("https://discord.com/api/v10/guilds/%s/roles", guildID)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, apiURL, nil)
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка создания запроса")
+		return
+	}
+	req.Header.Set("Authorization", "Bot "+botToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Printf("[discord-sync] request failed: %v", err)
+		sendError(w, http.StatusBadGateway, "Ошибка запроса к Discord API")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		log.Printf("[discord-sync] discord returned %d: %s", resp.StatusCode, string(body))
+		sendError(w, http.StatusBadGateway, fmt.Sprintf("Discord API вернул %d", resp.StatusCode))
+		return
+	}
+
+	var discordRoles []discordGuildRole
+	if err := json.NewDecoder(resp.Body).Decode(&discordRoles); err != nil {
+		log.Printf("[discord-sync] decode error: %v", err)
+		sendError(w, http.StatusInternalServerError, "Ошибка парсинга ответа Discord")
+		return
+	}
+
+	filtered := make([]discordGuildRole, 0)
+	for _, dr := range discordRoles {
+		if !dr.Managed {
+			filtered = append(filtered, dr)
+		}
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Position > filtered[j].Position
+	})
+
+	ctx := r.Context()
+	err = fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("staff")
+		doc, err := tx.Get(docRef)
+		var data struct {
+			Roles     []StaffRole      `json:"roles" firestore:"roles"`
+			GPTiers   []StaffTierEntry `json:"gp_tiers" firestore:"gp_tiers"`
+			DecoTiers []StaffTierEntry `json:"deco_tiers" firestore:"deco_tiers"`
+		}
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				data.Roles = []StaffRole{}
+			} else {
+				return err
+			}
+		} else {
+			if err := doc.DataTo(&data); err != nil {
+				data.Roles = []StaffRole{}
+			}
+		}
+
+		existingByName := make(map[string]*StaffRole)
+		for i := range data.Roles {
+			existingByName[data.Roles[i].Name] = &data.Roles[i]
+		}
+
+		newRoles := make([]StaffRole, 0, len(filtered))
+		for _, dr := range filtered {
+			if existing, ok := existingByName[dr.Name]; ok {
+				existing.Color = discordColorToHex(dr.Color)
+				newRoles = append(newRoles, *existing)
+			} else {
+				newRoles = append(newRoles, StaffRole{
+					Name:         dr.Name,
+					Color:        discordColorToHex(dr.Color),
+					Players:      []StaffPlayer{},
+					TiersEnabled: true,
+				})
+			}
+		}
+
+		data.Roles = newRoles
+		return tx.Set(docRef, map[string]interface{}{
+			"roles":     data.Roles,
+			"gp_tiers":  data.GPTiers,
+			"deco_tiers": data.DecoTiers,
+		})
+	})
+
+	if err != nil {
+		log.Printf("[discord-sync] firestore save: %v", err)
+		sendError(w, http.StatusInternalServerError, "Ошибка сохранения в базу данных")
+		return
+	}
+
+	auditLog(r.Context(), AuditEntry{
+		Action:  "staff.syncDiscord",
+		Details: map[string]int{"roles_synced": len(filtered)},
+	})
+
+	writeJSON(w, map[string]interface{}{
+		"success": true,
+		"count":   len(filtered),
+	})
+}
+
+// ──────────────────────────────────────────────
 // MAIN HANDLER (Vercel entry point)
 // ──────────────────────────────────────────────
 
@@ -3919,6 +4106,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/staff/tiers":       rateLimitMiddleware(60)(handleGetStaffTiers),
 		"/api/staff/tier":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSetStaffTier)))),
 		"/api/staff/save":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveStaff)))),
+		"/api/staff/sync-discord": rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleSyncDiscordRoles)))),
 		"/api/projects":          rateLimitMiddleware(60)(handleGetProjects),
 		"/api/projects/save":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveProjects)))),
 		"/api/players":           rateLimitMiddleware(60)(handleGetPlayers),
