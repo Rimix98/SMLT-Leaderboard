@@ -365,7 +365,7 @@ export function showProfile(idx) {
 
   if (rec.length > 0) {
     rec.forEach(r => {
-      const levelName = r.level?.name || 'Unknown'
+      const levelName = r.level?.name || 'Неизвестно'
       const placement = r.level?.placement ?? '?'
       const progress = r.percent ?? r.progress ?? 100
       const item = document.createElement('div')
