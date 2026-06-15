@@ -3,7 +3,6 @@ package handler
 import (
 	"compress/gzip"
 	"context"
-	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -304,7 +303,6 @@ func init() {
 	initJWTSecrets()
 	initAdminKnock()
 	startTokenBlacklistCleanup()
-	StartAlertWorker()
 	go cleanupCaptchaEscalation()
 }
 
@@ -1055,7 +1053,7 @@ func botDetectionMiddleware(next http.HandlerFunc) http.HandlerFunc {
 				"ua":          ua,
 				"fingerprint": fp,
 			})
-			alertWithBanButtons("bot_blocked", ip, r.URL.Path, ua, fp)
+			alertSecurityEvent("bot_blocked", ip, r.URL.Path, map[string]string{"ua": ua})
 			time.Sleep(time.Duration(mathrand.IntN(500)+200) * time.Millisecond)
 			sendError(w, http.StatusForbidden, "Доступ запрещен")
 			return
@@ -1067,7 +1065,7 @@ func botDetectionMiddleware(next http.HandlerFunc) http.HandlerFunc {
 				"ua":          ua,
 				"fingerprint": fp,
 			})
-			alertWithBanButtons("blocked_path", ip, r.URL.Path, ua, fp)
+			alertSecurityEvent("blocked_path", ip, r.URL.Path, map[string]string{"ua": ua})
 			time.Sleep(time.Duration(mathrand.IntN(500)+200) * time.Millisecond)
 			sendError(w, http.StatusForbidden, "Доступ запрещен")
 			return
@@ -1944,176 +1942,6 @@ func unbanDevice(ctx context.Context, fingerprint string) error {
 	}
 	_, err := fsClient.Collection("device_bans").Doc(fingerprint).Delete(ctx)
 	return err
-}
-
-// ──────────────────────────────────────────────
-// DISCORD INTERACTION HANDLER
-// ──────────────────────────────────────────────
-
-var (
-	discordPublicKey     ed25519.PublicKey
-	discordPublicKeyOnce sync.Once
-)
-
-func getDiscordPublicKey() ed25519.PublicKey {
-	discordPublicKeyOnce.Do(func() {
-		keyHex := os.Getenv("DISCORD_PUBLIC_KEY")
-		if keyHex == "" {
-			log.Println("[discord] DISCORD_PUBLIC_KEY not set, interactions disabled")
-			return
-		}
-		keyBytes, err := hex.DecodeString(keyHex)
-		if err != nil {
-			log.Printf("[discord] invalid DISCORD_PUBLIC_KEY: %v", err)
-			return
-		}
-		discordPublicKey = ed25519.PublicKey(keyBytes)
-	})
-	return discordPublicKey
-}
-
-func verifyDiscordSignature(signature, timestamp, body string) bool {
-	pubKey := getDiscordPublicKey()
-	if pubKey == nil {
-		return false
-	}
-	msg := []byte(timestamp + body)
-	sig, err := hex.DecodeString(signature)
-	if err != nil {
-		return false
-	}
-	return ed25519.Verify(pubKey, msg, sig)
-}
-
-type discordInteraction struct {
-	ID            string                 `json:"id"`
-	Type          int                    `json:"type"`
-	Token         string                 `json:"token"`
-	Member        *discordMember         `json:"member,omitempty"`
-	Data          *discordInteractionData `json:"data,omitempty"`
-}
-
-type discordMember struct {
-	User discordUser `json:"user"`
-}
-
-type discordUser struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-}
-
-type discordInteractionData struct {
-	CustomID string `json:"custom_id"`
-	Values   []string `json:"values,omitempty"`
-}
-
-type discordInteractionResponse struct {
-	Type int         `json:"type"`
-	Data interface{} `json:"data,omitempty"`
-}
-
-func handleDiscordInteraction(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, http.MethodPost)
-		return
-	}
-
-	signature := r.Header.Get("X-Signature-Ed25519")
-	timestamp := r.Header.Get("X-Signature-Timestamp")
-	if signature == "" || timestamp == "" {
-		sendError(w, http.StatusUnauthorized, "Missing signature")
-		return
-	}
-
-	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 1024*1024))
-	if err != nil {
-		sendError(w, http.StatusBadRequest, "Cannot read body")
-		return
-	}
-	body := string(bodyBytes)
-
-	if !verifyDiscordSignature(signature, timestamp, body) {
-		sendError(w, http.StatusUnauthorized, "Invalid signature")
-		return
-	}
-
-	var interaction discordInteraction
-	if err := json.Unmarshal(bodyBytes, &interaction); err != nil {
-		sendError(w, http.StatusBadRequest, "Invalid JSON")
-		return
-	}
-
-	if interaction.Type == 1 {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"type":1}`))
-		return
-	}
-
-	if interaction.Type == 3 && interaction.Data != nil {
-		customID := interaction.Data.CustomID
-		parts := strings.SplitN(customID, "|", 3)
-		if len(parts) == 3 && parts[0] == "ban" {
-			action := parts[1]
-			fingerprint := parts[2]
-
-			var duration time.Duration
-			var label string
-			switch action {
-			case "1h":
-				duration = 1 * time.Hour
-				label = "1 час"
-			case "24h":
-				duration = 24 * time.Hour
-				label = "24 часа"
-			case "7d":
-				duration = 7 * 24 * time.Hour
-				label = "7 дней"
-			case "perm":
-				duration = 365 * 24 * time.Hour
-				label = "навсегда"
-			case "unban":
-				err := unbanDevice(r.Context(), fingerprint)
-				if err != nil {
-				 respondInteraction(w, "❌ Ошибка: "+err.Error())
-				 return
-				}
-				respondInteraction(w, fmt.Sprintf("✅ Устройство `%s` разбанено", fingerprint[:12]))
-				return
-			default:
-				respondInteraction(w, "❌ Неизвестное действие")
-				return
-			}
-
-			user := "unknown"
-			if interaction.Member != nil {
-				user = interaction.Member.User.Username
-			}
-
-			err := banDevice(r.Context(), fingerprint, "", "", "Discord ban", user, duration)
-			if err != nil {
-				respondInteraction(w, "❌ Ошибка: "+err.Error())
-				return
-			}
-
-			respondInteraction(w, fmt.Sprintf("🔨 Устройство `%s` забанено на %s", fingerprint[:12], label))
-			return
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"type":5}`))
-}
-
-func respondInteraction(w http.ResponseWriter, message string) {
-	resp := discordInteractionResponse{
-		Type: 4,
-		Data: map[string]interface{}{
-			"content": message,
-			"flags":   64,
-		},
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
 }
 
 // ──────────────────────────────────────────────
@@ -3273,233 +3101,11 @@ func securityEvent(ctx context.Context, eventType, ip, path string, detail inter
 }
 
 // ──────────────────────────────────────────────
-// DISCORD WEBHOOK ALERTS (Worker Pool)
+// SECURITY ALERTS (Logging only)
 // ──────────────────────────────────────────────
-
-type discordEmbed struct {
-	Title       string         `json:"title"`
-	Description string         `json:"description"`
-	Color       int            `json:"color"`
-	Fields      []discordField `json:"fields,omitempty"`
-	Timestamp   string         `json:"timestamp"`
-}
-
-type discordField struct {
-	Name   string `json:"name"`
-	Value  string `json:"value"`
-	Inline bool   `json:"inline"`
-}
-
-type discordPayload struct {
-	Embeds []discordEmbed `json:"embeds"`
-}
-
-type alertMessage struct {
-	eventType string
-	ip        string
-	path      string
-	detail    interface{}
-	body      []byte
-}
-
-var (
-	alertQueue    chan alertMessage
-	discordHTTP   = &http.Client{Timeout: 5 * time.Second}
-	discordActive atomic.Bool
-)
-
-const (
-	alertQueueCapacity = 300
-	discordRateDelay   = 220 * time.Millisecond
-)
-
-var alertColors = map[string]int{
-	"honeypot_triggered":         0xff0000,
-	"honeypot_token_blacklisted": 0xff4444,
-	"ip_mismatch":                0xff6600,
-	"login_failed":               0xffaa00,
-	"rate_limit_exceeded":        0xffcc00,
-	"backoff_blocked":            0xff0000,
-	"bot_blocked":                0x9933ff,
-	"blocked_path":               0x9933ff,
-	"captcha_failed":             0xffaa00,
-	"oversized_request":          0xff3333,
-}
-
-var alertEmoji = map[string]string{
-	"honeypot_triggered":         "🚨",
-	"honeypot_token_blacklisted": "🔒",
-	"ip_mismatch":                "⚠️",
-	"login_failed":               "🔐",
-	"rate_limit_exceeded":        "🚫",
-	"backoff_blocked":            "⛔",
-	"bot_blocked":                "🤖",
-	"blocked_path":               "🗂️",
-	"captcha_failed":             "🧩",
-	"oversized_request":          "📦",
-}
-
-var alertTitles = map[string]string{
-	"honeypot_triggered":         "Обнаружена попытка взлома",
-	"honeypot_token_blacklisted": "Токен заблокирован",
-	"ip_mismatch":                "Смена IP-адреса",
-	"login_failed":               "Неудачный вход",
-	"rate_limit_exceeded":        "Превышен лимит запросов",
-	"backoff_blocked":            "Заблокирован за нарушения",
-	"bot_blocked":                "Заблокирован бот",
-	"blocked_path":               "Заблокирован путь",
-	"captcha_failed":             "Неверная CAPTCHA",
-	"oversized_request":          "Слишком большой запрос",
-}
-
-var alertFieldNames = map[string]string{
-	"method": "Метод",
-	"ua":     "Браузер",
-	"reason": "Причина",
-	"jti":    "ID токена",
-	"max":    "Лимит",
-}
-
-var criticalEvents = map[string]bool{
-	"honeypot_triggered":         true,
-	"honeypot_token_blacklisted": true,
-	"ip_mismatch":                true,
-	"backoff_blocked":            true,
-	"bot_blocked":                true,
-	"blocked_path":               true,
-}
-
-func StartAlertWorker() {
-	botToken := os.Getenv("DISCORD_BOT_TOKEN")
-	channelID := os.Getenv("DISCORD_CHANNEL_ID")
-
-	if botToken == "" || channelID == "" {
-		webhookURL := os.Getenv("DISCORD_SECURITY_WEBHOOK")
-		if webhookURL == "" {
-			log.Println("[discord] no DISCORD_BOT_TOKEN or DISCORD_SECURITY_WEBHOOK, alerts disabled")
-			return
-		}
-		log.Println("[discord] using webhook fallback (no bot token)")
-	} else {
-		log.Printf("[discord] bot worker started (channel=%s, queue=%d, rate=%v)", channelID, alertQueueCapacity, discordRateDelay)
-	}
-
-	alertQueue = make(chan alertMessage, alertQueueCapacity)
-	discordActive.Store(true)
-
-	go func() {
-		for msg := range alertQueue {
-			if err := sendDiscordMessage(msg.body); err != nil {
-				log.Printf("[discord] send failed: %v", err)
-			}
-			time.Sleep(discordRateDelay)
-		}
-	}()
-}
-
-func sendDiscordMessage(body []byte) error {
-	botToken := os.Getenv("DISCORD_BOT_TOKEN")
-	channelID := os.Getenv("DISCORD_CHANNEL_ID")
-
-	if botToken != "" && channelID != "" {
-		apiURL := fmt.Sprintf("https://discord.com/api/v10/channels/%s/messages", channelID)
-		req, err := http.NewRequest("POST", apiURL, strings.NewReader(string(body)))
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Authorization", "Bot "+botToken)
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := discordHTTP.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode >= 300 {
-			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-			return fmt.Errorf("status %d: %s", resp.StatusCode, string(respBody))
-		}
-		return nil
-	}
-
-	webhookURL := os.Getenv("DISCORD_SECURITY_WEBHOOK")
-	if webhookURL == "" {
-		return nil
-	}
-	resp, err := discordHTTP.Post(webhookURL, "application/json", strings.NewReader(string(body)))
-	if err != nil {
-		return err
-	}
-	resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("status %d", resp.StatusCode)
-	}
-	return nil
-}
 
 func alertSecurityEvent(eventType, ip, path string, detail interface{}) {
 	log.Printf("[security] %s ip=%s path=%s", eventType, ip, path)
-
-	if !discordActive.Load() {
-		return
-	}
-
-	emoji := alertEmoji[eventType]
-	if emoji == "" {
-		emoji = "🛡️"
-	}
-	color := alertColors[eventType]
-	if color == 0 {
-		color = 0x3b82f6
-	}
-	title := alertTitles[eventType]
-	if title == "" {
-		title = eventType
-	}
-
-	fields := []discordField{
-		{Name: "IP", Value: "`" + ip + "`", Inline: true},
-		{Name: "Путь", Value: "`" + path + "`", Inline: true},
-	}
-
-	if detailMap, ok := detail.(map[string]string); ok {
-		for k, v := range detailMap {
-			fieldName := alertFieldNames[k]
-			if fieldName == "" {
-				fieldName = k
-			}
-			fields = append(fields, discordField{Name: fieldName, Value: "`" + v + "`", Inline: true})
-		}
-	} else if detailMap, ok := detail.(map[string]int); ok {
-		for k, v := range detailMap {
-			fieldName := alertFieldNames[k]
-			if fieldName == "" {
-				fieldName = k
-			}
-			fields = append(fields, discordField{Name: fieldName, Value: fmt.Sprintf("`%d`", v), Inline: true})
-		}
-	}
-
-	embed := discordEmbed{
-		Title:       emoji + " " + title,
-		Description: "SMLT Leaderboard — Тревога безопасности",
-		Color:       color,
-		Fields:      fields,
-		Timestamp:   time.Now().UTC().Format(time.RFC3339),
-	}
-
-	payload := discordPayload{Embeds: []discordEmbed{embed}}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("[discord] marshal failed: %v", err)
-		return
-	}
-
-	select {
-	case alertQueue <- alertMessage{eventType: eventType, body: body}:
-	default:
-		log.Printf("[discord] queue full, dropping alert: %s", eventType)
-	}
 }
 
 func alertLoginFailure(ip string, reason string) {
@@ -3511,85 +3117,6 @@ func alertHoneypot(ip, path, method, ua string) {
 		"method": method,
 		"ua":     ua,
 	})
-}
-
-type discordComponent struct {
-	Type       int              `json:"type"`
-	Style      int              `json:"style,omitempty"`
-	Label      string           `json:"label,omitempty"`
-	CustomID   string           `json:"custom_id,omitempty"`
-	Components []discordComponent `json:"components,omitempty"`
-}
-
-type discordPayloadWithComponents struct {
-	Embeds     []discordEmbed      `json:"embeds"`
-	Components []discordComponent  `json:"components,omitempty"`
-}
-
-func alertWithBanButtons(eventType, ip, path, ua, fingerprint string) {
-	if !discordActive.Load() {
-		return
-	}
-
-	emoji := alertEmoji[eventType]
-	if emoji == "" {
-		emoji = "🛡️"
-	}
-	color := alertColors[eventType]
-	if color == 0 {
-		color = 0x3b82f6
-	}
-	title := alertTitles[eventType]
-	if title == "" {
-		title = eventType
-	}
-
-	fields := []discordField{
-		{Name: "IP", Value: "`" + ip + "`", Inline: true},
-		{Name: "Путь", Value: "`" + path + "`", Inline: true},
-		{Name: "Устройство", Value: "`" + fingerprint + "`", Inline: false},
-	}
-	if ua != "" {
-		fields = append(fields, discordField{Name: "Браузер", Value: "`" + ua + "`", Inline: false})
-	}
-
-	embed := discordEmbed{
-		Title:       emoji + " " + title,
-		Description: "SMLT Leaderboard — Тревога безопасности",
-		Color:       color,
-		Fields:      fields,
-		Timestamp:   time.Now().UTC().Format(time.RFC3339),
-	}
-
-	fp := fingerprint
-	components := []discordComponent{
-		{
-			Type: 1,
-			Components: []discordComponent{
-				{Type: 2, Style: 1, Label: "ban 1ч", CustomID: "ban|1h|" + fp},
-				{Type: 2, Style: 1, Label: "ban 24ч", CustomID: "ban|24h|" + fp},
-				{Type: 2, Style: 1, Label: "ban 7д", CustomID: "ban|7d|" + fp},
-				{Type: 2, Style: 4, Label: "ban навсегда", CustomID: "ban|perm|" + fp},
-				{Type: 2, Style: 3, Label: "unban", CustomID: "ban|unban|" + fp},
-			},
-		},
-	}
-
-	payload := discordPayloadWithComponents{
-		Embeds:     []discordEmbed{embed},
-		Components: components,
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("[discord] marshal failed: %v", err)
-		return
-	}
-
-	select {
-	case alertQueue <- alertMessage{eventType: eventType, body: body}:
-	default:
-		log.Printf("[discord] queue full, dropping alert: %s", eventType)
-	}
 }
 
 // ──────────────────────────────────────────────
@@ -3842,153 +3369,6 @@ func handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // ──────────────────────────────────────────────
-// HANDLER: DISCORD ROLE SYNC
-// ──────────────────────────────────────────────
-
-type discordGuildRole struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Color       int    `json:"color"`
-	Position    int    `json:"position"`
-	Managed     bool   `json:"managed"`
-	Mentionable bool   `json:"mentionable"`
-}
-
-func discordColorToHex(colorInt int) string {
-	if colorInt == 0 {
-		return "#99aab5"
-	}
-	r := (colorInt >> 16) & 0xFF
-	g := (colorInt >> 8) & 0xFF
-	b := colorInt & 0xFF
-	return fmt.Sprintf("#%02x%02x%02x", r, g, b)
-}
-
-func handleSyncDiscordRoles(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, http.MethodPost)
-		return
-	}
-	if !requireFirestore(w) {
-		return
-	}
-
-	botToken := os.Getenv("DISCORD_BOT_TOKEN")
-	guildID := os.Getenv("DISCORD_GUILD_ID")
-	if botToken == "" || guildID == "" {
-		sendError(w, http.StatusBadRequest, "Discord не настроен (нет DISCORD_BOT_TOKEN или DISCORD_GUILD_ID)")
-		return
-	}
-
-	apiURL := fmt.Sprintf("https://discord.com/api/v10/guilds/%s/roles", guildID)
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, apiURL, nil)
-	if err != nil {
-		sendError(w, http.StatusInternalServerError, "Ошибка создания запроса")
-		return
-	}
-	req.Header.Set("Authorization", "Bot "+botToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		log.Printf("[discord-sync] request failed: %v", err)
-		sendError(w, http.StatusBadGateway, "Ошибка запроса к Discord API")
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		log.Printf("[discord-sync] discord returned %d: %s", resp.StatusCode, string(body))
-		sendError(w, http.StatusBadGateway, fmt.Sprintf("Discord API вернул %d", resp.StatusCode))
-		return
-	}
-
-	var discordRoles []discordGuildRole
-	if err := json.NewDecoder(resp.Body).Decode(&discordRoles); err != nil {
-		log.Printf("[discord-sync] decode error: %v", err)
-		sendError(w, http.StatusInternalServerError, "Ошибка парсинга ответа Discord")
-		return
-	}
-
-	filtered := make([]discordGuildRole, 0)
-	for _, dr := range discordRoles {
-		if !dr.Managed {
-			filtered = append(filtered, dr)
-		}
-	}
-
-	sort.Slice(filtered, func(i, j int) bool {
-		return filtered[i].Position > filtered[j].Position
-	})
-
-	ctx := r.Context()
-	err = fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		docRef := fsClient.Collection("config").Doc("staff")
-		doc, err := tx.Get(docRef)
-		var data struct {
-			Roles     []StaffRole      `json:"roles" firestore:"roles"`
-			GPTiers   []StaffTierEntry `json:"gp_tiers" firestore:"gp_tiers"`
-			DecoTiers []StaffTierEntry `json:"deco_tiers" firestore:"deco_tiers"`
-		}
-		if err != nil {
-			if status.Code(err) == codes.NotFound {
-				data.Roles = []StaffRole{}
-			} else {
-				return err
-			}
-		} else {
-			if err := doc.DataTo(&data); err != nil {
-				data.Roles = []StaffRole{}
-			}
-		}
-
-		existingByName := make(map[string]*StaffRole)
-		for i := range data.Roles {
-			existingByName[data.Roles[i].Name] = &data.Roles[i]
-		}
-
-		newRoles := make([]StaffRole, 0, len(filtered))
-		for _, dr := range filtered {
-			if existing, ok := existingByName[dr.Name]; ok {
-				existing.Color = discordColorToHex(dr.Color)
-				newRoles = append(newRoles, *existing)
-			} else {
-				newRoles = append(newRoles, StaffRole{
-					Name:         dr.Name,
-					Color:        discordColorToHex(dr.Color),
-					Players:      []StaffPlayer{},
-					TiersEnabled: true,
-				})
-			}
-		}
-
-		data.Roles = newRoles
-		return tx.Set(docRef, map[string]interface{}{
-			"roles":     data.Roles,
-			"gp_tiers":  data.GPTiers,
-			"deco_tiers": data.DecoTiers,
-		})
-	})
-
-	if err != nil {
-		log.Printf("[discord-sync] firestore save: %v", err)
-		sendError(w, http.StatusInternalServerError, "Ошибка сохранения в базу данных")
-		return
-	}
-
-	auditLog(r.Context(), AuditEntry{
-		Action:  "staff.syncDiscord",
-		Details: map[string]int{"roles_synced": len(filtered)},
-	})
-
-	writeJSON(w, map[string]interface{}{
-		"success": true,
-		"count":   len(filtered),
-	})
-}
-
-// ──────────────────────────────────────────────
 // MAIN HANDLER (Vercel entry point)
 // ──────────────────────────────────────────────
 
@@ -4041,11 +3421,6 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	path := requestPath(r)
 
-	if path == "/api/discord/interactions" {
-		handleDiscordInteraction(w, r)
-		return
-	}
-
 	if isHoneypot(path) {
 		handleHoneypot(w, r)
 		return
@@ -4069,7 +3444,6 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/staff/tiers":       rateLimitMiddleware(60)(handleGetStaffTiers),
 		"/api/staff/tier":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSetStaffTier)))),
 		"/api/staff/save":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveStaff)))),
-		"/api/staff/sync-discord": rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleSyncDiscordRoles)))),
 		"/api/projects":          rateLimitMiddleware(60)(handleGetProjects),
 		"/api/projects/save":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveProjects)))),
 		"/api/players":           rateLimitMiddleware(60)(handleGetPlayers),
