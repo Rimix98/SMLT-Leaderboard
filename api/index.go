@@ -2600,7 +2600,7 @@ func handleSaveStaff(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		docRef := fsClient.Collection("config").Doc("staff")
-		return tx.Set(docRef, map[string]interface{}{"roles": roles})
+		return tx.Set(docRef, map[string]interface{}{"roles": roles}, firestore.Merge(firestore.FieldPath{"roles"}))
 	})
 	if err != nil {
 		log.Printf("[staff] save roles: %v", err)
@@ -2657,7 +2657,7 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		if req.RoleIndex < 0 || req.RoleIndex >= len(data.Roles) {
-			return errors.New("invalid role index")
+			return errValidation{"invalid role index"}
 		}
 		player := StaffPlayer{Nickname: req.Nickname, Discord: req.Discord}
 		data.Roles[req.RoleIndex].Players = append(data.Roles[req.RoleIndex].Players, player)
@@ -2665,8 +2665,12 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		log.Printf("[staff] add player: %v", err)
-		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		if _, ok := err.(errValidation); ok {
+			sendError(w, http.StatusBadRequest, "Неверный индекс роли")
+		} else {
+			log.Printf("[staff] add player: %v", err)
+			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		}
 		return
 	}
 	auditLog(r.Context(), AuditEntry{
@@ -2854,7 +2858,7 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		if req.RoleIndex < 0 || req.RoleIndex >= len(data.Roles) {
-			return errors.New("invalid role index")
+			return errValidation{"invalid role index"}
 		}
 		data.Roles[req.RoleIndex].Name = req.Name
 		data.Roles[req.RoleIndex].Color = req.Color
@@ -2871,8 +2875,12 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 		return tx.Set(docRef, data, firestore.Merge(firestore.FieldPath{"roles"}))
 	})
 	if err != nil {
-		log.Printf("[staff] update role: %v", err)
-		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		if _, ok := err.(errValidation); ok {
+			sendError(w, http.StatusBadRequest, "Неверный индекс роли")
+		} else {
+			log.Printf("[staff] update role: %v", err)
+			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		}
 		return
 	}
 	auditLog(r.Context(), AuditEntry{

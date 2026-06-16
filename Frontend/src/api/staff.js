@@ -467,7 +467,8 @@ export async function addPlayerFromRoleModal() {
       nicknameInput.value = ''; discordInput.value = ''
       const btn = document.getElementById('roleAddPlayerBtn')
       if (btn) { btn.textContent = '➕ Добавить'; btn.dataset.action = 'role-add-player' }
-      renderRoleModalPlayerList(roleIndex)
+      const curIdx = store.staffRoles.findIndex(r => r.name === role.name)
+      renderRoleModalPlayerList(curIdx >= 0 ? curIdx : roleIndex)
       showToast(`Игрок «${nickname}» обновлён`, 'success')
     } catch (e) {
       if (!isAbortError(e)) { showToast(e.message, 'error') }
@@ -489,10 +490,14 @@ export async function addPlayerFromRoleModal() {
       body: JSON.stringify({ roleIndex, nickname, discord })
     }, 'role-add-player')
     if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка добавления игрока') }
+    const roleName = store.staffRoles[roleIndex]?.name
     await Promise.all([loadStaffRoles(), loadStaffTiers()])
     nicknameInput.value = ''; discordInput.value = ''
-    renderRoleModalPlayerList(roleIndex)
-    showToast(`Игрок «${nickname}» добавлен в роль «${store.staffRoles[roleIndex]?.name}»`, 'success')
+    const curIdx = store.staffRoles.findIndex(r => r.name === roleName)
+    const finalIdx = curIdx >= 0 ? curIdx : roleIndex
+    document.getElementById('editRoleIndex').value = String(finalIdx)
+    renderRoleModalPlayerList(finalIdx)
+    showToast(`Игрок «${nickname}» добавлен в роль «${store.staffRoles[finalIdx]?.name || roleName}»`, 'success')
   } catch (e) {
     if (!isAbortError(e)) { console.error('Ошибка добавления игрока:', e); showToast(e.message, 'error') }
   }
@@ -512,6 +517,7 @@ export async function roleModalToggleTiers(roleIndex) {
   if (roleIndex == null) roleIndex = parseInt(document.getElementById('editRoleIndex')?.value || '-1')
   const role = store.staffRoles[roleIndex]
   if (!role) return
+  const roleName = role.name
   role.tiersEnabled = role.tiersEnabled === false ? true : false
   try {
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
@@ -522,10 +528,13 @@ export async function roleModalToggleTiers(roleIndex) {
     }, 'role-toggle-tiers')
     if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка') }
     await loadStaffRoles()
+    const curIdx = store.staffRoles.findIndex(r => r.name === roleName)
+    const finalIdx = curIdx >= 0 ? curIdx : roleIndex
+    document.getElementById('editRoleIndex').value = String(finalIdx)
     const btn = document.getElementById('roleToggleTiersBtn')
     if (btn) btn.textContent = role.tiersEnabled ? '🎯 Тир: вкл' : '🎯 Тир: выкл'
-    renderRoleModalPlayerList(roleIndex)
-    showToast(`Тиры для роли «${role.name}» ${role.tiersEnabled ? 'включены' : 'выключены'}`, 'success')
+    renderRoleModalPlayerList(finalIdx)
+    showToast(`Тиры для роли «${roleName}» ${role.tiersEnabled ? 'включены' : 'выключены'}`, 'success')
   } catch (e) {
     role.tiersEnabled = !role.tiersEnabled
     showToast(e.message, 'error')
