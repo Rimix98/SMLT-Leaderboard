@@ -1,8 +1,8 @@
 .env
 .env.local
 .env.*.local
-serviceAccountKey.json
 Secret/
+serviceAccountKey.json
 
 .vercel/
 .vscode/
@@ -20,3 +20,6 @@ Secret/
 __debug_bin
 node_modules/
 Frontend/node_modules/
+Frontend/dist/
+coverage/
+scripts/
