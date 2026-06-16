@@ -709,3 +709,102 @@ func TestNormalizeColor(t *testing.T) {
 		})
 	}
 }
+
+// ──────────────────────────────────────────────
+// Discord webhook alerts
+// ──────────────────────────────────────────────
+
+func TestBuildEmbed(t *testing.T) {
+	tests := []struct {
+		name      string
+		alert     discordAlert
+		wantTitle string
+		wantColor int
+	}{
+		{
+			name:      "honeypot",
+			alert:     discordAlert{eventType: "honeypot_triggered", ip: "1.2.3.4", path: "/wp-admin", detail: map[string]string{"method": "GET", "ua": "sqlmap"}},
+			wantTitle: "🛡️ Honeypot triggered",
+			wantColor: 0xFF0000,
+		},
+		{
+			name:      "login_failed",
+			alert:     discordAlert{eventType: "login_failed", ip: "5.6.7.8", path: "/api/login", detail: map[string]string{"reason": "wrong_password"}},
+			wantTitle: "🛡️ Login failed",
+			wantColor: 0xFFAA00,
+		},
+		{
+			name:      "unknown event",
+			alert:     discordAlert{eventType: "something_new", ip: "1.2.3.4", path: "/api/test"},
+			wantTitle: "🛡️ something_new",
+			wantColor: 0x808080,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			embed := buildEmbed(tt.alert)
+			if embed.Title != tt.wantTitle {
+				t.Errorf("title = %q, want %q", embed.Title, tt.wantTitle)
+			}
+			if embed.Color != tt.wantColor {
+				t.Errorf("color = %d, want %d", embed.Color, tt.wantColor)
+			}
+			if embed.Timestamp == "" {
+				t.Error("timestamp should not be empty")
+			}
+			if embed.Footer == nil || embed.Footer.Text != "SMLT Security" {
+				t.Error("footer should be 'SMLT Security'")
+			}
+		})
+	}
+}
+
+func TestBuildEmbed_FieldsFromDetail(t *testing.T) {
+	alert := discordAlert{
+		eventType: "bot_blocked",
+		ip:        "10.0.0.1",
+		path:      "/api/test",
+		detail:    map[string]string{"ua": "sqlmap/1.5"},
+	}
+	embed := buildEmbed(alert)
+	if len(embed.Fields) != 1 {
+		t.Fatalf("expected 1 field, got %d", len(embed.Fields))
+	}
+	if embed.Fields[0].Name != "ua" {
+		t.Errorf("field name = %q, want ua", embed.Fields[0].Name)
+	}
+}
+
+func TestBuildEmbed_TruncatesLongUA(t *testing.T) {
+	longUA := ""
+	for i := 0; i < 200; i++ {
+		longUA += "a"
+	}
+	alert := discordAlert{
+		eventType: "bot_blocked",
+		ip:        "10.0.0.1",
+		path:      "/",
+		detail:    map[string]string{"ua": longUA},
+	}
+	embed := buildEmbed(alert)
+	val := embed.Fields[0].Value
+	if len(val) > 120 {
+		t.Errorf("UA field too long: %d chars", len(val))
+	}
+}
+
+func TestAlertSecurityEvent_QueueNil(t *testing.T) {
+	alertQueue = nil
+	alertSecurityEvent("test", "1.2.3.4", "/test", nil)
+}
+
+func TestAlertSecurityEvent_QueueFull(t *testing.T) {
+	q := make(chan discordAlert, 1)
+	q <- discordAlert{eventType: "existing"}
+	alertQueue = q
+	defer func() { alertQueue = nil }()
+	alertSecurityEvent("new_event", "1.2.3.4", "/test", nil)
+	if len(q) != 1 {
+		t.Errorf("queue should still have 1 item, got %d", len(q))
+	}
+}

@@ -137,7 +137,158 @@ var (
 	adminKnockOnce  sync.Once
 
 	captchaEscalation sync.Map
+
+	discordWebhookURL string
+	alertQueue        chan discordAlert
+	alertOnce         sync.Once
 )
+
+// ──────────────────────────────────────────────
+// DISCORD WEBHOOK ALERTS
+// ──────────────────────────────────────────────
+
+type discordAlert struct {
+	eventType string
+	ip        string
+	path      string
+	detail    interface{}
+}
+
+type discordEmbed struct {
+	Title       string              `json:"title"`
+	Description string              `json:"description"`
+	Color       int                 `json:"color"`
+	Fields      []discordEmbedField `json:"fields,omitempty"`
+	Footer      *discordEmbedFooter `json:"footer,omitempty"`
+	Timestamp   string              `json:"timestamp"`
+}
+
+type discordEmbedField struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Inline bool   `json:"inline"`
+}
+
+type discordEmbedFooter struct {
+	Text string `json:"text"`
+}
+
+type discordWebhookPayload struct {
+	Embeds []discordEmbed `json:"embeds"`
+}
+
+var (
+	alertColors = map[string]int{
+		"honeypot_triggered":           0xFF0000,
+		"honeypot_token_blacklisted":   0xFF4500,
+		"bot_blocked":                  0xFF6600,
+		"blocked_path":                 0xFF6600,
+		"login_failed":                 0xFFAA00,
+		"captcha_failed":               0xFFAA00,
+		"rate_limit_exceeded":          0xFFCC00,
+		"oversized_request":            0xFF8800,
+		"device_banned":                0xFF0000,
+		"token_refreshed":              0x5865F2,
+	}
+	alertTitles = map[string]string{
+		"honeypot_triggered":           "Honeypot triggered",
+		"honeypot_token_blacklisted":   "Token blacklisted via honeypot",
+		"bot_blocked":                  "Bot/scanner blocked",
+		"blocked_path":                 "Blocked path accessed",
+		"login_failed":                 "Login failed",
+		"captcha_failed":               "CAPTCHA failed",
+		"rate_limit_exceeded":          "Rate limit exceeded",
+		"oversized_request":            "Oversized request",
+		"device_banned":                "Banned device accessed",
+		"token_refreshed":              "Token refreshed",
+	}
+)
+
+func initDiscordAlerts() {
+	alertOnce.Do(func() {
+		discordWebhookURL = os.Getenv("DISCORD_SECURITY_WEBHOOK")
+		if discordWebhookURL == "" {
+			log.Println("[discord] DISCORD_SECURITY_WEBHOOK not set, alerts disabled")
+			return
+		}
+		alertQueue = make(chan discordAlert, 300)
+		for i := 0; i < 2; i++ {
+			go alertWorker(i)
+		}
+		log.Println("[discord] webhook alerts enabled (2 workers, buffer 300)")
+	})
+}
+
+func alertWorker(id int) {
+	cooldown := make(map[string]time.Time)
+	for alert := range alertQueue {
+		key := fmt.Sprintf("%s:%s", alert.eventType, alert.ip)
+		if last, ok := cooldown[key]; ok && time.Since(last) < 10*time.Second {
+			continue
+		}
+		cooldown[key] = time.Now()
+
+		embed := buildEmbed(alert)
+		payload := discordWebhookPayload{Embeds: []discordEmbed{embed}}
+		body, _ := json.Marshal(payload)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, discordWebhookURL, strings.NewReader(string(body)))
+		if err != nil {
+			cancel()
+			log.Printf("[discord] worker %d: build request: %v", id, err)
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := httpClient.Do(req)
+		cancel()
+		if err != nil {
+			log.Printf("[discord] worker %d: send: %v", id, err)
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode == 429 {
+			log.Printf("[discord] worker %d: rate limited, sleeping 2s", id)
+			time.Sleep(2 * time.Second)
+		}
+	}
+}
+
+func buildEmbed(alert discordAlert) discordEmbed {
+	title := alertTitles[alert.eventType]
+	if title == "" {
+		title = alert.eventType
+	}
+	color := alertColors[alert.eventType]
+	if color == 0 {
+		color = 0x808080
+	}
+
+	desc := fmt.Sprintf("**IP:** `%s`\n**Path:** `%s`", alert.ip, alert.path)
+
+	var fields []discordEmbedField
+	if detailMap, ok := alert.detail.(map[string]string); ok {
+		for k, v := range detailMap {
+			if k == "ua" && len(v) > 100 {
+				v = v[:100] + "..."
+			}
+			fields = append(fields, discordEmbedField{
+				Name:   k,
+				Value:  "`" + v + "`",
+				Inline: true,
+			})
+		}
+	}
+
+	return discordEmbed{
+		Title:       "🛡️ " + title,
+		Description: desc,
+		Color:       color,
+		Fields:      fields,
+		Footer:      &discordEmbedFooter{Text: "SMLT Security"},
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+	}
+}
 
 type knockStore interface {
 	get(ip string) (string, bool)
@@ -347,6 +498,7 @@ func init() {
 	initRateLimitSalt()
 	initJWTSecrets()
 	initAdminKnock()
+	initDiscordAlerts()
 	startTokenBlacklistCleanup()
 	go cleanupCaptchaEscalation()
 }
@@ -3261,11 +3413,19 @@ func securityEvent(ctx context.Context, eventType, ip, path string, detail inter
 }
 
 // ──────────────────────────────────────────────
-// SECURITY ALERTS (Logging only)
+// SECURITY ALERTS (Discord Webhook)
 // ──────────────────────────────────────────────
 
 func alertSecurityEvent(eventType, ip, path string, detail interface{}) {
 	log.Printf("[security] %s ip=%s path=%s detail=%v", eventType, ip, path, detail)
+	if alertQueue == nil {
+		return
+	}
+	select {
+	case alertQueue <- discordAlert{eventType: eventType, ip: ip, path: path, detail: detail}:
+	default:
+		log.Printf("[discord] alert queue full, dropping %s", eventType)
+	}
 }
 
 func alertLoginFailure(ip string, reason string) {
