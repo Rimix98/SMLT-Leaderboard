@@ -110,11 +110,17 @@ body.modal-open {
 
 body.home-page {
     background-color: var(--color-primary);
+}
+
+body.home-page::before {
+    content: '';
+    position: fixed;
+    inset: 0;
     background-image: url('Background_Image_DarkMode.png');
     background-size: cover;
     background-position: center;
-    background-attachment: fixed;
     background-repeat: no-repeat;
+    z-index: -1;
 }
 
 body.home-page .nav-card,
@@ -143,13 +149,11 @@ body.home-page .info-card {
     border-color: rgba(255, 255, 255, 0.08);
 }
 
-[data-theme="light"] body.home-page {
-    background-color: var(--color-primary);
+[data-theme="light"] body.home-page::before {
     background-image: url('Background_Image_WhiteMode.png');
 }
 
-[data-theme="gray"] body.home-page {
-    background-color: var(--color-primary);
+[data-theme="gray"] body.home-page::before {
     background-image: url('Background_Image_GreyMode.png');
 }
 
