@@ -112,7 +112,11 @@ body.home-page {
     background-color: var(--color-primary);
 }
 
-body.home-page::before {
+body.home-page #app {
+    isolation: isolate;
+}
+
+body.home-page #app::before {
     content: '';
     position: fixed;
     inset: 0;
@@ -120,6 +124,7 @@ body.home-page::before {
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
+    pointer-events: none;
     z-index: -1;
 }
 
@@ -149,11 +154,11 @@ body.home-page .info-card {
     border-color: rgba(255, 255, 255, 0.08);
 }
 
-[data-theme="light"] body.home-page::before {
+[data-theme="light"] body.home-page #app::before {
     background-image: url('Background_Image_WhiteMode.png');
 }
 
-[data-theme="gray"] body.home-page::before {
+[data-theme="gray"] body.home-page #app::before {
     background-image: url('Background_Image_GreyMode.png');
 }
 
