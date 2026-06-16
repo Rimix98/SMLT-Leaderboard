@@ -3102,7 +3102,7 @@ func securityEvent(ctx context.Context, eventType, ip, path string, detail inter
 // ──────────────────────────────────────────────
 
 func alertSecurityEvent(eventType, ip, path string, detail interface{}) {
-	log.Printf("[security] %s ip=%s path=%s", eventType, ip, path)
+	log.Printf("[security] %s ip=%s path=%s detail=%v", eventType, ip, path, detail)
 }
 
 func alertLoginFailure(ip string, reason string) {
