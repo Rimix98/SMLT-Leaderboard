@@ -119,23 +119,23 @@ body.home-page {
 
 body.home-page .nav-card,
 body.home-page .info-card {
-    background: rgba(34, 34, 34, 0.75);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: rgba(34, 34, 34, 0.45);
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
 }
 
 [data-theme="light"] body.home-page .nav-card,
 [data-theme="light"] body.home-page .info-card {
-    background: rgba(255, 255, 255, 0.75);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: rgba(255, 255, 255, 0.45);
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
 }
 
 [data-theme="gray"] body.home-page .nav-card,
 [data-theme="gray"] body.home-page .info-card {
-    background: rgba(54, 54, 54, 0.75);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: rgba(54, 54, 54, 0.45);
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
 }
 
 [data-theme="light"] body.home-page {
