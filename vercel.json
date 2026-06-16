@@ -1,10 +1,7 @@
 {
-  "cleanUrls": true,
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api" },
-    { "src": "/(.*\\.(html|js|css|png|ico|svg|woff2?))", "dest": "/Frontend/dist/$1" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/Frontend/404.html" }
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api" },
+    { "source": "/((?!api).*)", "destination": "/Frontend/dist/$1" }
   ],
   "headers": [
     {
