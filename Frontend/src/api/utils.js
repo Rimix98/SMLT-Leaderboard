@@ -287,6 +287,11 @@ export function createFlagElement(c) {
 }
 
 export function getCountryLabel(c) {
+  const code = resolveCountry(c)
+  if (!code || !isValidISOCode(code)) return null
+  return CODE_TO_NAME[code] || null
+}
+
 export function showToast(msg, type = 'error') {
   const t = document.createElement('div')
   t.className = `toast toast-${type}`
