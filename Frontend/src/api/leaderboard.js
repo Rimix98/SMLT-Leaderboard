@@ -480,18 +480,6 @@ export function closeCountryModal() {
   if (modal) modal.classList.remove('active')
 }
 
-export function showInfoModal() {
-  const modal = document.getElementById('infoModal')
-  if (modal) modal.classList.add('active')
-}
-
-export function closeInfoModal(e) {
-  if (!e || e.target === e.currentTarget) {
-    const modal = document.getElementById('infoModal')
-    if (modal) modal.classList.remove('active')
-  }
-}
-
 export async function addPlayer() {
   if (!store.isHost) { showToast('Только хост может добавлять игроков', 'error'); return }
 

@@ -946,9 +946,7 @@ var blockedBotPatterns = []string{
 	"httrack",
 	"clixboard",
 	"cms探测",
-	"dirbuster",
 	"nmap",
-	"masscan",
 	"zmap",
 	"unicornsql",
 	"sqlbf",
@@ -958,7 +956,6 @@ var blockedBotPatterns = []string{
 	"sqlninja",
 	"bbqsql",
 	"jsql",
-	"wapiti",
 	"arachni",
 	"skipfish",
 	"nikto",
@@ -3203,85 +3200,6 @@ func handleHoneypot(w http.ResponseWriter, r *http.Request) {
 
 	time.Sleep(time.Duration(50+mathrand.IntN(200)) * time.Millisecond)
 	sendError(w, http.StatusNotFound, "Роут не найден")
-}
-
-// ──────────────────────────────────────────────
-// EXPONENTIAL BACKOFF TRACKER
-// ──────────────────────────────────────────────
-
-type backoffEntry struct {
-	violations   int
-	blockedUntil time.Time
-}
-
-type backoffTracker struct {
-	mu      sync.Mutex
-	entries map[string]*backoffEntry
-	stopCh  chan struct{}
-}
-
-var globalBackoff = newBackoffTracker()
-
-func newBackoffTracker() *backoffTracker {
-	t := &backoffTracker{
-		entries: make(map[string]*backoffEntry),
-		stopCh:  make(chan struct{}),
-	}
-	go t.cleanup()
-	return t
-}
-
-func (t *backoffTracker) cleanup() {
-	ticker := time.NewTicker(10 * time.Minute)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			now := time.Now()
-			t.mu.Lock()
-			for ip, e := range t.entries {
-				if now.After(e.blockedUntil) {
-					delete(t.entries, ip)
-				}
-			}
-			t.mu.Unlock()
-		case <-t.stopCh:
-			return
-		}
-	}
-}
-
-func (t *backoffTracker) recordViolation(ip string) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	now := time.Now()
-	e, ok := t.entries[ip]
-	if !ok {
-		t.entries[ip] = &backoffEntry{violations: 1}
-		return false
-	}
-	if now.Before(e.blockedUntil) {
-		return true
-	}
-	e.violations++
-	if e.violations >= 5 {
-		e.blockedUntil = now.Add(30 * time.Minute)
-	} else if e.violations >= 3 {
-		e.blockedUntil = now.Add(time.Duration(e.violations) * time.Minute)
-	}
-	return now.Before(e.blockedUntil)
-}
-
-func backoffMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ip := getRealIP(r)
-		if globalBackoff.recordViolation(ip) {
-			securityEvent(r.Context(), "backoff_blocked", ip, r.URL.Path, nil)
-			sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
-			return
-		}
-		next(w, r)
-	}
 }
 
 // ──────────────────────────────────────────────

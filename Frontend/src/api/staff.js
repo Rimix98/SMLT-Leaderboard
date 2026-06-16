@@ -109,16 +109,6 @@ export async function saveStaffRoles() {
   }
 }
 
-export function getRoleColor(roleName) {
-  if (!store.staffRoles) return null
-  const role = store.staffRoles.find(r => r.name === roleName)
-  return role ? role.color : null
-}
-
-function getRoleColorCSS(roleText) {
-  return getRoleColor(roleText) || null
-}
-
 export async function addPlayerToRole() {
   const roleIndexInput = document.getElementById('addPlayerRoleIndex')
   const nicknameInput = document.getElementById('playerNickname')

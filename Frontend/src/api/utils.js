@@ -271,13 +271,6 @@ export function getFlagCode(c) {
   return code.toLowerCase()
 }
 
-export function getFlagElement(c) {
-  const span = document.createElement('span')
-  const el = createFlagElement(c)
-  span.appendChild(el)
-  return span
-}
-
 export function createFlagElement(c) {
   const code = resolveCountry(c)
   if (!code || !isValidISOCode(code)) {
@@ -294,26 +287,6 @@ export function createFlagElement(c) {
 }
 
 export function getCountryLabel(c) {
-  if (!c) return 'неизвестно'
-  const upper = c.toUpperCase()
-  if (FLAGS[upper]) return upper
-  const lower = c.toLowerCase().trim().replace(/\s+/g, '-')
-  const code = COUNTRY_TO_CODE[lower]
-  if (code) return CODE_TO_NAME[code] || code
-  return c
-}
-
-export function encodeCountryToken(country) {
-  const code = resolveCountry(country)
-  if (!code) return ''
-  return btoa(encodeURIComponent(code))
-}
-
-export function decodeCountryToken(token) {
-  try { return decodeURIComponent(atob(token)) } catch { return '' }
-}
-
-// Toast
 export function showToast(msg, type = 'error') {
   const t = document.createElement('div')
   t.className = `toast toast-${type}`
