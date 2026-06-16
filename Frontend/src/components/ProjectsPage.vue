@@ -29,11 +29,13 @@ const selectedProject = ref(null)
 const showParticipantTab = ref(false)
 const participantConfig = ref(createDefaultParticipantConfig())
 const editingIdx = ref(-1)
+const loading = ref(true)
 
 onMounted(async () => {
   initTheme()
   await refreshCsrfToken()
   await Promise.all([loadProjects(), loadStaffRoles()])
+  loading.value = false
 })
 
 async function loadStaffRoles() {
@@ -326,6 +328,11 @@ function renderParticipants(participants) {
         </div>
       </section>
 
+      <div v-if="loading && store.projects.length === 0" class="loading-state" style="grid-column:1/-1">
+        <div class="spinner"></div>
+        <div class="loading-text">Загрузка проектов...</div>
+      </div>
+
       <div class="projects-grid" id="projectsGrid">
         <div v-for="(project, idx) in store.projects" :key="project.id || idx" class="project-card" style="cursor:pointer" @click="openProjectDetail(project)">
           <template v-if="toYoutubeId11(project.videoId)">
@@ -360,7 +367,7 @@ function renderParticipants(participants) {
             </div>
           </div>
         </div>
-        <div v-if="store.projects.length === 0" class="empty-state" style="grid-column:1/-1">
+        <div v-if="!loading && store.projects.length === 0" class="empty-state" style="grid-column:1/-1">
           <div class="empty-state-icon">📁</div>
           <p>Проектов пока нет</p>
         </div>
