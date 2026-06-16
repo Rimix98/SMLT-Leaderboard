@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { store, initTheme } from '../store'
 import { refreshCsrfToken, resolveCountry, CODE_TO_NAME, getFlagCode } from '../api/utils'
 import { makeOverlayClose } from '../utils/modal'
+import { debounce } from '../utils/debounce'
 import AppShell from './AppShell.vue'
 import {
   loadAllPlayers,
@@ -113,6 +114,9 @@ function retryLoad() {
   loadLeaderboard()
 }
 
+const debouncedFilterPlayers = debounce((q) => filterPlayers(q), 250)
+const debouncedFilterLevels = debounce((q) => filterLevels(q), 250)
+
 const profileModalClose = makeOverlayClose(() => {
   closeProfileModal()
   document.body.classList.remove('modal-open')
@@ -193,14 +197,24 @@ function addPlayerAndClose() {
     <div class="container">
 
       <div v-if="leaderboardLoading" class="loading-state">
-        <div class="bar-spinner"></div>
+        <div class="leaderboard-section" style="width:100%">
+          <div v-for="i in 8" :key="i" class="skeleton-row">
+            <div class="skeleton skeleton-circle" style="width:24px;height:24px"></div>
+            <div style="flex:1">
+              <div class="skeleton skeleton-text skeleton-text-sm" style="width:120px"></div>
+              <div class="skeleton skeleton-text skeleton-text-sm" style="width:80px;height:10px;margin-top:4px"></div>
+            </div>
+            <div class="skeleton skeleton-text" style="width:80px"></div>
+            <div class="skeleton skeleton-text" style="width:50px"></div>
+          </div>
+        </div>
         <div class="loading-text">Загрузка лидерборда...</div>
       </div>
 
       <div v-else-if="leaderboardError" class="loading-state">
         <div class="error-icon">⚠️</div>
         <div class="error-text">Не удалось загрузить лидерборд</div>
-        <button class="btn btn-primary" style="margin-top:var(--spacing-md)" @click="retryLoad">🔄 Повторить попытку</button>
+        <button class="btn btn-primary modal-actions-row-spaced" @click="retryLoad">🔄 Повторить попытку</button>
       </div>
 
       <template v-else>
@@ -223,7 +237,7 @@ function addPlayerAndClose() {
               <div class="leaderboard-header">
                 <h2>🏆 Топ игроков</h2>
                 <div class="leaderboard-controls">
-                  <input type="text" class="search-input" placeholder="🔍 Поиск по нику..." v-model="playerSearch" @input="filterPlayers(playerSearch)">
+                  <input type="text" class="search-input" placeholder="🔍 Поиск по нику..." v-model="playerSearch" @input="debouncedFilterPlayers(playerSearch)">
                   <div class="leaderboard-stats">{{ store.players.length }} игроков</div>
                 </div>
               </div>
@@ -234,12 +248,13 @@ function addPlayerAndClose() {
                   <div class="cell cell-records">Hardest</div>
                   <div class="cell cell-points">Очки</div>
                 </div>
+                <TransitionGroup name="list" tag="div">
                   <div v-for="(p, index) in store.players" :key="p.id ?? index" class="player-row" @click="onProfileOpen(index)">
                   <div class="cell cell-position" :class="index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other'">
                     {{ index + 1 }}
                   </div>
                   <div class="cell cell-player">
-                    <span class="player-flag"><img v-if="getFlagCode(p.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(p.nationality)}.png`" :alt="getFlagCode(p.nationality).toUpperCase()" width="20" loading="lazy" class="flag-img" style="vertical-align:middle;margin-right:4px"><span v-else>{{ !resolveCountry(p.nationality) && p.nationality === null ? '❌' : '🌍' }}</span></span>
+                    <span class="player-flag"><img v-if="getFlagCode(p.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(p.nationality)}.png`" :alt="getFlagCode(p.nationality).toUpperCase()" width="20" loading="lazy" class="flag-img flag-inline"><span v-else>{{ !resolveCountry(p.nationality) && p.nationality === null ? '❌' : '🌍' }}</span></span>
                     <div class="player-info">
                       <span class="player-name">{{ p.name }}</span>
                       <span class="player-score">{{ (p.score || 0).toFixed(2) }} pts · #{{ p.rank || '—' }}</span>
@@ -252,7 +267,9 @@ function addPlayerAndClose() {
                 <div v-if="store.players.length === 0" class="empty-state">
                   <div class="empty-state-icon">🏆</div>
                   <p>Игроки не найдены</p>
+                  <p class="no-data-text">Попробуйте изменить поисковый запрос</p>
                 </div>
+                </TransitionGroup>
               </div>
             </div>
 
@@ -260,7 +277,7 @@ function addPlayerAndClose() {
               <div class="leaderboard-header">
                 <h2>📔 Топ уровней</h2>
                 <div class="leaderboard-controls">
-                  <input type="text" class="search-input" placeholder="🔍 Поиск по уровню..." v-model="store.levels.filter" @input="filterLevels(store.levels.filter)">
+                  <input type="text" class="search-input" placeholder="🔍 Поиск по уровню..." v-model="store.levels.filter" @input="debouncedFilterLevels(store.levels.filter)">
                   <div class="leaderboard-stats">{{ store.levels.all?.length || 0 }} уровней</div>
                 </div>
               </div>
@@ -271,7 +288,8 @@ function addPlayerAndClose() {
                   <div class="cell cell-points">Позиция</div>
                   <div class="cell cell-records">Викторов</div>
                 </div>
-                <div v-for="(level, index) in displayedLevels" :key="level.id" class="player-row" @click="onLevelVictors(level.id)">
+                <TransitionGroup name="list" tag="div">
+                  <div v-for="(level, index) in displayedLevels" :key="level.id" class="player-row" @click="onLevelVictors(level.id)">
                   <div class="cell cell-position" :class="index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other'">
                     {{ index + 1 }}
                   </div>
@@ -286,9 +304,11 @@ function addPlayerAndClose() {
                 <div v-if="!store.levels.all" class="empty-state">
                   <div class="empty-state-icon">📔</div>
                   <p>Нет данных об уровнях</p>
+                  <p class="no-data-text">Уровни появятся после добавления записей</p>
                 </div>
+                </TransitionGroup>
               </div>
-              <div v-if="store.levels.all && store.levels.all.length > 39" style="padding:var(--spacing-sm);text-align:center;border-top:1px solid var(--color-border)">
+              <div v-if="store.levels.all && store.levels.all.length > 39" class="expand-levels-footer">
                 <button class="btn btn-secondary btn-sm" @click="expandLevels">
                   {{ store.levels.expanded ? 'Свернуть' : 'Показать ещё' }}
                 </button>
@@ -314,8 +334,7 @@ function addPlayerAndClose() {
               <div class="stat-label">Пройдено уровней</div>
             </div>
             <div class="stat-card">
-              <div class="stat-value" style="font-size: var(--font-size-sm);
-                white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+              <div class="stat-value stat-card-compact"
                 :title="topLevelByVictors ? `${topLevelByVictors.name} — ${topLevelByVictors.victors.length} victors` : ''">
                 {{ topLevelByVictors?.name || '—' }}
               </div>
@@ -326,14 +345,14 @@ function addPlayerAndClose() {
         <div class="stats-section">
           <h3>🌍 По странам</h3>
           <div class="country-list" id="countryList">
-            <div v-for="c in countryStats" :key="c.code" class="country-item" style="cursor:pointer" @click="onCountryTop(c.name)">
+            <div v-for="c in countryStats" :key="c.code" class="country-item country-item-clickable" @click="onCountryTop(c.name)">
               <div class="country-info">
-                <span class="country-flag"><img v-if="getFlagCode(c.name)" :src="`https://flagcdn.com/w20/${getFlagCode(c.name)}.png`" :alt="getFlagCode(c.name).toUpperCase()" width="20" loading="lazy" class="flag-img" style="vertical-align:middle;margin-right:4px"><span v-else>{{ !resolveCountry(c.name) && c.name === null ? '❌' : '🌍' }}</span></span>
+                <span class="country-flag"><img v-if="getFlagCode(c.name)" :src="`https://flagcdn.com/w20/${getFlagCode(c.name)}.png`" :alt="getFlagCode(c.name).toUpperCase()" width="20" loading="lazy" class="flag-img flag-inline"><span v-else>{{ !resolveCountry(c.name) && c.name === null ? '❌' : '🌍' }}</span></span>
                 <span class="country-name">{{ c.displayName }}</span>
               </div>
               <span class="country-count">{{ c.count }}</span>
             </div>
-            <div v-if="countryStats.length === 0" style="color:var(--color-text-muted);font-size:var(--font-size-sm)">Нет данных</div>
+            <div v-if="countryStats.length === 0" class="no-data-text">Нет данных</div>
           </div>
         </div>
       </div>
@@ -383,7 +402,7 @@ function addPlayerAndClose() {
             <label for="newPlayerName">Ник или айди в GDL:</label>
             <input type="text" id="newPlayerName" class="form-input" placeholder="Например: samoletik">
           </div>
-          <div style="display:flex;gap:var(--spacing-sm)">
+          <div class="modal-actions-row">
             <button class="btn btn-secondary" @click="closeAddPlayerAndUnlock()">Отмена</button>
             <button class="btn btn-primary" @click="addPlayerAndClose()">Добавить</button>
           </div>

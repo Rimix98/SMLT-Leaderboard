@@ -312,13 +312,13 @@ function renderParticipants(participants) {
       </div>
 
       <section class="info-section" style="padding-top:0">
-        <div class="info-card" style="border-left:3px solid var(--color-secondary)">
-          <p style="color:var(--color-text-secondary);line-height:1.7">Здесь размещаются коллабы от SMLT. Каждый проект содержит информацию о статусе, участниках и ссылке на видео.</p>
+        <div class="info-card info-card-highlighted">
+          <p class="info-card-description">Здесь размещаются коллабы от SMLT. Каждый проект содержит информацию о статусе, участниках и ссылке на видео.</p>
         </div>
       </section>
 
       <section class="status-legend" style="margin-bottom:var(--spacing-lg)">
-        <div style="display:flex;flex-wrap:wrap;gap:var(--spacing-sm)">
+        <div class="status-legend-row">
           <span class="project-status status-ready">Готов</span>
           <span class="project-status status-verifying">В процессе верифа</span>
           <span class="project-status status-building">В процессе постройки</span>
@@ -328,13 +328,18 @@ function renderParticipants(participants) {
         </div>
       </section>
 
-      <div v-if="loading && store.projects.length === 0" class="loading-state" style="grid-column:1/-1">
-        <div class="spinner"></div>
-        <div class="loading-text">Загрузка проектов...</div>
+      <div v-if="loading && store.projects.length === 0" class="admin-grid-full">
+        <div class="projects-grid">
+          <div v-for="i in 4" :key="i" class="skeleton-card"></div>
+        </div>
+        <div class="loading-state" style="padding:var(--spacing-md)">
+          <div class="spinner"></div>
+          <div class="loading-text">Загрузка проектов...</div>
+        </div>
       </div>
 
-      <div class="projects-grid" id="projectsGrid">
-        <div v-for="(project, idx) in store.projects" :key="project.id || idx" class="project-card" style="cursor:pointer" @click="openProjectDetail(project)">
+      <TransitionGroup name="list" tag="div" class="projects-grid" id="projectsGrid">
+        <div v-for="(project, idx) in store.projects" :key="project.id || idx" class="project-card project-card-clickable" @click="openProjectDetail(project)">
           <template v-if="toYoutubeId11(project.videoId)">
             <div class="project-video">
               <iframe :src="`https://www.youtube.com/embed/${toYoutubeId11(project.videoId)}?rel=0`" frameborder="0" allowfullscreen loading="lazy"
@@ -367,11 +372,12 @@ function renderParticipants(participants) {
             </div>
           </div>
         </div>
-        <div v-if="!loading && store.projects.length === 0" class="empty-state" style="grid-column:1/-1">
+        <div v-if="!loading && store.projects.length === 0" class="empty-state admin-grid-full">
           <div class="empty-state-icon">📁</div>
           <p>Проектов пока нет</p>
+          <p class="no-data-text">Создайте первый проект, чтобы начать</p>
         </div>
-      </div>
+      </TransitionGroup>
     </div>
   </main>
 
@@ -419,9 +425,9 @@ function renderParticipants(participants) {
               <textarea id="projectComment" class="form-textarea" placeholder="Комментарий к проекту"></textarea>
             </div>
             <div v-if="editingIdx !== -1" class="form-group">
-              <button type="button" class="btn btn-primary" style="width:100%" @click="openParticipantTabFromEditModal">👥 Добавить участников</button>
+              <button type="button" class="btn btn-primary btn-full-width" @click="openParticipantTabFromEditModal">👥 Добавить участников</button>
             </div>
-            <div style="display:flex;gap:var(--spacing-sm);margin-top:var(--spacing-md)">
+            <div class="modal-actions-row-spaced">
               <button type="button" class="btn btn-secondary" @click="closeProjectEditModal()">Отмена</button>
               <button type="submit" class="btn btn-primary">💾 Сохранить</button>
             </div>
@@ -457,21 +463,21 @@ function renderParticipants(participants) {
           </div>
           <div class="project-participants" style="margin-top:var(--spacing-md)">
             <div class="project-participants-title">Участники:</div>
-            <div class="project-participants-list" style="display:flex;flex-direction:column;gap:var(--spacing-xs)">
+            <div class="project-participants-list project-participants-vertical">
               <template v-if="renderParticipants(selectedProject.participants).length > 0">
-                <div v-for="(item, ei) in renderParticipants(selectedProject.participants)" :key="ei" class="participant-tag" style="display:flex;flex-wrap:wrap;gap:2px">
+                <div v-for="(item, ei) in renderParticipants(selectedProject.participants)" :key="ei" class="participant-tag participant-tag-flex">
                   <strong>{{ item.name }}</strong>
-                  <span v-if="item.role" style="margin-left:4px">
+                  <span v-if="item.role" class="participant-tag-role">
                     <span class="role" :style="item.color ? { color: item.color } : {}">{{ item.role }}</span>
                   </span>
                 </div>
               </template>
-              <div v-else style="color:var(--color-text-muted);font-size:var(--font-size-xs)">Нет участников</div>
+              <div v-else class="no-participants-text">Нет участников</div>
             </div>
           </div>
           <template v-if="toYoutubeId11(selectedProject.videoId)">
-            <div style="margin-top:var(--spacing-md);padding-top:var(--spacing-md);border-top:1px solid var(--color-border)">
-              <a :href="`https://www.youtube.com/watch?v=${encodeURIComponent(toYoutubeId11(selectedProject.videoId))}`" target="_blank" rel="noopener noreferrer" style="color:var(--color-secondary)">🔗 Открыть на YouTube</a>
+            <div class="project-info-bordered">
+              <a :href="`https://www.youtube.com/watch?v=${encodeURIComponent(toYoutubeId11(selectedProject.videoId))}`" target="_blank" rel="noopener noreferrer" class="project-video-link">🔗 Открыть на YouTube</a>
             </div>
           </template>
         </div>

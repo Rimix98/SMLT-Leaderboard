@@ -131,7 +131,7 @@ onUnmounted(() => {
       <div class="stats-grid" style="margin-bottom:var(--spacing-lg)">
         <div class="stats-section">
           <h3>📊 Статистика</h3>
-          <div class="stats-grid-main" style="grid-template-columns:repeat(3,1fr)">
+          <div class="stats-grid-main admin-grid-3">
             <div class="stat-card">
               <div class="stat-value">{{ totalUniqueParticipants }}</div>
               <div class="stat-label">Всего участников</div>
@@ -148,21 +148,21 @@ onUnmounted(() => {
         </div>
         <div class="stats-section">
           <h3>🎯 По тирам</h3>
-          <div class="stats-grid-main" style="grid-template-columns:repeat(4,1fr)">
+          <div class="stats-grid-main admin-grid-4">
             <div class="stat-card">
-              <div class="stat-value" style="color:#00ffff">{{ tierCounts.priority }}</div>
+              <div class="stat-value tier-stat-priority">{{ tierCounts.priority }}</div>
               <div class="stat-label">Приоритет</div>
             </div>
             <div class="stat-card">
-              <div class="stat-value" style="color:#540b6d">{{ tierCounts.base }}</div>
+              <div class="stat-value tier-stat-base">{{ tierCounts.base }}</div>
               <div class="stat-label">Основа</div>
             </div>
             <div class="stat-card">
-              <div class="stat-value" style="color:#6d0b0d">{{ tierCounts.reserve }}</div>
+              <div class="stat-value tier-stat-reserve">{{ tierCounts.reserve }}</div>
               <div class="stat-label">Резерв</div>
             </div>
             <div class="stat-card">
-              <div class="stat-value" style="color:#888888">{{ tierCounts.na }}</div>
+              <div class="stat-value tier-stat-na">{{ tierCounts.na }}</div>
               <div class="stat-label">N/A</div>
             </div>
           </div>
@@ -170,9 +170,9 @@ onUnmounted(() => {
       </div>
 
       <section class="info-section" style="padding-top:0">
-        <div class="info-card" style="border-left:3px solid var(--color-secondary)">
-          <p style="color:var(--color-text-secondary);line-height:1.7">Здесь отображаются стафф SMLT.</p>
-          <p style="color:var(--color-text-secondary);line-height:1.7;margin-top:var(--spacing-sm)">Тир-система:</p>
+        <div class="info-card info-card-highlighted">
+          <p class="info-card-description">Здесь отображаются стафф SMLT.</p>
+          <p class="info-card-description">Тир-система:</p>
           <div class="tier-legend">
             <span class="tier-legend-item"><span class="tier-square" style="background:#00ffff"></span> приоритет</span>
             <span class="tier-legend-item"><span class="tier-square" style="background:#540b6d"></span> основа</span>
@@ -182,12 +182,17 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <div id="staffLoadingState" class="loading-state" v-if="loading && store.staffRoles.length === 0">
-        <div class="spinner"></div>
-        <div class="loading-text">Загрузка состава...</div>
+      <div id="staffLoadingState" v-if="loading && store.staffRoles.length === 0">
+        <div class="projects-grid">
+          <div v-for="i in 4" :key="i" class="skeleton-card"></div>
+        </div>
+        <div class="loading-state" style="padding:var(--spacing-md)">
+          <div class="spinner"></div>
+          <div class="loading-text">Загрузка состава...</div>
+        </div>
       </div>
 
-      <div class="projects-grid" id="staffRolesContainer">
+      <TransitionGroup name="list" tag="div" class="projects-grid" id="staffRolesContainer">
         <div v-for="(role, roleIndex) in store.staffRoles" :key="roleIndex" class="project-card">
           <div class="staff-role-visual" :style="{ background: role.color || '#3b82f6' }">
             <span class="staff-role-visual-name">{{ role.name }}</span>
@@ -196,7 +201,7 @@ onUnmounted(() => {
             <div class="project-info">
               <div class="project-info-item">
                 <span class="project-info-label">Роль:</span>
-                <span class="project-info-value" :style="{ color: role.color, fontWeight: 700 }">{{ role.name }}</span>
+                <span class="project-info-value role-color-bold" :style="{ color: role.color }">{{ role.name }}</span>
               </div>
               <div class="project-info-item">
                 <span class="project-info-label">Участников:</span>
@@ -207,7 +212,7 @@ onUnmounted(() => {
               <div class="project-participants-title">Участники:</div>
               <div class="project-participants-list">
                 <template v-if="(role.players || []).length === 0">
-                  <span style="color:var(--color-text-muted);font-size:var(--font-size-xs)">Нет игроков</span>
+                  <span class="no-players-text">Нет игроков</span>
                 </template>
                 <div v-for="(player, pIdx) in role.players" :key="pIdx" class="staff-player-row">
                   <span class="participant-tag staff-player-tag">
@@ -231,11 +236,12 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-      </div>
+      </TransitionGroup>
 
       <div v-if="!loading && store.staffRoles.length === 0" class="staff-empty-state" id="staffEmptyState">
-        <div style="font-size:3rem">👥</div>
+        <div class="staff-empty-icon">👥</div>
         <p>Роли пока не созданы</p>
+        <p class="no-data-text">Создайте первую роль, чтобы добавить участников</p>
       </div>
     </div>
   </main>
@@ -273,13 +279,13 @@ onUnmounted(() => {
               <button class="btn btn-secondary btn-sm" id="roleToggleTiersBtn" @click="roleModalToggleTiers()">🎯 Тир: вкл</button>
             </div>
             <div id="rolePlayerList" style="margin-bottom:var(--spacing-md)"></div>
-            <div style="display:flex;gap:var(--spacing-sm);flex-wrap:wrap">
+            <div class="modal-actions-row" style="flex-wrap:wrap">
               <input type="text" id="roleAddPlayerNickname" class="form-input" placeholder="Ник игрока" style="flex:1;min-width:120px">
               <input type="text" id="roleAddPlayerDiscord" class="form-input" placeholder="Discord" style="flex:1;min-width:120px">
               <button class="btn btn-primary btn-sm" id="roleAddPlayerBtn" @click="addPlayerFromRoleModal">➕ Добавить</button>
             </div>
           </div>
-          <div style="display:flex;gap:var(--spacing-sm);margin-top:var(--spacing-md)">
+          <div class="modal-actions-row-spaced">
             <button class="btn btn-secondary" @click="closeAddRoleModal">Отмена</button>
             <button class="btn btn-primary" id="createRoleBtn" @click="createRole">Создать</button>
           </div>
@@ -303,7 +309,7 @@ onUnmounted(() => {
             <label for="playerDiscord">Discord (необязательно):</label>
             <input type="text" id="playerDiscord" class="form-input" placeholder="Username#0000 or username">
           </div>
-          <div style="display:flex;gap:var(--spacing-sm);margin-top:var(--spacing-md)">
+          <div class="modal-actions-row-spaced">
             <button class="btn btn-secondary" @click="closeAddStaffPlayerAndUnlock()">Отмена</button>
             <button class="btn btn-primary" @click="addPlayerToRoleAndClose()">Добавить игрока</button>
           </div>

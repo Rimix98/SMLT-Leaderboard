@@ -31,7 +31,7 @@ onMounted(async () => {
           </p>
           <p class="hero-description">
             Все участники сервера - участники SMLT, независимо от его скилла.
-            Идея нашего сервера - <strong style="color: #4a9eff;">удовольствие</strong>.
+            Идея нашего сервера - <strong class="highlight">удовольствие</strong>.
           </p>
         </div>
       </section>
