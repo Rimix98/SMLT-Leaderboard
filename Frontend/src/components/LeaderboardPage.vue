@@ -254,7 +254,7 @@ function addPlayerAndClose() {
                     {{ index + 1 }}
                   </div>
                   <div class="cell cell-player">
-                    <span class="player-flag"><img v-if="getFlagCode(p.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(p.nationality)}.png`" :alt="getFlagCode(p.nationality).toUpperCase()" width="20" class="flag-img" style="vertical-align:middle;margin-right:4px"><span v-else>{{ !resolveCountry(p.nationality) && p.nationality === null ? '❌' : '🌍' }}</span></span>
+                    <span class="player-flag"><img v-if="getFlagCode(p.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(p.nationality)}.png`" :alt="getFlagCode(p.nationality).toUpperCase()" width="20" loading="lazy" class="flag-img" style="vertical-align:middle;margin-right:4px"><span v-else>{{ !resolveCountry(p.nationality) && p.nationality === null ? '❌' : '🌍' }}</span></span>
                     <div class="player-info">
                       <span class="player-name">{{ p.name }}</span>
                       <span class="player-score">{{ (p.score || 0).toFixed(2) }} pts · #{{ p.rank || '—' }}</span>
@@ -343,7 +343,7 @@ function addPlayerAndClose() {
           <div class="country-list" id="countryList">
             <div v-for="c in countryStats" :key="c.code" class="country-item" style="cursor:pointer" @click="onCountryTop(c.name)">
               <div class="country-info">
-                <span class="country-flag"><img v-if="getFlagCode(c.name)" :src="`https://flagcdn.com/w20/${getFlagCode(c.name)}.png`" :alt="getFlagCode(c.name).toUpperCase()" width="20" class="flag-img" style="vertical-align:middle;margin-right:4px"><span v-else>{{ !resolveCountry(c.name) && c.name === null ? '❌' : '🌍' }}</span></span>
+                <span class="country-flag"><img v-if="getFlagCode(c.name)" :src="`https://flagcdn.com/w20/${getFlagCode(c.name)}.png`" :alt="getFlagCode(c.name).toUpperCase()" width="20" loading="lazy" class="flag-img" style="vertical-align:middle;margin-right:4px"><span v-else>{{ !resolveCountry(c.name) && c.name === null ? '❌' : '🌍' }}</span></span>
                 <span class="country-name">{{ c.displayName }}</span>
               </div>
               <span class="country-count">{{ c.count }}</span>

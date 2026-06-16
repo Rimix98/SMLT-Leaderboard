@@ -330,7 +330,7 @@ function renderParticipants(participants) {
         <div v-for="(project, idx) in store.projects" :key="project.id || idx" class="project-card" style="cursor:pointer" @click="openProjectDetail(project)">
           <template v-if="toYoutubeId11(project.videoId)">
             <div class="project-video">
-              <iframe :src="`https://www.youtube.com/embed/${toYoutubeId11(project.videoId)}?rel=0`" frameborder="0" allowfullscreen
+              <iframe :src="`https://www.youtube.com/embed/${toYoutubeId11(project.videoId)}?rel=0`" frameborder="0" allowfullscreen loading="lazy"
                 allow="accelerometer;clipboard-write;encrypted-media;gyroscope;picture-in-picture;web-share"
                 referrerpolicy="strict-origin-when-cross-origin"></iframe>
             </div>

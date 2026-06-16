@@ -292,6 +292,51 @@ var defaultPlayerNames = []string{
 var errRateLimitExceeded = fmt.Errorf("rate limit exceeded")
 
 // ──────────────────────────────────────────────
+// IN-MEMORY CACHE
+// ──────────────────────────────────────────────
+
+type cacheEntry struct {
+	data      []byte
+	expiresAt time.Time
+}
+
+type responseCache struct {
+	mu      sync.RWMutex
+	entries map[string]*cacheEntry
+}
+
+var apiCache = &responseCache{entries: make(map[string]*cacheEntry)}
+
+func cacheGet(key string) ([]byte, bool) {
+	apiCache.mu.RLock()
+	defer apiCache.mu.RUnlock()
+	e, ok := apiCache.entries[key]
+	if !ok || time.Now().After(e.expiresAt) {
+		return nil, false
+	}
+	return e.data, true
+}
+
+func cacheSet(key string, data []byte, ttl time.Duration) {
+	apiCache.mu.Lock()
+	defer apiCache.mu.Unlock()
+	apiCache.entries[key] = &cacheEntry{
+		data:      data,
+		expiresAt: time.Now().Add(ttl),
+	}
+}
+
+func cacheInvalidate(prefix string) {
+	apiCache.mu.Lock()
+	defer apiCache.mu.Unlock()
+	for k := range apiCache.entries {
+		if strings.HasPrefix(k, prefix) {
+			delete(apiCache.entries, k)
+		}
+	}
+}
+
+// ──────────────────────────────────────────────
 // INIT
 // ──────────────────────────────────────────────
 
@@ -945,7 +990,7 @@ var blockedBotPatterns = []string{
 	"sitecopy",
 	"httrack",
 	"clixboard",
-	"cms探测",
+	"cms",
 	"nmap",
 	"zmap",
 	"unicornsql",
@@ -1752,6 +1797,15 @@ func handleGetProjects(w http.ResponseWriter, r *http.Request) {
 	if !requireFirestore(w) {
 		return
 	}
+
+	if cached, ok := cacheGet("projects"); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=120")
+		w.Header().Set("X-Cache", "HIT")
+		w.Write(cached)
+		return
+	}
+
 	ctx := r.Context()
 	iter := fsClient.Collection("projects").Documents(ctx)
 	projects := make([]Project, 0)
@@ -1771,7 +1825,12 @@ func handleGetProjects(w http.ResponseWriter, r *http.Request) {
 		}
 		projects = append(projects, p)
 	}
-	writeJSON(w, projects)
+	body, _ := json.Marshal(projects)
+	cacheSet("projects", body, 2*time.Minute)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=120")
+	w.Header().Set("X-Cache", "MISS")
+	w.Write(body)
 }
 
 func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
@@ -1869,6 +1928,7 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		Action:  "projects.save",
 		Details: map[string]int{"count": len(projectList)},
 	})
+	cacheInvalidate("projects")
 	writeJSON(w, map[string]bool{"success": true})
 }
 
@@ -2101,6 +2161,15 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
+
+	if cached, ok := cacheGet("leaderboard"); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=120")
+		w.Header().Set("X-Cache", "HIT")
+		w.Write(cached)
+		return
+	}
+
 	ctx := r.Context()
 	players := playersForLeaderboard(ctx)
 
@@ -2153,7 +2222,13 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 	}
 	close(jobs)
 	wg.Wait()
-	writeJSON(w, result)
+
+	body, _ := json.Marshal(result)
+	cacheSet("leaderboard", body, 2*time.Minute)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=120")
+	w.Header().Set("X-Cache", "MISS")
+	w.Write(body)
 }
 
 // ──────────────────────────────────────────────
@@ -2208,6 +2283,7 @@ func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
 		Action:  "players.save",
 		Details: map[string]int{"count": len(players)},
 	})
+	cacheInvalidate("leaderboard")
 	writeJSON(w, map[string]bool{"success": true})
 }
 
@@ -2277,6 +2353,7 @@ func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
 		Action:  "players.delete",
 		Details: map[string]string{"name": req.Name},
 	})
+	cacheInvalidate("leaderboard")
 	writeJSON(w, map[string]bool{"success": true})
 }
 
@@ -2292,6 +2369,15 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 	if !requireFirestore(w) {
 		return
 	}
+
+	if cached, ok := cacheGet("staff"); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=120")
+		w.Header().Set("X-Cache", "HIT")
+		w.Write(cached)
+		return
+	}
+
 	ctx := r.Context()
 	doc, err := fsClient.Collection("config").Doc("staff").Get(ctx)
 	if err != nil {
@@ -2311,7 +2397,12 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
-	writeJSON(w, data.Roles)
+	body, _ := json.Marshal(data.Roles)
+	cacheSet("staff", body, 2*time.Minute)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=120")
+	w.Header().Set("X-Cache", "MISS")
+	w.Write(body)
 }
 
 func handleSaveStaff(w http.ResponseWriter, r *http.Request) {
@@ -2366,6 +2457,7 @@ func handleSaveStaff(w http.ResponseWriter, r *http.Request) {
 		Action:  "staff.save",
 		Details: map[string]int{"count": len(roles)},
 	})
+	cacheInvalidate("staff")
 	writeJSON(w, map[string]bool{"success": true})
 }
 
@@ -2431,6 +2523,7 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 			"nickname":  req.Nickname,
 		},
 	})
+	cacheInvalidate("staff")
 	writeJSON(w, map[string]interface{}{
 		"success":  true,
 		"nickname": req.Nickname,
@@ -2501,6 +2594,7 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 
 		Details: map[string]string{"name": req.Name, "color": req.Color},
 	})
+	cacheInvalidate("staff")
 	writeJSON(w, map[string]interface{}{
 		"success": true,
 		"name":    req.Name,
@@ -2553,6 +2647,7 @@ func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 
 		Details: map[string]int{"roleIndex": req.RoleIndex},
 	})
+	cacheInvalidate("staff")
 	writeJSON(w, map[string]bool{"success": true})
 }
 
@@ -2630,6 +2725,7 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 
 		Details: map[string]interface{}{"roleIndex": req.RoleIndex, "name": req.Name, "color": req.Color},
 	})
+	cacheInvalidate("staff")
 	writeJSON(w, map[string]bool{"success": true})
 }
 
@@ -2707,6 +2803,7 @@ func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 			"nickname":  req.Nickname,
 		},
 	})
+	cacheInvalidate("staff")
 	writeJSON(w, map[string]bool{"success": true})
 }
 
@@ -2767,6 +2864,7 @@ func handleReorderStaffRoles(w http.ResponseWriter, r *http.Request) {
 			"direction": req.Direction,
 		},
 	})
+	cacheInvalidate("staff")
 	writeJSON(w, map[string]bool{"success": true})
 }
 
@@ -2916,6 +3014,7 @@ func handleSetStaffTier(w http.ResponseWriter, r *http.Request) {
 			"tier":     req.Tier,
 		},
 	})
+	cacheInvalidate("staff")
 	writeJSON(w, map[string]bool{"success": true})
 }
 
@@ -3345,28 +3444,28 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mux := map[string]http.HandlerFunc{
-		"/api/captcha":           rateLimitMiddleware(30)(handleCaptcha),
-		"/api/login":             rateLimitLoginMiddleware(handleLogin),
-		"/api/logout":            rateLimitLoginMiddleware(handleLogout),
-		"/api/verify":            rateLimitMiddleware(60)(handleVerify),
-		"/api/csrf-token":        rateLimitMiddleware(30)(handleGetCSRFToken),
-		"/api/auth/refresh":      rateLimitMiddleware(10)(handleRefreshToken),
-		"/api/leaderboard":       rateLimitMiddleware(30)(handleLeaderboard),
-		"/api/staff":             rateLimitMiddleware(60)(handleGetStaff),
+		"/api/captcha":            rateLimitMiddleware(30)(handleCaptcha),
+		"/api/login":              rateLimitLoginMiddleware(handleLogin),
+		"/api/logout":             rateLimitLoginMiddleware(handleLogout),
+		"/api/verify":             rateLimitMiddleware(60)(handleVerify),
+		"/api/csrf-token":         rateLimitMiddleware(30)(handleGetCSRFToken),
+		"/api/auth/refresh":       rateLimitMiddleware(10)(handleRefreshToken),
+		"/api/leaderboard":        rateLimitMiddleware(30)(handleLeaderboard),
+		"/api/staff":              rateLimitMiddleware(60)(handleGetStaff),
 		"/api/security/dashboard": rateLimitMiddleware(10)(authMiddleware(handleSecurityDashboard)),
-		"/api/knock-knock-admin": rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleAdminKnock))),
-		"/api/staff/add":         rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd)))),
-		"/api/staff/role":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRole)))),
-		"/api/staff/remove":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRemove)))),
-		"/api/staff/reorder":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleReorderStaffRoles)))),
-		"/api/staff/tiers":       rateLimitMiddleware(60)(handleGetStaffTiers),
-		"/api/staff/tier":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSetStaffTier)))),
-		"/api/staff/save":        rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveStaff)))),
-		"/api/projects":          rateLimitMiddleware(60)(handleGetProjects),
-		"/api/projects/save":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveProjects)))),
-		"/api/players":           rateLimitMiddleware(60)(handleGetPlayers),
-		"/api/players/save":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSavePlayers)))),
-		"/api/players/delete":    rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),
+		"/api/knock-knock-admin":  rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleAdminKnock))),
+		"/api/staff/add":          rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd)))),
+		"/api/staff/role":         rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRole)))),
+		"/api/staff/remove":       rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRemove)))),
+		"/api/staff/reorder":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleReorderStaffRoles)))),
+		"/api/staff/tiers":        rateLimitMiddleware(60)(handleGetStaffTiers),
+		"/api/staff/tier":         rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSetStaffTier)))),
+		"/api/staff/save":         rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveStaff)))),
+		"/api/projects":           rateLimitMiddleware(60)(handleGetProjects),
+		"/api/projects/save":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveProjects)))),
+		"/api/players":            rateLimitMiddleware(60)(handleGetPlayers),
+		"/api/players/save":       rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSavePlayers)))),
+		"/api/players/delete":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),
 	}
 
 	h, ok := mux[path]
