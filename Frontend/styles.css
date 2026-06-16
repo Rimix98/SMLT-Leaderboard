@@ -128,8 +128,7 @@ body.home-page #app::before {
     z-index: -1;
 }
 
-body.home-page .nav-card,
-body.home-page .info-card {
+body.home-page .nav-card {
     position: relative;
     z-index: 1;
     background: rgba(34, 34, 34, 0.25);
@@ -138,19 +137,44 @@ body.home-page .info-card {
     border-color: rgba(255, 255, 255, 0.1);
 }
 
-[data-theme="light"] body.home-page .nav-card,
-[data-theme="light"] body.home-page .info-card {
+body.home-page .info-card {
+    position: relative;
+    z-index: 1;
+    background: rgba(34, 34, 34, 0.15);
+    backdrop-filter: blur(50px) saturate(180%);
+    -webkit-backdrop-filter: blur(50px) saturate(180%);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="light"] body.home-page .nav-card {
     background: rgba(255, 255, 255, 0.25);
     backdrop-filter: blur(40px) saturate(180%);
     -webkit-backdrop-filter: blur(40px) saturate(180%);
     border-color: rgba(0, 0, 0, 0.1);
 }
 
-[data-theme="gray"] body.home-page .nav-card,
-[data-theme="gray"] body.home-page .info-card {
+[data-theme="light"] body.home-page .info-card {
+    position: relative;
+    z-index: 1;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(50px) saturate(180%);
+    -webkit-backdrop-filter: blur(50px) saturate(180%);
+    border-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="gray"] body.home-page .nav-card {
     background: rgba(54, 54, 54, 0.25);
     backdrop-filter: blur(40px) saturate(180%);
     -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="gray"] body.home-page .info-card {
+    position: relative;
+    z-index: 1;
+    background: rgba(54, 54, 54, 0.15);
+    backdrop-filter: blur(50px) saturate(180%);
+    -webkit-backdrop-filter: blur(50px) saturate(180%);
     border-color: rgba(255, 255, 255, 0.1);
 }
 
