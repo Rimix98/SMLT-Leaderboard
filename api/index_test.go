@@ -673,3 +673,39 @@ func TestHandler_NotFound(t *testing.T) {
 		t.Errorf("unknown route should return 404, got %d", w.Code)
 	}
 }
+
+// ──────────────────────────────────────────────
+// normalizeColor
+// ──────────────────────────────────────────────
+
+func TestNormalizeColor(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantColor string
+		wantErr   bool
+	}{
+		{"empty defaults to blue", "", "#3b82f6", false},
+		{"valid with hash", "#ff0000", "#ff0000", false},
+		{"valid without hash", "ff0000", "#ff0000", false},
+		{"valid uppercase", "#00FF00", "#00FF00", false},
+		{"valid mixed case", "Aa1b2C", "#Aa1b2C", false},
+		{"invalid hex", "red", "", true},
+		{"too short", "#fff", "", true},
+		{"too long", "#ffffff00", "", true},
+		{"special chars", "#gggggg", "", true},
+		{"spaces", "#ff 00 00", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeColor(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("normalizeColor(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if got != tt.wantColor {
+				t.Errorf("normalizeColor(%q) = %q, want %q", tt.input, got, tt.wantColor)
+			}
+		})
+	}
+}

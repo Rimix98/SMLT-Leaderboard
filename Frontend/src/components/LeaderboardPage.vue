@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { store, initTheme } from '../store'
 import { refreshCsrfToken, resolveCountry, CODE_TO_NAME, getFlagCode } from '../api/utils'
+import { makeOverlayClose } from '../utils/modal'
 import AppShell from './AppShell.vue'
 import {
   loadAllPlayers,
@@ -110,22 +111,6 @@ onMounted(async () => {
 
 function retryLoad() {
   loadLeaderboard()
-}
-
-// Modal close helpers: only close if mousedown AND mouseup are on overlay
-function makeOverlayClose(closeFn) {
-  let mousedownOverlay = false
-  return {
-    onMousedown(e) {
-      mousedownOverlay = e.target === e.currentTarget
-    },
-    onMouseup(e) {
-      if (mousedownOverlay && e.target === e.currentTarget) {
-        closeFn()
-      }
-      mousedownOverlay = false
-    }
-  }
 }
 
 const profileModalClose = makeOverlayClose(() => {

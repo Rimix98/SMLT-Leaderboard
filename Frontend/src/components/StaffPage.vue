@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { store, initTheme } from '../store'
 import { refreshCsrfToken } from '../api/utils'
+import { makeOverlayClose } from '../utils/modal'
 import AppShell from './AppShell.vue'
 import {
   loadStaffRoles,
@@ -27,22 +28,6 @@ import {
   destroyStaffDelegation,
   syncDiscordRoles,
 } from '../api/staff'
-
-// Modal close helpers with mousedown/mouseup tracking
-function makeOverlayClose(closeFn) {
-  let mousedownOverlay = false
-  return {
-    onMousedown(e) {
-      mousedownOverlay = e.target === e.currentTarget
-    },
-    onMouseup(e) {
-      if (mousedownOverlay && e.target === e.currentTarget) {
-        closeFn()
-      }
-      mousedownOverlay = false
-    }
-  }
-}
 
 const addRoleClose = makeOverlayClose(() => {
   closeAddRoleModal()
@@ -94,6 +79,8 @@ const totalUniqueParticipants = computed(() => {
 
 const totalRoles = computed(() => store.staffRoles.length)
 
+const loading = ref(true)
+
 const tierCounts = computed(() => {
   const counts = { priority: 0, base: 0, reserve: 0, na: 0 }
   store.staffRoles.forEach(role => {
@@ -109,6 +96,7 @@ onMounted(async () => {
   initTheme()
   await refreshCsrfToken()
   await Promise.all([loadStaffRoles(), loadStaffTiers()])
+  loading.value = false
   initStaffDelegation()
 })
 
@@ -194,7 +182,7 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <div id="staffLoadingState" class="loading-state" v-if="store.staffRoles.length === 0">
+      <div id="staffLoadingState" class="loading-state" v-if="loading && store.staffRoles.length === 0">
         <div class="spinner"></div>
         <div class="loading-text">Загрузка состава...</div>
       </div>
@@ -245,7 +233,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="store.staffRoles.length === 0" class="staff-empty-state" id="staffEmptyState">
+      <div v-if="!loading && store.staffRoles.length === 0" class="staff-empty-state" id="staffEmptyState">
         <div style="font-size:3rem">👥</div>
         <p>Роли пока не созданы</p>
       </div>

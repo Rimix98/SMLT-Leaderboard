@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, provide, watch, nextTick } from 'vue'
 import { store, setTheme } from '../store'
 import { initHostStatus, initCaptcha, verifyHost, logoutHost } from '../api/auth'
 import { refreshCsrfToken } from '../api/utils'
+import { makeOverlayClose } from '../utils/modal'
 
 const props = defineProps({ page: { type: String, default: '' } })
 
@@ -47,22 +48,6 @@ const hostPassword = ref('')
 const captchaValue = ref('')
 const hostError = ref('')
 const infoModalOpen = ref(false)
-
-// Modal close helpers: track mousedown on overlay
-function makeOverlayClose(closeFn) {
-  let mousedownOverlay = false
-  return {
-    onMousedown(e) {
-      mousedownOverlay = e.target === e.currentTarget
-    },
-    onMouseup(e) {
-      if (mousedownOverlay && e.target === e.currentTarget) {
-        closeFn()
-      }
-      mousedownOverlay = false
-    }
-  }
-}
 
 const hostClose = makeOverlayClose(closeHostModal)
 const infoClose = makeOverlayClose(closeInfoModal)

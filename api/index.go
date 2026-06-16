@@ -2429,14 +2429,12 @@ func handleSaveStaff(w http.ResponseWriter, r *http.Request) {
 			sendError(w, http.StatusBadRequest, "Некорректные данные")
 			return
 		}
-		if roles[i].Color == "" {
-			roles[i].Color = "#3b82f6"
-		} else if !reHexColor.MatchString(roles[i].Color) {
+		c, err := normalizeColor(roles[i].Color)
+		if err != nil {
 			sendError(w, http.StatusBadRequest, "Некорректный цвет")
 			return
-		} else if !strings.HasPrefix(roles[i].Color, "#") {
-			roles[i].Color = "#" + roles[i].Color
 		}
+		roles[i].Color = c
 		for j := range roles[i].Players {
 			roles[i].Players[j].Nickname = sanitizeString(roles[i].Players[j].Nickname)
 			roles[i].Players[j].Discord = sanitizeString(roles[i].Players[j].Discord)
@@ -2553,18 +2551,16 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "Некорректные данные")
 		return
 	}
-	if req.Color == "" {
-		req.Color = "#3b82f6"
-	} else if !reHexColor.MatchString(req.Color) {
+	c, err := normalizeColor(req.Color)
+	if err != nil {
 		sendError(w, http.StatusBadRequest, "Некорректный цвет")
 		return
-	} else if !strings.HasPrefix(req.Color, "#") {
-		req.Color = "#" + req.Color
 	}
+	req.Color = c
 
 	ctx := r.Context()
 	newRole := StaffRole{Name: req.Name, Color: req.Color, Players: []StaffPlayer{}}
-	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+	err = fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		docRef := fsClient.Collection("config").Doc("staff")
 		doc, err := tx.Get(docRef)
 		var data struct {
@@ -2676,17 +2672,15 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "Некорректные данные")
 		return
 	}
-	if req.Color == "" {
-		req.Color = "#3b82f6"
-	} else if !reHexColor.MatchString(req.Color) {
+	c, err := normalizeColor(req.Color)
+	if err != nil {
 		sendError(w, http.StatusBadRequest, "Некорректный цвет")
 		return
-	} else if !strings.HasPrefix(req.Color, "#") {
-		req.Color = "#" + req.Color
 	}
+	req.Color = c
 
 	ctx := r.Context()
-	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+	err = fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		docRef := fsClient.Collection("config").Doc("staff")
 		doc, err := tx.Get(docRef)
 		if err != nil {
@@ -3057,6 +3051,76 @@ func validateRoleName(n string) error {
 		return errors.New("invalid role name characters")
 	}
 	return nil
+}
+
+// ──────────────────────────────────────────────
+// COLOR NORMALIZATION
+// ──────────────────────────────────────────────
+
+func normalizeColor(color string) (string, error) {
+	if color == "" {
+		return "#3b82f6", nil
+	}
+	if !reHexColor.MatchString(color) {
+		return "", errors.New("некорректный цвет")
+	}
+	if !strings.HasPrefix(color, "#") {
+		return "#" + color, nil
+	}
+	return color, nil
+}
+
+// ──────────────────────────────────────────────
+// STAFF CONFIG HELPERS
+// ──────────────────────────────────────────────
+
+type staffData struct {
+	Roles []StaffRole `json:"roles" firestore:"roles"`
+}
+
+func readStaffConfig(ctx context.Context) (*staffData, error) {
+	docRef := fsClient.Collection("config").Doc("staff")
+	doc, err := docRef.Get(ctx)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return &staffData{Roles: []StaffRole{}}, nil
+		}
+		return nil, err
+	}
+	var data staffData
+	if err := doc.DataTo(&data); err != nil {
+		return &staffData{Roles: []StaffRole{}}, nil
+	}
+	return &data, nil
+}
+
+func writeStaffConfig(ctx context.Context, data *staffData) error {
+	docRef := fsClient.Collection("config").Doc("staff")
+	_, err := docRef.Set(ctx, data, firestore.Merge(firestore.FieldPath{"roles"}))
+	return err
+}
+
+func updateStaffConfig(ctx context.Context, fn func(data *staffData) error) error {
+	return fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("staff")
+		doc, err := tx.Get(docRef)
+		var data staffData
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				data.Roles = []StaffRole{}
+			} else {
+				return err
+			}
+		} else {
+			if err := doc.DataTo(&data); err != nil {
+				data.Roles = []StaffRole{}
+			}
+		}
+		if err := fn(&data); err != nil {
+			return err
+		}
+		return tx.Set(docRef, data, firestore.Merge(firestore.FieldPath{"roles"}))
+	})
 }
 
 // ──────────────────────────────────────────────
