@@ -85,6 +85,10 @@ type AuditEntry struct {
 	CreatedAt time.Time   `json:"createdAt" firestore:"createdAt"`
 }
 
+type errValidation struct{ msg string }
+
+func (e errValidation) Error() string { return e.msg }
+
 type jwtKey struct {
 	Secret []byte
 	ID     string
@@ -2766,6 +2770,7 @@ func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "Кривой JSON")
 		return
 	}
+
 	ctx := r.Context()
 	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		docRef := fsClient.Collection("config").Doc("staff")
@@ -2780,14 +2785,18 @@ func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		if req.RoleIndex < 0 || req.RoleIndex >= len(data.Roles) {
-			return errors.New("invalid role index")
+			return errValidation{"invalid role index"}
 		}
 		data.Roles = append(data.Roles[:req.RoleIndex], data.Roles[req.RoleIndex+1:]...)
 		return tx.Set(docRef, data, firestore.Merge(firestore.FieldPath{"roles"}))
 	})
 	if err != nil {
-		log.Printf("[staff] delete role: %v", err)
-		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		if _, ok := err.(errValidation); ok {
+			sendError(w, http.StatusBadRequest, "Неверный индекс роли")
+		} else {
+			log.Printf("[staff] delete role: %v", err)
+			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		}
 		return
 	}
 	auditLog(r.Context(), AuditEntry{
@@ -2920,7 +2929,7 @@ func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		if req.RoleIndex < 0 || req.RoleIndex >= len(data.Roles) {
-			return errors.New("invalid role index")
+			return errValidation{"invalid role index"}
 		}
 		players := data.Roles[req.RoleIndex].Players
 		found := false
@@ -2932,13 +2941,21 @@ func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !found {
-			return errors.New("player not found")
+			return errValidation{"player not found"}
 		}
 		return tx.Set(docRef, data, firestore.Merge(firestore.FieldPath{"roles"}))
 	})
 	if err != nil {
-		log.Printf("[staff] remove player: %v", err)
-		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		if ve, ok := err.(errValidation); ok {
+			if ve.msg == "invalid role index" {
+				sendError(w, http.StatusBadRequest, "Неверный индекс роли")
+			} else {
+				sendError(w, http.StatusNotFound, "Игрок не найден")
+			}
+		} else {
+			log.Printf("[staff] remove player: %v", err)
+			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		}
 		return
 	}
 	auditLog(r.Context(), AuditEntry{
