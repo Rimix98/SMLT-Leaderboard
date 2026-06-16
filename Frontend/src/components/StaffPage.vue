@@ -26,7 +26,6 @@ import {
   addPlayerToRole,
   initStaffDelegation,
   destroyStaffDelegation,
-  syncDiscordRoles,
 } from '../api/staff'
 
 const addRoleClose = makeOverlayClose(() => {
@@ -124,7 +123,6 @@ onUnmounted(() => {
         <div class="admin-panel-header">👑 Управление ролями</div>
         <div class="admin-panel-content">
           <button class="btn btn-primary" @click="openAddRole()">➕ Создать роль</button>
-          <button class="btn btn-secondary" @click="syncDiscordRoles()">🔄 Синхронизировать Discord</button>
         </div>
       </div>
 
