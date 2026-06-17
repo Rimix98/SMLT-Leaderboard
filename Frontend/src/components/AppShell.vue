@@ -145,7 +145,7 @@ provide('openHostModal', openHostModal)
   </header>
 
   <Teleport to="body">
-    <div class="roki-credit">Roki навсегда будет в наших сердцах ❤</div>
+    <div class="roki-credit">Roki самый добый во всём SMLT</div>
   </Teleport>
   <Teleport to="body">
     <div class="modal-overlay" :class="{ active: hostModalOpen }" @mousedown="hostClose.onMousedown" @mouseup="hostClose.onMouseup">

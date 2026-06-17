@@ -1,90 +1,58 @@
 SMLT-Leaderboard/
 ├── .gitignore
-├── .qodo/
-│   ├── agents/              
-│   └── workflows/           
-├── .vercel/
-│   ├── project.json
-│   └── README.txt
 ├── .vscode/
 │   └── settings.json
+├── 404.html
 ├── api/
-│   └── index.go
-├── coverage/                
-├── docs/
-│   └── screenshots/
-│       └── .gitkeep
+│   ├── index.go (3418 lines)
+│   └── index_test.go (744 lines)
+├── cmd/
+│   └── server/
+│       └── main.go
 ├── favicon.ico
 ├── Frontend/
-│   ├── app.js
+│   ├── 404.html
 │   ├── Background_Image_DarkMode.png
+│   ├── Background_Image_GreyMode.png
 │   ├── Background_Image_WhiteMode.png
-│   ├── dist/
-│   │   ├── assets/
-│   │   │   ├── AppShell-DQVj41Kp.js
-│   │   │   ├── AppShell-Du_De9q-.js
-│   │   │   ├── AppShell-QVpu2lU-.js
-│   │   │   ├── Background_Image_DarkMode-CPU0gNXj.png
-│   │   │   ├── Background_Image_WhiteMode-BIlBfokv.png
-│   │   │   ├── favicon-nIbJ8Qjl.ico
-│   │   │   ├── index--Q1n7TCf.js
-│   │   │   ├── index-BEw04m0H.js
-│   │   │   ├── index-C5SBWkWY.js
-│   │   │   ├── index-Cq0TdkZh.js
-│   │   │   ├── index-DqzakbTC.js
-│   │   │   ├── index-eNe4ivFG.js
-│   │   │   ├── index-ONBWSLQ3.js
-│   │   │   ├── leaderboard-B0dBBqSg.js
-│   │   │   ├── leaderboard-Ba6pEB5R.js
-│   │   │   ├── leaderboard-CBny9yq3.js
-│   │   │   ├── projects-5uOg6ePy.js
-│   │   │   ├── projects-DsCNU7LR.js
-│   │   │   ├── projects-lrl_FYnM.js
-│   │   │   ├── staff--BBdxF7Y.js
-│   │   │   ├── staff-5tKEbQIZ.js
-│   │   │   ├── staff-BkKS87Ls.js
-│   │   │   ├── staff-BVM3xM1l.js
-│   │   │   ├── staff-CgEBfAVn.js
-│   │   │   ├── staff-CNMndBNT.js
-│   │   │   ├── style-CEVummLu.css
-│   │   │   └── style-CQG5M--8.css
-│   │   ├── index.html
-│   │   ├── leaderboard.html
-│   │   ├── projects.html
-│   │   └── staff.html
 │   ├── favicon.ico
 │   ├── index.html
-│   ├── js/                   
 │   ├── leaderboard.html
-│   ├── package.json
-│   ├── package-lock.json
 │   ├── projects.html
-│   ├── public/               
-│   ├── src/
-│   │   ├── api/
-│   │   │   ├── auth.js
-│   │   │   ├── leaderboard.js
-│   │   │   ├── projects.js
-│   │   │   ├── staff.js
-│   │   │   └── utils.js
-│   │   ├── components/
-│   │   │   ├── AppShell.vue
-│   │   │   ├── HomePage.vue
-│   │   │   ├── LeaderboardPage.vue
-│   │   │   ├── ProjectsPage.vue
-│   │   │   └── StaffPage.vue
-│   │   ├── composables/      
-│   │   ├── main.home.js
-│   │   ├── main.leaderboard.js
-│   │   ├── main.projects.js
-│   │   ├── main.staff.js
-│   │   ├── pages/            
-│   │   └── store.js
 │   ├── staff.html
-│   ├── styles.css
-│   └── vite.config.js
+│   ├── package.json
+│   ├── styles.css (2450 lines)
+│   ├── vite.config.js
+│   └── src/
+│       ├── App.vue
+│       ├── main.js
+│       ├── main.home.js
+│       ├── main.leaderboard.js
+│       ├── main.projects.js
+│       ├── main.staff.js
+│       ├── router.js
+│       ├── store.js
+│       ├── va-init.js
+│       ├── api/
+│       │   ├── auth.js
+│       │   ├── leaderboard.js
+│       │   ├── projects.js
+│       │   ├── staff.js (780 lines)
+│       │   └── utils.js
+│       ├── components/
+│       │   ├── AppShell.vue
+│       │   ├── HomePage.vue
+│       │   ├── LeaderboardPage.vue
+│       │   ├── ProjectsPage.vue
+│       │   └── StaffPage.vue
+│       └── utils/
+│           ├── debounce.js
+│           └── modal.js
 ├── go.mod
 ├── go.sum
+├── project_tree.txt
 ├── README.md
 ├── SECURITY.md
+├── scripts/
+│   └── audit.sh
 └── vercel.json
