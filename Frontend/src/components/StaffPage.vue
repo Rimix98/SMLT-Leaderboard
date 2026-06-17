@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { store, initTheme } from '../store'
-import { refreshCsrfToken } from '../api/utils'
+import { store } from '../store'
 import { makeOverlayClose } from '../utils/modal'
 import AppShell from './AppShell.vue'
 import {
@@ -92,8 +91,6 @@ const tierCounts = computed(() => {
 })
 
 onMounted(async () => {
-  initTheme()
-  await refreshCsrfToken()
   await Promise.all([loadStaffRoles(), loadStaffTiers()])
   loading.value = false
   initStaffDelegation()
@@ -105,7 +102,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <AppShell page="staff">
+  <AppShell>
     <template #brand>
       <span class="header-logo">👥</span>
       <div class="header-title">

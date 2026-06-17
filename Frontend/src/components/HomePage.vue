@@ -1,17 +1,9 @@
 <script setup>
-import { onMounted } from 'vue'
-import { store, initTheme } from '../store'
-import { refreshCsrfToken } from '../api/utils'
 import AppShell from './AppShell.vue'
-
-onMounted(async () => {
-  initTheme()
-  await refreshCsrfToken()
-})
 </script>
 
 <template>
-  <AppShell page="home">
+  <AppShell>
     <template #brand>
       <div class="header-title">
         <h1>SMLT</h1>
@@ -37,21 +29,21 @@ onMounted(async () => {
       </section>
 
       <section class="nav-buttons">
-        <a href="leaderboard.html" class="nav-card">
+        <router-link to="/leaderboard" class="nav-card">
           <span class="nav-card-icon">🏆</span>
           <span class="nav-card-title">Лидерборд</span>
           <span class="nav-card-desc">Лучшие слееры SMLT</span>
-        </a>
-        <a href="projects.html" class="nav-card">
+        </router-link>
+        <router-link to="/projects" class="nav-card">
           <span class="nav-card-icon">📁</span>
           <span class="nav-card-title">Проекты SMLT</span>
           <span class="nav-card-desc">Коллабы SMLT</span>
-        </a>
-        <a href="staff.html" class="nav-card">
+        </router-link>
+        <router-link to="/staff" class="nav-card">
           <span class="nav-card-icon">👥</span>
           <span class="nav-card-title">Стафф SMLT</span>
           <span class="nav-card-desc">Состав команды</span>
-        </a>
+        </router-link>
       </section>
 
       <section class="info-section">

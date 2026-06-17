@@ -33,10 +33,6 @@ func main() {
 			handler.Handler(w, r)
 			return
 		}
-		if r.URL.Path == "/" {
-			http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
-			return
-		}
 
 		cleaned := filepath.Clean(r.URL.Path)
 		resolved := filepath.Join(staticDir, cleaned)
@@ -50,6 +46,7 @@ func main() {
 			fileSrv.ServeHTTP(w, r)
 			return
 		}
+
 		http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
 	})
 

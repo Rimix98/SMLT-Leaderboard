@@ -1,7 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { store, initTheme } from '../store'
-import { refreshCsrfToken } from '../api/utils'
+import { store } from '../store'
 import AppShell from './AppShell.vue'
 import {
   loadProjects,
@@ -32,8 +31,6 @@ const editingIdx = ref(-1)
 const loading = ref(true)
 
 onMounted(async () => {
-  initTheme()
-  await refreshCsrfToken()
   await Promise.all([loadProjects(), loadStaffRoles()])
   loading.value = false
 })
@@ -290,7 +287,7 @@ function renderParticipants(participants) {
 </script>
 
 <template>
-  <AppShell page="projects">
+  <AppShell>
     <template #brand>
       <span class="header-logo">📁</span>
       <div class="header-title">

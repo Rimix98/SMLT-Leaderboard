@@ -1,11 +1,13 @@
 <script setup>
-import { ref, onMounted, onUnmounted, provide, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, provide, watch, nextTick, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { store, setTheme } from '../store'
 import { initHostStatus, initCaptcha, verifyHost, logoutHost } from '../api/auth'
 import { refreshCsrfToken } from '../api/utils'
 import { makeOverlayClose } from '../utils/modal'
 
-const props = defineProps({ page: { type: String, default: '' } })
+const route = useRoute()
+const currentPage = computed(() => route.name)
 
 const themeOpen = ref(false)
 const themeBtnRef = ref(null)
@@ -38,7 +40,7 @@ function updateNavIndicator() {
   }
 }
 
-watch(() => props.page, () => {
+watch(() => route.name, () => {
   nextTick(updateNavIndicator)
 })
 
@@ -132,10 +134,10 @@ provide('openHostModal', openHostModal)
       </div>
       <nav class="header-nav" ref="navRef">
         <div class="nav-indicator" :style="navIndicatorStyle"></div>
-        <a href="index.html" class="nav-link" :class="{ active: props.page === 'home' }">Главная</a>
-        <a href="leaderboard.html" class="nav-link" :class="{ active: props.page === 'leaderboard' }">Лидерборд</a>
-        <a href="projects.html" class="nav-link" :class="{ active: props.page === 'projects' }">Проекты</a>
-        <a href="staff.html" class="nav-link" :class="{ active: props.page === 'staff' }">Стафф</a>
+        <router-link to="/" class="nav-link" :class="{ active: currentPage === 'home' }">Главная</router-link>
+        <router-link to="/leaderboard" class="nav-link" :class="{ active: currentPage === 'leaderboard' }">Лидерборд</router-link>
+        <router-link to="/projects" class="nav-link" :class="{ active: currentPage === 'projects' }">Проекты</router-link>
+        <router-link to="/staff" class="nav-link" :class="{ active: currentPage === 'staff' }">Стафф</router-link>
       </nav>
       <div class="header-actions">
         <button class="btn btn-secondary btn-lg" @click="openInfoModal">ℹ️ Информация</button>

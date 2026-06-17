@@ -1,5 +1,5 @@
 import { store } from '../store'
-import { fetchWithAbort, parseJsonResponse, isAbortError, API_BASE, BACKEND_URL, doAdminKnock, tokens, showToast, createFlagElement } from './utils'
+import { fetchWithAbort, parseJsonResponse, isAbortError, API_BASE, BACKEND_URL, doAdminKnock, tokens, showToast } from './utils'
 
 const DEFAULT_PLAYER_NAMES = [
   "samoletik", "paradoxiz", "clokman", "itzslxnq", "H30n41k_GmD",
@@ -99,10 +99,6 @@ function mapLeaderboardEntry(p) {
   }
 }
 
-function hasLeaderboardData(resData) {
-  return Array.isArray(resData)
-}
-
 let _loadingLeaderboard = false
 
 export async function loadAllPlayers() {
@@ -114,7 +110,7 @@ export async function loadAllPlayers() {
     const res = await fetchWithAbort('/api/leaderboard', {}, 'leaderboard')
     if (res.ok) {
       const responseData = await parseJsonResponse(res)
-      if (hasLeaderboardData(responseData)) playersToMap = responseData
+      if (Array.isArray(responseData)) playersToMap = responseData
     }
 
     if (playersToMap.length === 0) {
@@ -182,7 +178,7 @@ export function filterPlayers(query) {
   }
 }
 
-export function renderHardestLevels() {
+function renderHardestLevels() {
   const levelMap = new Map()
 
   store.players.forEach(player => {
@@ -242,249 +238,8 @@ export function filterLevels(query) {
   store.levels.filter = query
 }
 
-export function showLevelVictors(levelId) {
-  const levelData = store.levels.levelData?.get(String(levelId))
-  if (!levelData) return
-
-  const modal = document.getElementById('levelModal')
-  const title = document.getElementById('levelTitle')
-  const body = document.getElementById('levelBody')
-  if (!modal || !title || !body) return
-
-  title.textContent = `🏆 ${levelData.name} #${levelData.placement}`
-  while (body.firstChild) body.firstChild.remove()
-
-  if (levelData.victors.length === 0) {
-    const p = document.createElement('p')
-    p.style.cssText = 'color: var(--color-text-muted);'
-    p.textContent = 'Нет викторов'
-    body.appendChild(p)
-    modal.classList.add('active')
-    return
-  }
-
-  const list = document.createElement('div')
-  list.className = 'level-victors-list'
-  levelData.victors.forEach((victor, idx) => {
-    const flagEl = createFlagElement(victor.nationality)
-    const item = document.createElement('div')
-    item.style.cssText = 'display:flex;justify-content:space-between;padding:var(--spacing-sm);border-bottom:1px solid var(--color-border)'
-    const span = document.createElement('span')
-    const strong = document.createElement('strong')
-    strong.textContent = `#${idx + 1} `
-    span.appendChild(strong)
-    span.appendChild(flagEl)
-    span.appendChild(document.createTextNode(` ${victor.name}`))
-    item.appendChild(span)
-    list.appendChild(item)
-  })
-  body.appendChild(list)
-  modal.classList.add('active')
-}
-
-export function closeLevelModal() {
-  const modal = document.getElementById('levelModal')
-  if (modal) modal.classList.remove('active')
-}
-
-export function showProfile(idx) {
-  const p = store.players[idx]
-  if (!p) return
-
-  const rec = p.records ? p.records.filter(r => r.status === 'accepted' && r.level) : []
-
-  const titleEl = document.getElementById('profileTitle')
-  while (titleEl.firstChild) titleEl.firstChild.remove()
-  const flagEl = createFlagElement(p.nationality)
-  titleEl.appendChild(flagEl)
-  titleEl.appendChild(document.createTextNode(` ${p.name}`))
-
-  const score = p.score ? p.score.toFixed(2) : '—'
-  const rank = p.rank || '—'
-  const body = document.getElementById('profileBody')
-  while (body.firstChild) body.firstChild.remove()
-
-  function makeStat(value, label) {
-    const div = document.createElement('div')
-    div.className = 'profile-stat'
-    const valDiv = document.createElement('div')
-    valDiv.className = 'profile-stat-value'
-    valDiv.textContent = String(value)
-    const lblDiv = document.createElement('div')
-    lblDiv.className = 'profile-stat-label'
-    lblDiv.textContent = label
-    div.appendChild(valDiv)
-    div.appendChild(lblDiv)
-    return div
-  }
-
-  const statsDiv = document.createElement('div')
-  statsDiv.className = 'profile-stats'
-  statsDiv.appendChild(makeStat(score, 'Очки'))
-  statsDiv.appendChild(makeStat(`#${rank}`, 'Глобальный топ'))
-  statsDiv.appendChild(makeStat(rec.length, 'Уровней'))
-  body.appendChild(statsDiv)
-
-  function makeInfoRow(label, valueNode) {
-    const row = document.createElement('div')
-    row.className = 'profile-info-row'
-    const lbl = document.createElement('span')
-    lbl.className = 'profile-info-label'
-    lbl.textContent = label
-    row.appendChild(lbl)
-    const val = document.createElement('span')
-    val.className = 'profile-info-value'
-    if (valueNode instanceof Node) {
-      val.appendChild(valueNode)
-    } else {
-      val.textContent = String(valueNode)
-    }
-    row.appendChild(val)
-    return row
-  }
-
-  if (p.hardest) {
-    const hardestLabel = p.hardest.level?.name != null ? String(p.hardest.level.name) : String(p.hardest)
-    body.appendChild(makeInfoRow('Hardest:', hardestLabel))
-  }
-
-  const countryVal = document.createElement('span')
-  countryVal.className = 'profile-info-value'
-  const countryFlag = createFlagElement(p.nationality)
-  countryVal.appendChild(countryFlag)
-  countryVal.appendChild(document.createTextNode(` ${p.nationality || 'Не указана'}`))
-  body.appendChild(makeInfoRow('Страна:', countryVal))
-
-  const recordsSection = document.createElement('div')
-  recordsSection.className = 'profile-records-section'
-  const h4 = document.createElement('h4')
-  h4.textContent = `Пройденные уровни (${rec.length})`
-  recordsSection.appendChild(h4)
-  const recordsList = document.createElement('div')
-  recordsList.className = 'profile-records-list'
-
-  if (rec.length > 0) {
-    rec.forEach(r => {
-      const levelName = r.level?.name || 'Неизвестно'
-      const placement = r.level?.placement ?? '?'
-      const progress = r.percent ?? r.progress ?? 100
-      const item = document.createElement('div')
-      item.className = 'record-item'
-      const demonSpan = document.createElement('span')
-      demonSpan.className = 'record-demon'
-      demonSpan.textContent = levelName
-      const placeSpan = document.createElement('span')
-      placeSpan.className = 'record-placement'
-      placeSpan.textContent = `#${placement}`
-      demonSpan.appendChild(placeSpan)
-      item.appendChild(demonSpan)
-      const progSpan = document.createElement('span')
-      progSpan.className = `record-progress${progress >= 100 ? ' progress-100' : ''}`
-      progSpan.textContent = `${progress}%`
-      item.appendChild(progSpan)
-      recordsList.appendChild(item)
-    })
-  } else {
-    const noRec = document.createElement('div')
-    noRec.className = 'no-records'
-    noRec.textContent = 'Нет записей'
-    recordsList.appendChild(noRec)
-  }
-  recordsSection.appendChild(recordsList)
-  body.appendChild(recordsSection)
-
-  const linkDiv = document.createElement('div')
-  linkDiv.className = 'profile-link'
-  const a = document.createElement('a')
-  a.href = `https://demonlist.org/profile/${encodeURIComponent(String(p.id))}/`
-  a.target = '_blank'
-  a.rel = 'noopener noreferrer'
-  a.textContent = '🔗 Показать аккаунт в Global Demonlist →'
-  linkDiv.appendChild(a)
-  body.appendChild(linkDiv)
-
-  document.getElementById('profileModal').classList.add('active')
-}
-
-export function closeProfileModal(e) {
-  if (!e || e.target === e.currentTarget) {
-    document.getElementById('profileModal').classList.remove('active')
-  }
-}
-
-export function showCountryTop(raw) {
-  import('./utils').then(({ resolveCountry, CODE_TO_NAME }) => {
-    const modal = document.getElementById('countryModal')
-    const title = document.getElementById('countryTitle')
-    const body = document.getElementById('countryBody')
-    if (!modal || !title || !body) return
-
-    let countryPlayers
-    let flagEl
-    let countryName
-
-    if (!raw) {
-      countryPlayers = store.allPlayers.filter(p => !p.nationality)
-        .sort((a, b) => (a.rank || 999999) - (b.rank || 999999))
-      const span = document.createElement('span')
-      span.textContent = '🌍'
-      flagEl = span
-      countryName = 'Неизвестно'
-    } else {
-      const country = resolveCountry(raw)
-      if (!country) { showToast('Страна не найдена', 'error'); return }
-
-      countryPlayers = store.allPlayers.filter(p => resolveCountry(p.nationality) === country)
-        .sort((a, b) => (a.rank || 999999) - (b.rank || 999999))
-      flagEl = createFlagElement(country)
-      countryName = CODE_TO_NAME[country] || country
-    }
-
-    while (title.firstChild) title.firstChild.remove()
-    title.appendChild(flagEl)
-    title.appendChild(document.createTextNode(` Топ игроков: ${countryName}`))
-
-    while (body.firstChild) body.firstChild.remove()
-
-    if (countryPlayers.length === 0) {
-      const p = document.createElement('p')
-      p.style.cssText = 'color: var(--color-text-muted);'
-      p.textContent = 'Нет данных'
-      body.appendChild(p)
-    } else {
-      countryPlayers.forEach((p, idx) => {
-        const score = p.score ? p.score.toFixed(2) : '—'
-        const rank = p.rank || '—'
-        const row = document.createElement('div')
-        row.style.cssText = 'display:flex;justify-content:space-between;padding:var(--spacing-sm);border-bottom:1px solid var(--color-border)'
-        const leftSpan = document.createElement('span')
-        const strong = document.createElement('strong')
-        strong.textContent = `#${idx + 1} `
-        leftSpan.appendChild(strong)
-        leftSpan.appendChild(document.createTextNode(p.name))
-        row.appendChild(leftSpan)
-        const rightSpan = document.createElement('span')
-        rightSpan.style.cssText = 'color:var(--color-text-muted)'
-        rightSpan.textContent = `${score} pts · #${rank}`
-        row.appendChild(rightSpan)
-        body.appendChild(row)
-      })
-    }
-
-    modal.classList.add('active')
-  })
-}
-
-export function closeCountryModal() {
-  const modal = document.getElementById('countryModal')
-  if (modal) modal.classList.remove('active')
-}
-
-export async function addPlayer() {
+export async function addPlayer(name) {
   if (!store.isHost) { showToast('Только хост может добавлять игроков', 'error'); return }
-
-  const nameInput = document.getElementById('newPlayerName')
-  const name = nameInput.value.trim()
   if (!name) return
   if (name.length < 2 || name.length > 32) { showToast('Ник должен быть от 2 до 32 символов', 'error'); return }
 
@@ -494,28 +249,15 @@ export async function addPlayer() {
   playerNames.push(name)
   try {
     await savePlayerNames(playerNames)
-    closeAddPlayerModal()
-    nameInput.value = ''
     await loadAllPlayers()
     showToast('Игрок успешно добавлен', 'success')
   } catch (e) {
     if (isAbortError(e)) return
     showToast(e.message, 'error')
-    if (e.message.includes('сессия истекла') || e.message.includes('401')) logoutHost()
-  }
-}
-
-export function closeAddPlayerModal() {
-  const modal = document.getElementById('addPlayerModal')
-  if (modal) modal.classList.remove('active')
-}
-
-export function showAddPlayerModal() {
-  if (!store.isHost) { showToast('Только хост может добавлять игроков', 'error'); return }
-  const modal = document.getElementById('addPlayerModal')
-  if (modal) {
-    document.getElementById('newPlayerName').value = ''
-    modal.classList.add('active')
+    if (e.message.includes('сессия истекла') || e.message.includes('401')) {
+      const { logoutHost } = await import('./auth')
+      logoutHost()
+    }
   }
 }
 
@@ -537,14 +279,9 @@ export async function removePlayer(name) {
   } catch (e) {
     if (isAbortError(e)) return
     showToast(e.message, 'error')
-    if (e.message.includes('сессия') || e.message.includes('401') || e.message.includes('доступ')) logoutHost()
+    if (e.message.includes('сессия') || e.message.includes('401') || e.message.includes('доступ')) {
+      const { logoutHost } = await import('./auth')
+      logoutHost()
+    }
   }
 }
-
-// Fix circular import for logoutHost
-async function logoutHost() {
-  const { logoutHost: doLogout } = await import('./auth')
-  doLogout()
-}
-
-export { logoutHost }
