@@ -1,0 +1,198 @@
+<script setup>
+import { ref, computed, watch, nextTick } from 'vue'
+import { store } from '../store'
+import { getPlayerTier, TIER_CONFIG, sortRolePlayersByTiers, createRoleApi, updateRoleApi, addPlayerToRoleApi, removePlayerFromRoleApi, saveStaffRoles, loadStaffTiers, setPlayerTier, toggleRoleTiers } from '../api/staff'
+import { makeOverlayClose } from '../utils/modal'
+
+const props = defineProps({ visible: Boolean, roleIndex: { type: Number, default: -1 } })
+const emit = defineEmits(['close'])
+
+const isEditing = computed(() => props.roleIndex >= 0)
+const role = computed(() => isEditing.value ? store.staffRoles[props.roleIndex] : null)
+
+const roleName = ref('')
+const roleColor = ref('#3b82f6')
+const playerSearch = ref('')
+const addNickname = ref('')
+const addDiscord = ref('')
+const editPlayerIdx = ref(-1)
+
+const closeOverlay = makeOverlayClose(() => emit('close'))
+
+watch(() => props.visible, (v) => {
+  if (!v) return
+  if (isEditing.value && role.value) {
+    roleName.value = role.value.name
+    roleColor.value = role.value.color || '#3b82f6'
+  } else {
+    roleName.value = ''
+    roleColor.value = store.selectedRoleColor || '#3b82f6'
+  }
+  playerSearch.value = ''
+  addNickname.value = ''
+  addDiscord.value = ''
+  editPlayerIdx.value = -1
+  nextTick(() => { const f = document.getElementById('roleNameInput'); if (f) f.focus() })
+})
+
+const filteredPlayers = computed(() => {
+  if (!role.value) return []
+  const q = playerSearch.value.toLowerCase().trim()
+  const players = role.value.players || []
+  if (!q) return players.map((p, i) => ({ ...p, _idx: i }))
+  return players.map((p, i) => ({ ...p, _idx: i })).filter(p => p.nickname.toLowerCase().includes(q))
+})
+
+const isTiersEnabled = computed(() => role.value?.tiersEnabled !== false)
+
+async function submitRole() {
+  const name = roleName.value.trim()
+  if (!name) return
+  const color = roleColor.value || '#3b82f6'
+  if (isEditing.value) {
+    await updateRoleApi(props.roleIndex, name, color)
+  } else {
+    await createRoleApi(name, color)
+  }
+  emit('close')
+}
+
+async function addPlayer() {
+  if (!isEditing.value) return
+  const nickname = addNickname.value.trim()
+  if (!nickname) return
+  const discord = addDiscord.value.trim()
+
+  if (editPlayerIdx.value >= 0) {
+    const r = store.staffRoles[props.roleIndex]
+    if (r?.players?.[editPlayerIdx.value]) {
+      r.players[editPlayerIdx.value].nickname = nickname
+      r.players[editPlayerIdx.value].discord = discord
+      await saveStaffRoles()
+      await loadStaffTiers()
+    }
+    editPlayerIdx.value = -1
+  } else {
+    await addPlayerToRoleApi(props.roleIndex, nickname, discord)
+  }
+  addNickname.value = ''
+  addDiscord.value = ''
+}
+
+function startEditPlayer(pIdx) {
+  const p = role.value?.players?.[pIdx]
+  if (!p) return
+  addNickname.value = p.nickname
+  addDiscord.value = p.discord || ''
+  editPlayerIdx.value = pIdx
+}
+
+function cancelEditPlayer() {
+  editPlayerIdx.value = -1
+  addNickname.value = ''
+  addDiscord.value = ''
+}
+
+async function movePlayer(pIdx, dir) {
+  const r = role.value
+  if (!r?.players) return
+  const target = dir === 'down' ? pIdx + 1 : pIdx - 1
+  if (target < 0 || target >= r.players.length) return
+  ;[r.players[pIdx], r.players[target]] = [r.players[target], r.players[pIdx]]
+  await saveStaffRoles()
+}
+
+async function removePlayer(nickname) {
+  if (!isEditing.value) return
+  if (!confirm(`Удалить игрока «${nickname}» из роли?`)) return
+  await removePlayerFromRoleApi(props.roleIndex, nickname)
+}
+
+async function sortByTiers() {
+  if (!isEditing.value || !role.value) return
+  sortRolePlayersByTiers(role.value)
+  await saveStaffRoles()
+}
+
+async function toggleTiers() {
+  if (!isEditing.value) return
+  await toggleRoleTiers(props.roleIndex)
+}
+
+async function onTierClick(nickname, tier) {
+  await setPlayerTier(nickname, tier)
+}
+</script>
+
+<template>
+  <div class="modal-overlay" :class="{ active: visible }" @mousedown="closeOverlay.onMousedown" @mouseup="closeOverlay.onMouseup">
+    <div class="modal" @mousedown.stop @mouseup.stop>
+      <div class="modal-header">
+        <div class="modal-title">{{ isEditing ? '✏️ Редактировать роль' : '🆕 Новая роль' }}</div>
+        <button class="modal-close" @click="emit('close')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Название роли:</label>
+          <input type="text" id="roleNameInput" class="form-input" placeholder="Например: Администрация" v-model="roleName">
+        </div>
+        <div class="form-group">
+          <label>Цвет роли:</label>
+          <div class="role-color-picker">
+            <div class="color-picker-row">
+              <input type="color" class="color-input" v-model="roleColor">
+              <div class="color-hex-input-wrapper">
+                <span class="color-hex-prefix">#</span>
+                <input type="text" class="form-input color-hex-input" placeholder="f1c40f" maxlength="6" :value="roleColor.replace('#', '')" @input="roleColor = '#' + $event.target.value">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="isEditing" class="form-group" style="border-top:1px solid var(--color-border);padding-top:var(--spacing-md);margin-top:var(--spacing-md)">
+          <div style="display:flex;gap:var(--spacing-xs);margin-bottom:var(--spacing-sm);flex-wrap:wrap">
+            <input type="text" class="form-input" placeholder="🔍 Поиск участника..." style="flex:1;min-width:100px" v-model="playerSearch">
+            <button class="btn btn-secondary btn-sm" @click="sortByTiers">📊 Сорт. по тирам</button>
+            <button class="btn btn-secondary btn-sm" @click="toggleTiers">🎯 Тир: {{ isTiersEnabled ? 'вкл' : 'выкл' }}</button>
+          </div>
+
+          <div style="margin-bottom:var(--spacing-md)">
+            <div v-if="filteredPlayers.length === 0" style="color:var(--color-text-muted);font-size:var(--font-size-xs)">
+              {{ playerSearch ? 'Ничего не найдено' : 'Нет игроков' }}
+            </div>
+            <div v-for="p in filteredPlayers" :key="p._idx" class="edit-player-list-item">
+              <div class="player-info">
+                <span class="player-nickname">{{ p.nickname }}</span>
+                <span v-if="p.discord" class="player-role-name">{{ p.discord }}</span>
+              </div>
+              <template v-if="isTiersEnabled">
+                <span v-for="(cfg, key) in TIER_CONFIG" :key="key"
+                  class="role-tier-square"
+                  :style="{ background: cfg.color, opacity: getPlayerTier(p.nickname) === key ? '1' : '0.25', outline: getPlayerTier(p.nickname) === key ? '2px solid var(--color-text-primary)' : 'none', outlineOffset: '1px' }"
+                  :title="cfg.label"
+                  @click="onTierClick(p.nickname, key)"
+                ></span>
+              </template>
+              <button class="player-edit-btn" title="Редактировать" @click="startEditPlayer(p._idx)">✏️</button>
+              <button v-if="p._idx > 0" class="player-edit-btn" title="Вверх" @click="movePlayer(p._idx, 'up')">↑</button>
+              <button v-if="p._idx < (role?.players?.length || 0) - 1" class="player-edit-btn" title="Вниз" @click="movePlayer(p._idx, 'down')">↓</button>
+              <button class="player-remove-btn" title="Удалить" @click="removePlayer(p.nickname)">✕</button>
+            </div>
+          </div>
+
+          <div class="modal-actions-row" style="flex-wrap:wrap">
+            <input type="text" class="form-input" placeholder="Ник игрока" style="flex:1;min-width:120px" v-model="addNickname" @keyup.enter="addPlayer">
+            <input type="text" class="form-input" placeholder="Discord" style="flex:1;min-width:120px" v-model="addDiscord" @keyup.enter="addPlayer">
+            <button class="btn btn-primary btn-sm" @click="addPlayer">{{ editPlayerIdx >= 0 ? '💾 Сохранить' : '➕ Добавить' }}</button>
+            <button v-if="editPlayerIdx >= 0" class="btn btn-secondary btn-sm" @click="cancelEditPlayer">✕</button>
+          </div>
+        </div>
+
+        <div class="modal-actions-row-spaced">
+          <button class="btn btn-secondary" @click="emit('close')">Отмена</button>
+          <button class="btn btn-primary" @click="submitRole">{{ isEditing ? 'Сохранить' : 'Создать' }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>

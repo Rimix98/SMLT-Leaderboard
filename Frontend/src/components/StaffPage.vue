@@ -1,71 +1,18 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { store } from '../store'
-import { makeOverlayClose } from '../utils/modal'
+import { loadStaffRoles, loadStaffTiers, getTierConfig, getPlayerTier, removeStaffPlayer, deleteRole, moveRole } from '../api/staff'
 import AppShell from './AppShell.vue'
-import {
-  loadStaffRoles,
-  loadStaffTiers,
-  getTierConfig,
-  getPlayerTier,
-  TIER_CONFIG,
-  showAddRoleModal,
-  showEditRoleModal,
-  deleteRole,
-  moveRole,
-  removeStaffPlayer,
-  closeAddRoleModal,
-  createRole,
-  addPlayerFromRoleModal,
-  roleModalSortByTiers,
-  roleModalToggleTiers,
-  closeEditPanel,
-  editAddPlayer,
-  closeAddStaffPlayerModal,
-  addPlayerToRole,
-  initStaffDelegation,
-  destroyStaffDelegation,
-} from '../api/staff'
+import RoleEditModal from './RoleEditModal.vue'
+import AddPlayerModal from './AddPlayerModal.vue'
+import StaffEditPanel from './StaffEditPanel.vue'
 
-const addRoleClose = makeOverlayClose(() => {
-  closeAddRoleModal()
-  document.body.classList.remove('modal-open')
-})
-
-const addPlayerClose = makeOverlayClose(() => {
-  closeAddStaffPlayerModal()
-  document.body.classList.remove('modal-open')
-})
-
-function openAddRole() {
-  showAddRoleModal()
-  document.body.classList.add('modal-open')
-}
-
-function openEditRole(roleIndex) {
-  showEditRoleModal(roleIndex)
-  document.body.classList.add('modal-open')
-}
-
-function openAddStaffPlayer(roleIndex) {
-  showAddStaffPlayerModal(roleIndex)
-  document.body.classList.add('modal-open')
-}
-
-function closeAddRoleAndUnlock() {
-  closeAddRoleModal()
-  document.body.classList.remove('modal-open')
-}
-
-function closeAddStaffPlayerAndUnlock() {
-  closeAddStaffPlayerModal()
-  document.body.classList.remove('modal-open')
-}
-
-function addPlayerToRoleAndClose() {
-  addPlayerToRole()
-  document.body.classList.remove('modal-open')
-}
+const loading = ref(true)
+const roleModalVisible = ref(false)
+const roleModalIndex = ref(-1)
+const addPlayerModalVisible = ref(false)
+const addPlayerRoleIndex = ref(-1)
+const editPanelVisible = ref(false)
 
 const totalUniqueParticipants = computed(() => {
   const names = new Set()
@@ -76,8 +23,6 @@ const totalUniqueParticipants = computed(() => {
 })
 
 const totalRoles = computed(() => store.staffRoles.length)
-
-const loading = ref(true)
 
 const tierCounts = computed(() => {
   const counts = { priority: 0, base: 0, reserve: 0, na: 0 }
@@ -93,12 +38,41 @@ const tierCounts = computed(() => {
 onMounted(async () => {
   await Promise.all([loadStaffRoles(), loadStaffTiers()])
   loading.value = false
-  initStaffDelegation()
 })
 
-onUnmounted(() => {
-  destroyStaffDelegation()
-})
+function openAddRole() {
+  roleModalIndex.value = -1
+  roleModalVisible.value = true
+  document.body.classList.add('modal-open')
+}
+function openEditRole(idx) {
+  roleModalIndex.value = idx
+  roleModalVisible.value = true
+  document.body.classList.add('modal-open')
+}
+function closeRoleModal() {
+  roleModalVisible.value = false
+  document.body.classList.remove('modal-open')
+}
+
+function openAddPlayer(idx) {
+  addPlayerRoleIndex.value = idx
+  addPlayerModalVisible.value = true
+  document.body.classList.add('modal-open')
+}
+function closeAddPlayerModal() {
+  addPlayerModalVisible.value = false
+  document.body.classList.remove('modal-open')
+}
+
+function openEditPanel() {
+  editPanelVisible.value = true
+  document.body.style.overflow = 'hidden'
+}
+function closeEditPanel() {
+  editPanelVisible.value = false
+  document.body.style.overflow = ''
+}
 </script>
 
 <template>
@@ -110,8 +84,6 @@ onUnmounted(() => {
         <span class="header-subtitle">Состав команды</span>
       </div>
     </template>
-    <template #actions>
-    </template>
   </AppShell>
 
   <main class="app-main">
@@ -119,7 +91,8 @@ onUnmounted(() => {
       <div v-if="store.isHost" class="admin-panel">
         <div class="admin-panel-header">👑 Управление ролями</div>
         <div class="admin-panel-content">
-          <button class="btn btn-primary" @click="openAddRole()">➕ Создать роль</button>
+          <button class="btn btn-primary" @click="openAddRole">➕ Создать роль</button>
+          <button class="btn btn-secondary" @click="openEditPanel">✏️ Редактировать</button>
         </div>
       </div>
 
@@ -177,7 +150,7 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <div id="staffLoadingState" v-if="loading && store.staffRoles.length === 0">
+      <div v-if="loading && store.staffRoles.length === 0">
         <div class="projects-grid">
           <div v-for="i in 4" :key="i" class="skeleton-card"></div>
         </div>
@@ -187,7 +160,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <TransitionGroup name="list" tag="div" class="projects-grid" id="staffRolesContainer">
+      <TransitionGroup name="list" tag="div" class="projects-grid">
         <div v-for="(role, roleIndex) in store.staffRoles" :key="roleIndex" class="project-card">
           <div class="staff-role-visual" :style="{ background: role.color || '#3b82f6' }">
             <span class="staff-role-visual-name">{{ role.name }}</span>
@@ -226,6 +199,7 @@ onUnmounted(() => {
             <div v-if="store.isHost" class="project-actions">
               <button class="btn btn-secondary btn-sm" @click="moveRole(roleIndex, 'up')">↑</button>
               <button class="btn btn-secondary btn-sm" @click="moveRole(roleIndex, 'down')">↓</button>
+              <button class="btn btn-primary btn-sm" @click="openAddPlayer(roleIndex)">➕ Игрок</button>
               <button class="btn btn-primary btn-sm" @click="openEditRole(roleIndex)">✏️ Редактировать</button>
               <button class="btn btn-danger btn-sm" @click="deleteRole(roleIndex)">🗑️ Удалить роль</button>
             </div>
@@ -233,7 +207,7 @@ onUnmounted(() => {
         </div>
       </TransitionGroup>
 
-      <div v-if="!loading && store.staffRoles.length === 0" class="staff-empty-state" id="staffEmptyState">
+      <div v-if="!loading && store.staffRoles.length === 0" class="staff-empty-state">
         <div class="staff-empty-icon">👥</div>
         <p>Роли пока не созданы</p>
         <p class="no-data-text">Создайте первую роль, чтобы добавить участников</p>
@@ -242,103 +216,8 @@ onUnmounted(() => {
   </main>
 
   <Teleport to="body">
-    <div id="addRoleModal" class="modal-overlay" ref="addRoleModalEl" @mousedown="addRoleClose.onMousedown" @mouseup="addRoleClose.onMouseup">
-      <div class="modal" @mousedown.stop @mouseup.stop>
-        <div class="modal-header">
-          <div class="modal-title" id="addRoleModalTitle">🆕 Новая роль</div>
-          <button class="modal-close" @click="closeAddRoleAndUnlock()">✕</button>
-        </div>
-        <div class="modal-body">
-          <input type="hidden" id="editRoleIndex" value="-1">
-          <div class="form-group">
-            <label for="roleName">Название роли:</label>
-            <input type="text" id="roleName" class="form-input" placeholder="Например: Администрация">
-          </div>
-          <div class="form-group">
-            <label for="roleColor">Цвет роли:</label>
-            <div class="role-color-picker">
-              <div class="color-picker-row">
-                <input type="color" id="roleColor" class="color-input" value="#3b82f6">
-                <div class="color-hex-input-wrapper">
-                  <span class="color-hex-prefix">#</span>
-                  <input type="text" id="roleColorHex" class="form-input color-hex-input" placeholder="f1c40f" maxlength="6">
-                </div>
-              </div>
-            </div>
-          </div>
-          <div id="rolePlayerSection" class="form-group" style="display:none;border-top:1px solid var(--color-border);padding-top:var(--spacing-md);margin-top:var(--spacing-md)">
-            <input type="hidden" id="editRolePlayerIdx" value="-1">
-            <div style="display:flex;gap:var(--spacing-xs);margin-bottom:var(--spacing-sm);flex-wrap:wrap">
-              <input type="text" id="rolePlayerSearch" class="form-input" placeholder="🔍 Поиск участника..." style="flex:1;min-width:100px">
-              <button class="btn btn-secondary btn-sm" @click="roleModalSortByTiers()">📊 Сорт. по тирам</button>
-              <button class="btn btn-secondary btn-sm" id="roleToggleTiersBtn" @click="roleModalToggleTiers()">🎯 Тир: вкл</button>
-            </div>
-            <div id="rolePlayerList" style="margin-bottom:var(--spacing-md)"></div>
-            <div class="modal-actions-row" style="flex-wrap:wrap">
-              <input type="text" id="roleAddPlayerNickname" class="form-input" placeholder="Ник игрока" style="flex:1;min-width:120px">
-              <input type="text" id="roleAddPlayerDiscord" class="form-input" placeholder="Discord" style="flex:1;min-width:120px">
-              <button class="btn btn-primary btn-sm" id="roleAddPlayerBtn" @click="addPlayerFromRoleModal">➕ Добавить</button>
-            </div>
-          </div>
-          <div class="modal-actions-row-spaced">
-            <button class="btn btn-secondary" @click="closeAddRoleModal">Отмена</button>
-            <button class="btn btn-primary" id="createRoleBtn" @click="createRole">Создать</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="addPlayerModal" class="modal-overlay" @mousedown="addPlayerClose.onMousedown" @mouseup="addPlayerClose.onMouseup">
-      <div class="modal" @mousedown.stop @mouseup.stop>
-        <div class="modal-header">
-          <div class="modal-title" id="addPlayerModalTitle">👤 Добавить игрока</div>
-          <button class="modal-close" @click="closeAddStaffPlayerAndUnlock()">✕</button>
-        </div>
-        <div class="modal-body">
-          <input type="hidden" id="addPlayerRoleIndex" value="-1">
-          <div class="form-group">
-            <label for="playerNickname">Ник игрока:</label>
-            <input type="text" id="playerNickname" class="form-input" placeholder="Nickname">
-          </div>
-          <div class="form-group">
-            <label for="playerDiscord">Discord (необязательно):</label>
-            <input type="text" id="playerDiscord" class="form-input" placeholder="Username#0000 or username">
-          </div>
-          <div class="modal-actions-row-spaced">
-            <button class="btn btn-secondary" @click="closeAddStaffPlayerAndUnlock()">Отмена</button>
-            <button class="btn btn-primary" @click="addPlayerToRoleAndClose()">Добавить игрока</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="editPanelOverlay" class="edit-panel-overlay"></div>
-    <div id="editPanel" class="edit-panel">
-      <div class="edit-panel-header">
-        <span>✏️ Редактировать</span>
-        <button class="edit-panel-close" @click="closeEditPanel">✕</button>
-      </div>
-      <div class="edit-panel-body">
-        <input type="hidden" id="editPlayerKey" value="">
-        <div class="form-group">
-          <label for="editPlayerNickname">Ник игрока:</label>
-          <input type="text" id="editPlayerNickname" class="form-input" placeholder="Nickname">
-        </div>
-        <div class="form-group">
-          <label for="editPlayerDiscord">Discord (необязательно):</label>
-          <input type="text" id="editPlayerDiscord" class="form-input" placeholder="Username#0000 or username">
-        </div>
-        <div class="form-group">
-          <label for="editPlayerRole">Роль:</label>
-          <select id="editPlayerRole" class="form-input"></select>
-        </div>
-        <button class="btn btn-primary" id="editPanelSubmitBtn" @click="editAddPlayer">➕ Добавить игрока</button>
-        <div class="edit-player-list">
-          <h4>Игроки:</h4>
-          <input type="text" id="editPlayerSearch" class="form-input" placeholder="🔍 Поиск игрока..." style="margin-bottom:var(--spacing-sm)">
-          <div id="editPlayerList"></div>
-        </div>
-      </div>
-    </div>
+    <RoleEditModal :visible="roleModalVisible" :role-index="roleModalIndex" @close="closeRoleModal" />
+    <AddPlayerModal :visible="addPlayerModalVisible" :role-index="addPlayerRoleIndex" @close="closeAddPlayerModal" />
+    <StaffEditPanel :visible="editPanelVisible" @close="closeEditPanel" />
   </Teleport>
 </template>
