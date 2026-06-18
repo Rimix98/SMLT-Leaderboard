@@ -89,6 +89,7 @@ export async function loadStaffTiers() {
 
 export async function saveStaffRoles() {
   try {
+    if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/save`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -127,6 +128,7 @@ export async function removeStaffPlayer(roleIndex, playerIndex) {
   if (!confirm(`Удалить игрока «${player.nickname}» из роли «${role.name}»?`)) return
 
   try {
+    if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/remove`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -141,17 +143,22 @@ export async function removeStaffPlayer(roleIndex, playerIndex) {
   }
 }
 
-export function moveRole(index, direction) {
+export async function moveRole(index, direction) {
   const target = direction === 'down' ? index + 1 : index - 1
   if (target < 0 || target >= store.staffRoles.length) return
   const prev = [...store.staffRoles]
   ;[store.staffRoles[index], store.staffRoles[target]] = [store.staffRoles[target], store.staffRoles[index]]
-  fetchWithAbort(`${BACKEND_URL}/staff/reorder`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ roleIndex: index, direction })
-  }, 'staff-reorder').catch(() => { store.staffRoles = prev })
+  try {
+    if (!tokens.adminKnockKey) await doAdminKnock()
+    await fetchWithAbort(`${BACKEND_URL}/staff/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ roleIndex: index, direction })
+    }, 'staff-reorder')
+  } catch {
+    store.staffRoles = prev
+  }
 }
 
 export async function deleteRole(index) {
@@ -160,6 +167,7 @@ export async function deleteRole(index) {
   if (!confirm(`Удалить роль «${role.name}»?`)) return
 
   try {
+    if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -176,6 +184,7 @@ export async function deleteRole(index) {
 
 export async function createRoleApi(name, color) {
   try {
+    if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -194,6 +203,7 @@ export async function createRoleApi(name, color) {
 
 export async function updateRoleApi(roleIndex, name, color, tiersEnabled) {
   try {
+    if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -212,6 +222,7 @@ export async function updateRoleApi(roleIndex, name, color, tiersEnabled) {
 
 export async function setPlayerTier(nickname, tier) {
   try {
+    if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/tier`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -234,6 +245,7 @@ export async function toggleRoleTiers(roleIndex) {
   const newName = role.name
   const newEnabled = role.tiersEnabled === false ? true : false
   try {
+    if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -252,6 +264,7 @@ export async function toggleRoleTiers(roleIndex) {
 
 export async function removePlayerFromRoleApi(roleIndex, nickname) {
   try {
+    if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/remove`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
