@@ -983,6 +983,7 @@ func hashIP(ip string) string {
 
 func sendError(w http.ResponseWriter, status int, msg string) {
 	log.Printf("[error] %d %s", status, msg)
+	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})

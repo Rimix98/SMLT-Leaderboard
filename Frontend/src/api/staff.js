@@ -67,7 +67,7 @@ export function sortAllRolesByTiers() {
 
 export async function loadStaffRoles() {
   try {
-    const res = await fetchWithAbort(`${BACKEND_URL}/staff`, {}, 'staff-list')
+    const res = await fetchWithAbort(`${BACKEND_URL}/staff`, { cache: 'no-store' }, 'staff-list')
     if (!res.ok) { console.warn('GET /api/staff вернул', res.status); store.staffRoles = [] }
     else { const data = await res.json(); store.staffRoles = Array.isArray(data) ? data : [] }
     sortAllRolesByTiers()
@@ -78,7 +78,7 @@ export async function loadStaffRoles() {
 
 export async function loadStaffTiers() {
   try {
-    const res = await fetchWithAbort(`${BACKEND_URL}/staff/tiers`, {}, 'staff-tiers')
+    const res = await fetchWithAbort(`${BACKEND_URL}/staff/tiers`, { cache: 'no-store' }, 'staff-tiers')
     if (res.ok) { const data = await res.json(); store.staffTiers = Array.isArray(data.gp) ? data.gp : [] }
     else { store.staffTiers = [] }
     sortAllRolesByTiers()
