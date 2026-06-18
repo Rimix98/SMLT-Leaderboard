@@ -60,7 +60,6 @@ function sortRolesByTierDistribution(roleA, roleB) {
 
 export function sortAllRolesByTiers() {
   if (!store.staffRoles) return
-  store.staffRoles = [...store.staffRoles].sort(sortRolesByTierDistribution)
   for (const role of store.staffRoles) {
     sortRolePlayersByTiers(role)
   }
@@ -269,4 +268,4 @@ export async function removePlayerFromRoleApi(roleIndex, nickname) {
   }
 }
 
-export { sortRolePlayersByTiers }
+export { sortRolePlayersByTiers, sortRolesByTierDistribution }

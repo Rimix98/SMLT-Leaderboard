@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { store } from '../store'
-import { loadStaffRoles, loadStaffTiers, getTierConfig, getPlayerTier, removeStaffPlayer, deleteRole, moveRole } from '../api/staff'
+import { loadStaffRoles, loadStaffTiers, getTierConfig, getPlayerTier, removeStaffPlayer, deleteRole, moveRole, sortRolesByTierDistribution } from '../api/staff'
 import AppShell from './AppShell.vue'
 import RoleEditModal from './RoleEditModal.vue'
 import AddPlayerModal from './AddPlayerModal.vue'
@@ -23,6 +23,12 @@ const totalUniqueParticipants = computed(() => {
 })
 
 const totalRoles = computed(() => store.staffRoles.length)
+
+const sortedRoles = computed(() => {
+  return store.staffRoles
+    .map((role, originalIndex) => ({ ...role, _originalIndex: originalIndex }))
+    .sort((a, b) => sortRolesByTierDistribution(a, b))
+})
 
 const tierCounts = computed(() => {
   const counts = { priority: 0, base: 0, reserve: 0, na: 0 }
@@ -161,7 +167,7 @@ function closeEditPanel() {
       </div>
 
       <TransitionGroup name="list" tag="div" class="projects-grid">
-        <div v-for="(role, roleIndex) in store.staffRoles" :key="roleIndex" class="project-card">
+        <div v-for="role in sortedRoles" :key="role._originalIndex" class="project-card">
           <div class="staff-role-visual" :style="{ background: role.color || '#3b82f6' }">
             <span class="staff-role-visual-name">{{ role.name }}</span>
           </div>
@@ -191,17 +197,17 @@ function closeEditPanel() {
                       :style="{ background: getTierConfig(player.nickname).color }"
                       :title="getTierConfig(player.nickname).label"
                     ></span>
-                    <button v-if="store.isHost" class="staff-player-remove-tag" @click="removeStaffPlayer(roleIndex, pIdx)" title="Удалить игрока">✕</button>
+                    <button v-if="store.isHost" class="staff-player-remove-tag" @click="removeStaffPlayer(role._originalIndex, pIdx)" title="Удалить игрока">✕</button>
                   </span>
                 </div>
               </div>
             </div>
             <div v-if="store.isHost" class="project-actions">
-              <button class="btn btn-secondary btn-sm" @click="moveRole(roleIndex, 'up')">↑</button>
-              <button class="btn btn-secondary btn-sm" @click="moveRole(roleIndex, 'down')">↓</button>
-              <button class="btn btn-primary btn-sm" @click="openAddPlayer(roleIndex)">➕ Игрок</button>
-              <button class="btn btn-primary btn-sm" @click="openEditRole(roleIndex)">✏️ Редактировать</button>
-              <button class="btn btn-danger btn-sm" @click="deleteRole(roleIndex)">🗑️ Удалить роль</button>
+              <button class="btn btn-secondary btn-sm" @click="moveRole(role._originalIndex, 'up')">↑</button>
+              <button class="btn btn-secondary btn-sm" @click="moveRole(role._originalIndex, 'down')">↓</button>
+              <button class="btn btn-primary btn-sm" @click="openAddPlayer(role._originalIndex)">➕ Игрок</button>
+              <button class="btn btn-primary btn-sm" @click="openEditRole(role._originalIndex)">✏️ Редактировать</button>
+              <button class="btn btn-danger btn-sm" @click="deleteRole(role._originalIndex)">🗑️ Удалить роль</button>
             </div>
           </div>
         </div>
