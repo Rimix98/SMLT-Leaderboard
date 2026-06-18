@@ -6,6 +6,9 @@ import AppShell from './AppShell.vue'
 import RoleEditModal from './RoleEditModal.vue'
 import AddPlayerModal from './AddPlayerModal.vue'
 import StaffEditPanel from './StaffEditPanel.vue'
+import {
+  Users, Crown, Plus, Pencil, BarChart3, Target, Trash2,
+} from '@lucide/vue'
 
 const loading = ref(true)
 const roleModalVisible = ref(false)
@@ -84,7 +87,7 @@ function closeEditPanel() {
 <template>
   <AppShell>
     <template #brand>
-      <span class="header-logo">👥</span>
+      <span class="header-logo"><Users :size="20" /></span>
       <div class="header-title">
         <h1>Персонал SMLT</h1>
         <span class="header-subtitle">Состав команды</span>
@@ -95,16 +98,16 @@ function closeEditPanel() {
   <main class="app-main">
     <div class="container">
       <div v-if="store.isHost" class="admin-panel">
-        <div class="admin-panel-header">👑 Управление ролями</div>
+        <div class="admin-panel-header"><Crown :size="16" /> Управление ролями</div>
         <div class="admin-panel-content">
-          <button class="btn btn-primary" @click="openAddRole">➕ Создать роль</button>
-          <button class="btn btn-secondary" @click="openEditPanel">✏️ Редактировать</button>
+          <button class="btn btn-primary" @click="openAddRole"><Plus :size="16" /> Создать роль</button>
+          <button class="btn btn-secondary" @click="openEditPanel"><Pencil :size="16" /> Редактировать</button>
         </div>
       </div>
 
       <div class="stats-grid" style="margin-bottom:var(--spacing-lg)">
         <div class="stats-section">
-          <h3>📊 Статистика</h3>
+          <h3><BarChart3 :size="16" /> Статистика</h3>
           <div class="stats-grid-main admin-grid-3">
             <div class="stat-card">
               <div class="stat-value">{{ totalUniqueParticipants }}</div>
@@ -121,7 +124,7 @@ function closeEditPanel() {
           </div>
         </div>
         <div class="stats-section">
-          <h3>🎯 По тирам</h3>
+          <h3><Target :size="16" /> По тирам</h3>
           <div class="stats-grid-main admin-grid-4">
             <div class="stat-card">
               <div class="stat-value tier-stat-priority">{{ tierCounts.priority }}</div>
@@ -205,16 +208,16 @@ function closeEditPanel() {
             <div v-if="store.isHost" class="project-actions">
               <button class="btn btn-secondary btn-sm" @click="moveRole(role._originalIndex, 'up')">↑</button>
               <button class="btn btn-secondary btn-sm" @click="moveRole(role._originalIndex, 'down')">↓</button>
-              <button class="btn btn-primary btn-sm" @click="openAddPlayer(role._originalIndex)">➕ Игрок</button>
-              <button class="btn btn-primary btn-sm" @click="openEditRole(role._originalIndex)">✏️ Редактировать</button>
-              <button class="btn btn-danger btn-sm" @click="deleteRole(role._originalIndex)">🗑️ Удалить роль</button>
+              <button class="btn btn-primary btn-sm" @click="openAddPlayer(role._originalIndex)"><Plus :size="14" /> Игрок</button>
+              <button class="btn btn-primary btn-sm" @click="openEditRole(role._originalIndex)"><Pencil :size="14" /> Редактировать</button>
+              <button class="btn btn-danger btn-sm" @click="deleteRole(role._originalIndex)"><Trash2 :size="14" /> Удалить роль</button>
             </div>
           </div>
         </div>
       </TransitionGroup>
 
       <div v-if="!loading && store.staffRoles.length === 0" class="staff-empty-state">
-        <div class="staff-empty-icon">👥</div>
+        <div class="staff-empty-icon"><Users :size="48" /></div>
         <p>Роли пока не созданы</p>
         <p class="no-data-text">Создайте первую роль, чтобы добавить участников</p>
       </div>

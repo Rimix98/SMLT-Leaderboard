@@ -1,5 +1,6 @@
 <script setup>
 import AppShell from './AppShell.vue'
+import { Trophy, Folder, Users, ClipboardList, Lock } from '@lucide/vue'
 </script>
 
 <template>
@@ -30,17 +31,17 @@ import AppShell from './AppShell.vue'
 
       <section class="nav-buttons">
         <router-link to="/leaderboard" class="nav-card">
-          <span class="nav-card-icon">🏆</span>
+          <span class="nav-card-icon"><Trophy :size="36" /></span>
           <span class="nav-card-title">Лидерборд</span>
           <span class="nav-card-desc">Лучшие слееры SMLT</span>
         </router-link>
         <router-link to="/projects" class="nav-card">
-          <span class="nav-card-icon">📁</span>
+          <span class="nav-card-icon"><Folder :size="36" /></span>
           <span class="nav-card-title">Проекты SMLT</span>
           <span class="nav-card-desc">Коллабы SMLT</span>
         </router-link>
         <router-link to="/staff" class="nav-card">
-          <span class="nav-card-icon">👥</span>
+          <span class="nav-card-icon"><Users :size="36" /></span>
           <span class="nav-card-title">Стафф SMLT</span>
           <span class="nav-card-desc">Состав команды</span>
         </router-link>
@@ -48,7 +49,7 @@ import AppShell from './AppShell.vue'
 
       <section class="info-section">
         <div class="info-card">
-          <h3 class="info-title">📋 Информация</h3>
+          <h3 class="info-title"><ClipboardList :size="16" /> Информация</h3>
           <div class="info-content">
             <div class="info-item">
               <span class="info-label">Discord сервер</span>
@@ -62,7 +63,7 @@ import AppShell from './AppShell.vue'
               </div>
             </div>
             <div class="info-item security">
-              <span class="info-label">🔒 За безопасность и бекенд отвечал</span>
+              <span class="info-label"><Lock :size="12" /> За безопасность и бекенд отвечал</span>
               <div style="font-weight: 500;">
                 Discord: <span class="highlight">@rimix.98</span><br>
                 Telegram: <span class="highlight">@Rimix980</span>

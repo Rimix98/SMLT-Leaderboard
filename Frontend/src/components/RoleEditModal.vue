@@ -3,6 +3,9 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { store } from '../store'
 import { getPlayerTier, TIER_CONFIG, sortRolePlayersByTiers, createRoleApi, updateRoleApi, addPlayerToRoleApi, removePlayerFromRoleApi, saveStaffRoles, loadStaffTiers, setPlayerTier, toggleRoleTiers } from '../api/staff'
 import { makeOverlayClose } from '../utils/modal'
+import {
+  Pencil, BarChart3, Target,
+} from '@lucide/vue'
 
 const props = defineProps({ visible: Boolean, roleIndex: { type: Number, default: -1 } })
 const emit = defineEmits(['close'])
@@ -128,7 +131,7 @@ async function onTierClick(nickname, tier) {
   <div class="modal-overlay" :class="{ active: visible }" @mousedown="closeOverlay.onMousedown" @mouseup="closeOverlay.onMouseup">
     <div class="modal" @mousedown.stop @mouseup.stop>
       <div class="modal-header">
-        <div class="modal-title">{{ isEditing ? '✏️ Редактировать роль' : '🆕 Новая роль' }}</div>
+        <div class="modal-title">{{ isEditing ? 'Редактировать роль' : 'Новая роль' }}</div>
         <button class="modal-close" @click="emit('close')">✕</button>
       </div>
       <div class="modal-body">
@@ -151,9 +154,9 @@ async function onTierClick(nickname, tier) {
 
         <div v-if="isEditing" class="form-group" style="border-top:1px solid var(--color-border);padding-top:var(--spacing-md);margin-top:var(--spacing-md)">
           <div style="display:flex;gap:var(--spacing-xs);margin-bottom:var(--spacing-sm);flex-wrap:wrap">
-            <input type="text" class="form-input" placeholder="🔍 Поиск участника..." style="flex:1;min-width:100px" v-model="playerSearch">
-            <button class="btn btn-secondary btn-sm" @click="sortByTiers">📊 Сорт. по тирам</button>
-            <button class="btn btn-secondary btn-sm" @click="toggleTiers">🎯 Тир: {{ isTiersEnabled ? 'вкл' : 'выкл' }}</button>
+            <input type="text" class="form-input" placeholder="Поиск участника..." style="flex:1;min-width:100px" v-model="playerSearch">
+            <button class="btn btn-secondary btn-sm" @click="sortByTiers"><BarChart3 :size="14" /> Сорт. по тирам</button>
+            <button class="btn btn-secondary btn-sm" @click="toggleTiers"><Target :size="14" /> Тир: {{ isTiersEnabled ? 'вкл' : 'выкл' }}</button>
           </div>
 
           <div style="margin-bottom:var(--spacing-md)">
@@ -173,7 +176,7 @@ async function onTierClick(nickname, tier) {
                   @click="onTierClick(p.nickname, key)"
                 ></span>
               </template>
-              <button class="player-edit-btn" title="Редактировать" @click="startEditPlayer(p._idx)">✏️</button>
+              <button class="player-edit-btn" title="Редактировать" @click="startEditPlayer(p._idx)"><Pencil :size="14" /></button>
               <button v-if="p._idx > 0" class="player-edit-btn" title="Вверх" @click="movePlayer(p._idx, 'up')">↑</button>
               <button v-if="p._idx < (role?.players?.length || 0) - 1" class="player-edit-btn" title="Вниз" @click="movePlayer(p._idx, 'down')">↓</button>
               <button class="player-remove-btn" title="Удалить" @click="removePlayer(p.nickname)">✕</button>

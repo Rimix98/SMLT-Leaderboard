@@ -23,6 +23,9 @@ import {
   showToast,
   BACKEND_URL,
 } from '../api/utils'
+import {
+  Folder, Crown, Plus, Pencil, Trash2, Film, ExternalLink, Save, Users,
+} from '@lucide/vue'
 
 const selectedProject = ref(null)
 const showParticipantTab = ref(false)
@@ -289,7 +292,7 @@ function renderParticipants(participants) {
 <template>
   <AppShell>
     <template #brand>
-      <span class="header-logo">📁</span>
+      <span class="header-logo"><Folder :size="20" /></span>
       <div class="header-title">
         <h1>Проекты SMLT</h1>
         <span class="header-subtitle">Уровни и коллабы</span>
@@ -302,9 +305,9 @@ function renderParticipants(participants) {
   <main class="app-main">
     <div class="container">
       <div v-if="store.isHost" class="admin-panel">
-        <div class="admin-panel-header">👑 Управление проектами</div>
+        <div class="admin-panel-header"><Crown :size="16" /> Управление проектами</div>
         <div class="admin-panel-content">
-          <button class="btn btn-primary" @click="openAddProject()">➕ Добавить проект</button>
+          <button class="btn btn-primary" @click="openAddProject()"><Plus :size="16" /> Добавить проект</button>
         </div>
       </div>
 
@@ -346,7 +349,7 @@ function renderParticipants(participants) {
           </template>
           <template v-else>
             <div class="project-video">
-              <div class="project-video-placeholder">🎬</div>
+              <div class="project-video-placeholder"><Film :size="48" /></div>
             </div>
           </template>
           <div class="project-content">
@@ -364,13 +367,13 @@ function renderParticipants(participants) {
             <div v-if="store.isHost" class="project-actions" @click.stop>
               <button class="btn btn-secondary btn-sm" @click="moveProject(idx, 'up')">↑</button>
               <button class="btn btn-secondary btn-sm" @click="moveProject(idx, 'down')">↓</button>
-              <button class="btn btn-secondary btn-sm" @click="onEditProject(idx)">✏️ Редактировать</button>
-              <button class="btn btn-danger btn-sm" @click="deleteProject(idx)">🗑️ Удалить</button>
+              <button class="btn btn-secondary btn-sm" @click="onEditProject(idx)"><Pencil :size="14" /> Редактировать</button>
+              <button class="btn btn-danger btn-sm" @click="deleteProject(idx)"><Trash2 :size="14" /> Удалить</button>
             </div>
           </div>
         </div>
         <div v-if="!loading && store.projects.length === 0" class="empty-state admin-grid-full">
-          <div class="empty-state-icon">📁</div>
+          <div class="empty-state-icon"><Folder :size="48" /></div>
           <p>Проектов пока нет</p>
           <p class="no-data-text">Создайте первый проект, чтобы начать</p>
         </div>
@@ -382,7 +385,7 @@ function renderParticipants(participants) {
     <div id="projectModal" class="modal-overlay">
       <div class="modal modal-lg">
         <div class="modal-header">
-          <div class="modal-title" id="projectModalTitle">📁 Добавить проект</div>
+          <div class="modal-title" id="projectModalTitle"><Folder :size="16" /> Добавить проект</div>
           <button class="modal-close" @click="closeProjectEditModal()">✕</button>
         </div>
         <div class="modal-body">
@@ -422,11 +425,11 @@ function renderParticipants(participants) {
               <textarea id="projectComment" class="form-textarea" placeholder="Комментарий к проекту"></textarea>
             </div>
             <div v-if="editingIdx !== -1" class="form-group">
-              <button type="button" class="btn btn-primary btn-full-width" @click="openParticipantTabFromEditModal">👥 Добавить участников</button>
+              <button type="button" class="btn btn-primary btn-full-width" @click="openParticipantTabFromEditModal"><Users :size="16" /> Добавить участников</button>
             </div>
             <div class="modal-actions-row-spaced">
               <button type="button" class="btn btn-secondary" @click="closeProjectEditModal()">Отмена</button>
-              <button type="submit" class="btn btn-primary">💾 Сохранить</button>
+              <button type="submit" class="btn btn-primary"><Save :size="14" /> Сохранить</button>
             </div>
           </form>
         </div>
@@ -474,7 +477,7 @@ function renderParticipants(participants) {
           </div>
           <template v-if="toYoutubeId11(selectedProject.videoId)">
             <div class="project-info-bordered">
-              <a :href="`https://www.youtube.com/watch?v=${encodeURIComponent(toYoutubeId11(selectedProject.videoId))}`" target="_blank" rel="noopener noreferrer" class="project-video-link">🔗 Открыть на YouTube</a>
+                <a :href="`https://www.youtube.com/watch?v=${encodeURIComponent(toYoutubeId11(selectedProject.videoId))}`" target="_blank" rel="noopener noreferrer" class="project-video-link"><ExternalLink :size="14" /> Открыть на YouTube</a>
             </div>
           </template>
         </div>
@@ -514,7 +517,7 @@ function renderParticipants(participants) {
                 </div>
               </div>
 
-              <button class="btn btn-secondary btn-sm participant-add-btn" @click="addPart">➕ Добавить парт</button>
+              <button class="btn btn-secondary btn-sm participant-add-btn" @click="addPart"><Plus :size="14" /> Добавить парт</button>
 
               <div class="part-block end-screen-block" v-if="showEndScreen">
                 <div class="part-header">
@@ -525,7 +528,7 @@ function renderParticipants(participants) {
                   <input type="text" class="form-input participant-input" :value="stringifyMulti(participantConfig.endScreen)" @input="updateMultiField(participantConfig.endScreen, $event.target.value)" placeholder="END SCREEN (разделитель &)">
                 </div>
               </div>
-              <button v-if="!showEndScreen" class="btn btn-deco btn-sm participant-add-btn" @click="toggleEndScreen">➕ Добавить END SCREEN</button>
+              <button v-if="!showEndScreen" class="btn btn-deco btn-sm participant-add-btn" @click="toggleEndScreen"><Plus :size="14" /> Добавить END SCREEN</button>
               <button v-else class="btn btn-deco btn-sm participant-add-btn" @click="toggleEndScreen">✕ Убрать END SCREEN</button>
             </div>
 
@@ -546,7 +549,7 @@ function renderParticipants(participants) {
 
               <div class="right-section">
                 <div class="right-section-header">
-                  <button class="btn btn-secondary btn-xs" @click="addPlaytestField">➕ PLAYTEST</button>
+                  <button class="btn btn-secondary btn-xs" @click="addPlaytestField"><Plus :size="14" /> PLAYTEST</button>
                 </div>
                 <div v-for="(_, i) in participantConfig.playtest" :key="'pt'+i" class="right-field-row">
                   <span class="field-label">PLAYTEST</span>
@@ -557,7 +560,7 @@ function renderParticipants(participants) {
 
               <div class="right-section">
                 <div class="right-section-header">
-                  <button class="btn btn-secondary btn-xs" @click="addMergerField">➕ MERGER</button>
+                  <button class="btn btn-secondary btn-xs" @click="addMergerField"><Plus :size="14" /> MERGER</button>
                 </div>
                 <div v-for="(_, i) in participantConfig.merger" :key="'mg'+i" class="right-field-row">
                   <span class="field-label">MERGER</span>
@@ -568,7 +571,7 @@ function renderParticipants(participants) {
 
               <div class="right-section">
                 <div class="right-section-header">
-                  <button v-if="!showShowcaser" class="btn btn-secondary btn-xs" @click="toggleShowcaser">➕ SHOWCASER</button>
+                  <button v-if="!showShowcaser" class="btn btn-secondary btn-xs" @click="toggleShowcaser"><Plus :size="14" /> SHOWCASER</button>
                   <button v-else class="btn btn-danger btn-xs" @click="toggleShowcaser">✕ SHOWCASER</button>
                 </div>
                 <div v-if="showShowcaser" class="right-field-row">
@@ -579,7 +582,7 @@ function renderParticipants(participants) {
 
               <div class="right-section">
                 <div class="right-section-header">
-                  <button class="btn btn-secondary btn-xs" @click="addMerger2Field">➕ MERGER</button>
+                  <button class="btn btn-secondary btn-xs" @click="addMerger2Field"><Plus :size="14" /> MERGER</button>
                 </div>
                 <div v-for="(_, i) in participantConfig.merger2" :key="'mg2'+i" class="right-field-row">
                   <span class="field-label">MERGER</span>
@@ -590,7 +593,7 @@ function renderParticipants(participants) {
 
               <div class="right-section">
                 <div class="right-section-header">
-                  <button class="btn btn-secondary btn-xs" @click="addVerifierField">➕ VERIFIER</button>
+                  <button class="btn btn-secondary btn-xs" @click="addVerifierField"><Plus :size="14" /> VERIFIER</button>
                 </div>
                 <div v-for="(_, i) in participantConfig.verifier" :key="'vr'+i" class="right-field-row">
                   <span class="field-label">VERIFIER</span>
@@ -603,7 +606,7 @@ function renderParticipants(participants) {
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" @click="closeParticipantTab">Отмена</button>
-          <button class="btn btn-primary" @click="saveParticipantConfig">💾 Сохранить участников</button>
+          <button class="btn btn-primary" @click="saveParticipantConfig"><Save :size="14" /> Сохранить участников</button>
         </div>
       </div>
     </div>

@@ -1,8 +1,9 @@
 <script setup>
 import { computed } from 'vue'
 import { store } from '../store'
-import { getFlagCode, resolveCountry } from '../api/utils'
+import { getFlagCode } from '../api/utils'
 import { makeOverlayClose } from '../utils/modal'
+import { Trophy, Globe } from '@lucide/vue'
 
 const props = defineProps({ levelId: { type: [String, Number], default: null }, visible: { type: Boolean, default: false } })
 const emit = defineEmits(['close'])
@@ -19,7 +20,7 @@ const close = makeOverlayClose(() => emit('close'))
   <div class="modal-overlay" :class="{ active: visible }" @mousedown="close.onMousedown" @mouseup="close.onMouseup">
     <div class="modal" @mousedown.stop @mouseup.stop>
       <div class="modal-header">
-        <div class="modal-title">🏆 {{ levelData?.name || 'Уровень' }} #{{ levelData?.placement }}</div>
+        <div class="modal-title"><Trophy :size="16" /> {{ levelData?.name || 'Уровень' }} #{{ levelData?.placement }}</div>
         <button class="modal-close" @click="emit('close')">✕</button>
       </div>
       <div class="modal-body">
@@ -28,7 +29,7 @@ const close = makeOverlayClose(() => emit('close'))
             <span>
               <strong>#{{ idx + 1 }}</strong>
               <img v-if="getFlagCode(victor.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(victor.nationality)}.png`" :alt="getFlagCode(victor.nationality).toUpperCase()" width="20" class="flag-img flag-inline">
-              <span v-else>{{ !resolveCountry(victor.nationality) && victor.nationality === null ? '❌' : '🌍' }}</span>
+              <span v-else><Globe :size="16" /></span>
               {{ victor.name }}
             </span>
           </div>

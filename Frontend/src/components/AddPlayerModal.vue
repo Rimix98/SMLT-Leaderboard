@@ -3,6 +3,7 @@ import { ref, watch, nextTick, computed } from 'vue'
 import { store } from '../store'
 import { addPlayerToRoleApi } from '../api/staff'
 import { makeOverlayClose } from '../utils/modal'
+import { Plus } from '@lucide/vue'
 
 const props = defineProps({ visible: Boolean, roleIndex: { type: Number, default: -1 } })
 const emit = defineEmits(['close'])
@@ -33,7 +34,7 @@ async function submit() {
   <div class="modal-overlay" :class="{ active: visible }" @mousedown="closeOverlay.onMousedown" @mouseup="closeOverlay.onMouseup">
     <div class="modal" @mousedown.stop @mouseup.stop>
       <div class="modal-header">
-        <div class="modal-title">➕ Добавить игрока в «{{ roleName }}»</div>
+        <div class="modal-title"><Plus :size="16" /> Добавить игрока в «{{ roleName }}»</div>
         <button class="modal-close" @click="emit('close')">✕</button>
       </div>
       <div class="modal-body">

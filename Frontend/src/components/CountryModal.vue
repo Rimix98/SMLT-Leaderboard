@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { store } from '../store'
 import { resolveCountry, CODE_TO_NAME, getFlagCode } from '../api/utils'
 import { makeOverlayClose } from '../utils/modal'
+import { Globe } from '@lucide/vue'
 
 const props = defineProps({ countryName: { type: String, default: null }, visible: { type: Boolean, default: false } })
 const emit = defineEmits(['close'])
@@ -38,7 +39,7 @@ const close = makeOverlayClose(() => emit('close'))
       <div class="modal-header">
         <div class="modal-title">
           <img v-if="flagCode" :src="`https://flagcdn.com/w20/${flagCode}.png`" :alt="flagCode.toUpperCase()" width="20" class="flag-img flag-inline">
-          <span v-else>🌍</span>
+          <span v-else><Globe :size="16" /></span>
           Топ игроков: {{ displayName }}
         </div>
         <button class="modal-close" @click="emit('close')">✕</button>

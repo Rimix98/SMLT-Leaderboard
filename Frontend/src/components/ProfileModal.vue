@@ -3,6 +3,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { store } from '../store'
 import { resolveCountry, CODE_TO_NAME, getFlagCode } from '../api/utils'
 import { makeOverlayClose } from '../utils/modal'
+import { Globe, ExternalLink } from '@lucide/vue'
 
 const props = defineProps({ playerIndex: { type: Number, default: -1 } })
 const emit = defineEmits(['close'])
@@ -28,7 +29,7 @@ const close = makeOverlayClose(() => emit('close'))
       <div class="modal-header">
         <div class="modal-title">
           <img v-if="flagCode" :src="`https://flagcdn.com/w20/${flagCode}.png`" :alt="flagCode.toUpperCase()" width="20" class="flag-img flag-inline">
-          <span v-else>{{ !resolveCountry(player?.nationality) && player?.nationality === null ? '❌' : '🌍' }}</span>
+          <span v-else><Globe :size="16" /></span>
           {{ player?.name || 'Профиль' }}
         </div>
         <button class="modal-close" @click="emit('close')">✕</button>
@@ -58,7 +59,7 @@ const close = makeOverlayClose(() => emit('close'))
           <span class="profile-info-label">Страна:</span>
           <span class="profile-info-value">
             <img v-if="flagCode" :src="`https://flagcdn.com/w20/${flagCode}.png`" :alt="flagCode.toUpperCase()" width="20" class="flag-img flag-inline">
-            <span v-else>{{ !resolveCountry(player.nationality) && player.nationality === null ? '❌' : '🌍' }}</span>
+            <span v-else><Globe :size="16" /></span>
             {{ player.nationality || 'Не указана' }}
           </span>
         </div>
@@ -83,7 +84,7 @@ const close = makeOverlayClose(() => emit('close'))
 
         <div class="profile-link">
           <a :href="`https://demonlist.org/profile/${encodeURIComponent(String(player.id))}/`" target="_blank" rel="noopener noreferrer">
-            🔗 Показать аккаунт в Global Demonlist →
+            <ExternalLink :size="14" /> Показать аккаунт в Global Demonlist →
           </a>
         </div>
       </div>

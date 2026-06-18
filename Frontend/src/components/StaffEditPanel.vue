@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { store } from '../store'
 import { getPlayerTier, TIER_CONFIG, addPlayerToRoleApi, removePlayerFromRoleApi, saveStaffRoles, loadStaffTiers, setPlayerTier } from '../api/staff'
+import { Pencil } from '@lucide/vue'
 
 const props = defineProps({ visible: Boolean })
 const emit = defineEmits(['close'])
@@ -86,7 +87,7 @@ async function onTierClick(nickname, tier) {
   <div class="edit-panel-overlay" :class="{ active: visible }" @click="emit('close')"></div>
   <div class="edit-panel" :class="{ open: visible }">
     <div class="edit-panel-header">
-      <span>✏️ Редактировать</span>
+      <span><Pencil :size="16" /> Редактировать</span>
       <button class="edit-panel-close" @click="emit('close')">✕</button>
     </div>
     <div class="edit-panel-body">
@@ -105,10 +106,10 @@ async function onTierClick(nickname, tier) {
           <option v-for="(role, idx) in store.staffRoles" :key="idx" :value="idx">{{ role.name }}</option>
         </select>
       </div>
-      <button class="btn btn-primary" @click="submit">{{ editKey ? '💾 Сохранить' : '➕ Добавить игрока' }}</button>
+      <button class="btn btn-primary" @click="submit">{{ editKey ? 'Сохранить' : 'Добавить игрока' }}</button>
       <div class="edit-player-list">
         <h4>Игроки:</h4>
-        <input type="text" class="form-input" placeholder="🔍 Поиск игрока..." style="margin-bottom:var(--spacing-sm)" v-model="searchQuery">
+        <input type="text" class="form-input" placeholder="Поиск игрока..." style="margin-bottom:var(--spacing-sm)" v-model="searchQuery">
         <div v-if="allPlayers.length === 0" style="color:var(--color-text-muted);font-size:var(--font-size-xs)">
           {{ searchQuery ? 'Ничего не найдено' : 'Нет игроков' }}
         </div>
@@ -123,7 +124,7 @@ async function onTierClick(nickname, tier) {
             :title="cfg.label"
             @click="onTierClick(p.nickname, key)"
           ></span>
-          <button class="player-edit-btn" title="Редактировать" @click="editPlayer(p)">✏️</button>
+          <button class="player-edit-btn" title="Редактировать" @click="editPlayer(p)"><Pencil :size="14" /></button>
           <button class="player-remove-btn" title="Удалить" @click="removePlayer(p)">✕</button>
         </div>
       </div>

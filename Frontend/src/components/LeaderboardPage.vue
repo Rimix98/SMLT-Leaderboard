@@ -16,6 +16,10 @@ import {
   addPlayer as addPlayerApi,
   removePlayer as removePlayerApi,
 } from '../api/leaderboard'
+import {
+  Trophy, AlertTriangle, RefreshCw, Crown, Plus, BookOpen,
+  Globe, BarChart3,
+} from '@lucide/vue'
 
 const activeTab = ref('players')
 const playerSearch = ref('')
@@ -164,7 +168,7 @@ function doRemovePlayer(name) {
 <template>
   <AppShell>
     <template #brand>
-      <span class="header-logo">🏆</span>
+      <span class="header-logo"><Trophy :size="20" /></span>
       <div class="header-title">
         <h1>Лидерборд SMLT</h1>
         <span class="header-subtitle">Лидерборд и топ уровней</span>
@@ -191,32 +195,32 @@ function doRemovePlayer(name) {
       </div>
 
       <div v-else-if="leaderboardError" class="loading-state">
-        <div class="error-icon">⚠️</div>
+        <div class="error-icon"><AlertTriangle :size="48" /></div>
         <div class="error-text">Не удалось загрузить лидерборд</div>
-        <button class="btn btn-primary modal-actions-row-spaced" @click="retryLoad">🔄 Повторить попытку</button>
+        <button class="btn btn-primary modal-actions-row-spaced" @click="retryLoad"><RefreshCw :size="16" /> Повторить попытку</button>
       </div>
 
       <template v-else>
         <div v-if="store.isHost" class="admin-panel">
-          <div class="admin-panel-header">👑 Управление игроками</div>
+          <div class="admin-panel-header"><Crown :size="16" /> Управление игроками</div>
           <div class="admin-panel-content">
-            <button class="btn btn-primary" @click="openAddPlayerModal">➕ Добавить игрока</button>
+            <button class="btn btn-primary" @click="openAddPlayerModal"><Plus :size="16" /> Добавить игрока</button>
           </div>
         </div>
 
         <div class="demonlist-tabs">
           <div class="demonlist-tab-header" ref="tabHeaderRef">
             <div class="tab-indicator" :style="indicatorStyle"></div>
-            <button ref="playerTabBtn" class="demonlist-tab-btn" :class="{ active: activeTab === 'players' }" @click="switchTab('players')">🏆 Топ игроков</button>
-            <button ref="levelTabBtn" class="demonlist-tab-btn" :class="{ active: activeTab === 'levels' }" @click="switchTab('levels')">📔 Топ уровней</button>
+            <button ref="playerTabBtn" class="demonlist-tab-btn" :class="{ active: activeTab === 'players' }" @click="switchTab('players')"><Trophy :size="16" /> Топ игроков</button>
+            <button ref="levelTabBtn" class="demonlist-tab-btn" :class="{ active: activeTab === 'levels' }" @click="switchTab('levels')"><BookOpen :size="16" /> Топ уровней</button>
           </div>
 
           <Transition name="tab" mode="out-in">
             <div v-if="activeTab === 'players'" key="players" class="leaderboard-section">
               <div class="leaderboard-header">
-                <h2>🏆 Топ игроков</h2>
+                <h2><Trophy :size="18" /> Топ игроков</h2>
                 <div class="leaderboard-controls">
-                  <input type="text" class="search-input" placeholder="🔍 Поиск по нику..." v-model="playerSearch" @input="debouncedFilterPlayers(playerSearch)">
+                  <input type="text" class="search-input" placeholder="Поиск по нику..." v-model="playerSearch" @input="debouncedFilterPlayers(playerSearch)">
                   <div class="leaderboard-stats">{{ store.players.length }} игроков</div>
                 </div>
               </div>
@@ -235,18 +239,19 @@ function doRemovePlayer(name) {
                   <div class="cell cell-player">
                     <span class="player-flag">
                       <img v-if="getFlagCode(p.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(p.nationality)}.png`" :alt="getFlagCode(p.nationality).toUpperCase()" width="20" loading="lazy" class="flag-img flag-inline">
-                      <span v-else>{{ !resolveCountry(p.nationality) && p.nationality === null ? '❌' : '🌍' }}</span>
+                      <span v-else><Globe :size="16" /></span>
                     </span>
                     <div class="player-info">
                       <span class="player-name">{{ p.name }}</span>
                       <span class="player-score">{{ (p.score || 0).toFixed(2) }} pts · #{{ p.rank || '—' }}</span>
                     </div>
+                    <button v-if="store.isHost" class="btn btn-danger btn-xs player-delete-btn" @click.stop="doRemovePlayer(p.name)">✕</button>
                   </div>
                   <div class="cell cell-records">{{ p.hardest?.level?.name || '—' }}</div>
                   <div class="cell cell-points">{{ (p.score || 0).toFixed(2) }}</div>
                 </div>
                 <div v-if="store.players.length === 0" class="empty-state">
-                  <div class="empty-state-icon">🏆</div>
+                <div class="empty-state-icon"><Trophy :size="48" /></div>
                   <p>Игроки не найдены</p>
                   <p class="no-data-text">Попробуйте изменить поисковый запрос</p>
                 </div>
@@ -256,9 +261,9 @@ function doRemovePlayer(name) {
 
             <div v-else key="levels" class="leaderboard-section">
               <div class="leaderboard-header">
-                <h2>📔 Топ уровней</h2>
+                <h2><BookOpen :size="18" /> Топ уровней</h2>
                 <div class="leaderboard-controls">
-                  <input type="text" class="search-input" placeholder="🔍 Поиск по уровню..." v-model="store.levels.filter" @input="debouncedFilterLevels(store.levels.filter)">
+                  <input type="text" class="search-input" placeholder="Поиск по уровню..." v-model="store.levels.filter" @input="debouncedFilterLevels(store.levels.filter)">
                   <div class="leaderboard-stats">{{ store.levels.all?.length || 0 }} уровней</div>
                 </div>
               </div>
@@ -283,7 +288,7 @@ function doRemovePlayer(name) {
                   <div class="cell cell-records">{{ level.victors.length }}</div>
                 </div>
                 <div v-if="!store.levels.all" class="empty-state">
-                  <div class="empty-state-icon">📔</div>
+                  <div class="empty-state-icon"><BookOpen :size="48" /></div>
                   <p>Нет данных об уровнях</p>
                   <p class="no-data-text">Уровни появятся после добавления записей</p>
                 </div>
@@ -300,7 +305,7 @@ function doRemovePlayer(name) {
 
       <div class="stats-grid">
         <div class="stats-section">
-          <h3>📊 Статистика</h3>
+          <h3><BarChart3 :size="16" /> Статистика</h3>
           <div class="stats-grid-main">
             <div class="stat-card">
               <div class="stat-value">{{ store.players.length }}</div>
@@ -320,18 +325,17 @@ function doRemovePlayer(name) {
                 {{ topLevelByVictors?.name || '—' }}
               </div>
               <div class="stat-label">Топ уровень</div>
-                    </div>
-                    <button v-if="store.isHost" class="btn btn-danger btn-xs player-delete-btn" @click.stop="doRemovePlayer(p.name)">✕</button>
-                  </div>
+            </div>
+          </div>
         </div>
         <div class="stats-section">
-          <h3>🌍 По странам</h3>
+          <h3><Globe :size="16" /> По странам</h3>
           <div class="country-list" id="countryList">
             <div v-for="c in countryStats" :key="c.code" class="country-item country-item-clickable" @click="openCountry(c.name)">
               <div class="country-info">
                 <span class="country-flag">
                   <img v-if="getFlagCode(c.name)" :src="`https://flagcdn.com/w20/${getFlagCode(c.name)}.png`" :alt="getFlagCode(c.name).toUpperCase()" width="20" loading="lazy" class="flag-img flag-inline">
-                  <span v-else>{{ !resolveCountry(c.name) && c.name === null ? '❌' : '🌍' }}</span>
+                  <span v-else><Globe :size="16" /></span>
                 </span>
                 <span class="country-name">{{ c.displayName }}</span>
               </div>
@@ -353,7 +357,7 @@ function doRemovePlayer(name) {
     <div class="modal-overlay" :class="{ active: addPlayerModalVisible }" @mousedown="closeAddPlayerModal" @mouseup="closeAddPlayerModal">
       <div class="modal" @mousedown.stop @mouseup.stop>
         <div class="modal-header">
-          <div class="modal-title">➕ Добавить игрока</div>
+          <div class="modal-title"><Plus :size="16" /> Добавить игрока</div>
           <button class="modal-close" @click="closeAddPlayerModal">✕</button>
         </div>
         <div class="modal-body">
