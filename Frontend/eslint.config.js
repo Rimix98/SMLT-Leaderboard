@@ -28,7 +28,6 @@ export default [
         HTMLImageElement: 'readonly',
         HTMLFormElement: 'readonly',
         HTMLButtonElement: 'readonly',
-        DOMException: 'readonly',
         requestAnimationFrame: 'readonly',
       },
     },

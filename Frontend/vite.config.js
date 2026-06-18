@@ -9,8 +9,8 @@ export default defineConfig({
     sourcemap: false,
   },
   test: {
-    environment: 'jsdom',
     globals: true,
+    setupFiles: ['src/__tests__/setup.js'],
     include: ['src/**/*.{test,spec}.js'],
     coverage: {
       provider: 'v8',

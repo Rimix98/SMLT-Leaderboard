@@ -28,7 +28,7 @@ describe('tokens', () => {
 
 describe('isAbortError', () => {
   it('returns true for AbortError', () => {
-    const err = new DOMException('The operation was aborted', 'AbortError')
+    const err = { name: 'AbortError', message: 'aborted' }
     expect(isAbortError(err)).toBe(true)
   })
 

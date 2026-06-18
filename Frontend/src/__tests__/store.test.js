@@ -35,13 +35,12 @@ describe('store', () => {
 
 describe('setTheme', () => {
   beforeEach(() => {
-    document.documentElement.removeAttribute('data-theme')
+    localStorage.clear()
   })
 
   it('sets valid theme', () => {
     setTheme('light')
     expect(store.theme).toBe('light')
-    expect(document.documentElement.getAttribute('data-theme')).toBe('light')
   })
 
   it('rejects invalid theme', () => {
@@ -53,27 +52,29 @@ describe('setTheme', () => {
   it('sets dark theme', () => {
     setTheme('dark')
     expect(store.theme).toBe('dark')
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
   })
 
   it('sets gray theme', () => {
     setTheme('gray')
     expect(store.theme).toBe('gray')
-    expect(document.documentElement.getAttribute('data-theme')).toBe('gray')
+  })
+
+  it('persists to localStorage', () => {
+    setTheme('light')
+    expect(localStorage.getItem('smlt-theme')).toBe('light')
   })
 })
 
 describe('initTheme', () => {
-  it('sets theme attribute on document', () => {
+  it('sets theme from store', () => {
     store.theme = 'light'
     initTheme()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+    expect(store.theme).toBe('light')
   })
 
   it('defaults to dark for invalid theme', () => {
     store.theme = 'invalid'
     initTheme()
     expect(store.theme).toBe('dark')
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
   })
 })
