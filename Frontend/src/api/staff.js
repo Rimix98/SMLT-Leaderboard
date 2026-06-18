@@ -104,6 +104,7 @@ export async function saveStaffRoles() {
 
 export async function addPlayerToRoleApi(roleIndex, nickname, discord) {
   try {
+    if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/add`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
