@@ -179,12 +179,6 @@ async function onTierClick(nickname, tier) {
               <button class="player-remove-btn" title="Удалить" @click="removePlayer(p.nickname)">✕</button>
             </div>
           </div>
-
-          <div class="modal-actions-row" style="flex-wrap:wrap">
-            <input type="text" class="form-input" placeholder="Ник игрока" style="flex:1;min-width:120px" v-model="addNickname" @keyup.enter="addPlayer">
-            <button class="btn btn-primary btn-sm" @click="addPlayer">{{ editPlayerIdx >= 0 ? '💾 Сохранить' : '➕ Добавить' }}</button>
-            <button v-if="editPlayerIdx >= 0" class="btn btn-secondary btn-sm" @click="cancelEditPlayer">✕</button>
-          </div>
         </div>
 
         <div class="modal-actions-row-spaced">
