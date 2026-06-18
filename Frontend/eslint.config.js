@@ -1,0 +1,57 @@
+import js from '@eslint/js'
+import pluginVue from 'eslint-plugin-vue'
+
+export default [
+  js.configs.recommended,
+  ...pluginVue.configs['flat/recommended'],
+  {
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        localStorage: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        fetch: 'readonly',
+        AbortController: 'readonly',
+        URL: 'readonly',
+        confirm: 'readonly',
+        alert: 'readonly',
+        Event: 'readonly',
+        HTMLElement: 'readonly',
+        HTMLInputElement: 'readonly',
+        HTMLImageElement: 'readonly',
+        HTMLFormElement: 'readonly',
+        HTMLButtonElement: 'readonly',
+        DOMException: 'readonly',
+        requestAnimationFrame: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-console': ['warn', { allow: ['error', 'warn'] }],
+      'no-empty': 'warn',
+      'vue/multi-word-component-names': 'off',
+      'vue/require-default-prop': 'off',
+      'vue/no-v-html': 'error',
+      'vue/max-attributes-per-line': 'off',
+      'vue/singleline-html-element-content-newline': 'off',
+      'vue/html-self-closing': 'off',
+      'vue/attributes-order': 'off',
+      'vue/html-indent': 'off',
+      'vue/first-attribute-linebreak': 'off',
+      'vue/multiline-html-element-content-newline': 'off',
+      'no-inner-declarations': 'error',
+      'no-undef': ['error', { 'typeof': true }],
+      'preserve-caught-error': 'off',
+    },
+  },
+  {
+    ignores: ['dist/**', 'node_modules/**', '*.config.js'],
+  },
+]

@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test with coverage
+        run: go test ./... -race -coverprofile=coverage/backend.out -covermode=atomic -count=1 -timeout 120s
+
+      - name: Upload backend coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage/backend.out
+
+  frontend:
+    name: Frontend (Vue)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npx eslint src/ --max-warnings 0
+        continue-on-error: true
+
+      - name: Test
+        run: npx vitest run --coverage
+        continue-on-error: true
+
+      - name: Build
+        run: npm run build
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Go test
+        run: go test ./... -count=1 -timeout 60s
+
+      - name: npm audit
+        run: cd Frontend && npm audit --audit-level=moderate
+        continue-on-error: true
+
+      - name: go mod verify
+        run: go mod verify

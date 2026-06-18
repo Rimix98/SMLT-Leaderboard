@@ -1,0 +1,51 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - durationcheck
+    - errname
+    - errorlint
+    - exportloopref
+    - gosec
+    - misspell
+    - nilerr
+    - prealloc
+    - unconvert
+    - unparam
+    - wastedassign
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: false
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+  gosec:
+    excludes:
+      - G104
+      - G304
+  misspell:
+    locale: US
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
+    - linters:
+        - errcheck
+      text: "Error return value of"
+  max-issues-per-linter: 0
+  max-same-issues: 0
