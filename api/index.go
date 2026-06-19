@@ -3709,36 +3709,31 @@ func handlePlayerHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	iter := fsClient.Collection("player_history").
+	var entries []PlayerHistoryEntry
+
+	if docs, err := fsClient.Collection("player_history").
 		Where("playerId", "==", playerID).
 		Limit(90).
-		Documents(ctx)
-	defer iter.Stop()
+		Documents(ctx).GetAll(); err != nil {
+		log.Printf("history query error for %s: %v", playerID, err)
+	} else {
+		for _, doc := range docs {
+			var entry PlayerHistoryEntry
+			if err := doc.DataTo(&entry); err != nil {
+				continue
+			}
+			entries = append(entries, entry)
+		}
+	}
 
-	var entries []PlayerHistoryEntry
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			log.Printf("history query error for %s: %v", playerID, err)
-			break
-		}
-		var entry PlayerHistoryEntry
-		if err := doc.DataTo(&entry); err != nil {
-			continue
-		}
-		entries = append(entries, entry)
+	if entries == nil {
+		entries = []PlayerHistoryEntry{}
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Date > entries[j].Date
 	})
 
-	if entries == nil {
-		entries = []PlayerHistoryEntry{}
-	}
 	writeJSON(w, entries)
 }
 
