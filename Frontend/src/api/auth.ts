@@ -5,9 +5,9 @@ export { refreshCsrfToken, doAdminKnock }
 
 let captchaId = ''
 
-export async function initCaptcha() {
-  const img = document.getElementById('captcha-img')
-  const input = document.getElementById('captchaInput')
+export async function initCaptcha(): Promise<void> {
+  const img = document.getElementById('captcha-img') as HTMLImageElement | null
+  const input = document.getElementById('captchaInput') as HTMLInputElement | null
   if (!img) return
 
   try {
@@ -17,8 +17,8 @@ export async function initCaptcha() {
       console.error('Ошибка получения капчи')
       return
     }
-    captchaId = data.captchaId
-    img.src = data.captchaImage
+    captchaId = data.captchaId as string
+    img.src = data.captchaImage as string
     img.style.display = 'block'
     if (input) input.value = ''
   } catch (err) {
@@ -27,7 +27,7 @@ export async function initCaptcha() {
   }
 }
 
-export async function initHostStatus() {
+export async function initHostStatus(): Promise<void> {
   try {
     const res = await fetchWithAbort(`${BACKEND_URL}/verify`, { credentials: 'include' }, 'auth-verify')
     const data = await parseJsonResponse(res)
@@ -42,9 +42,9 @@ export async function initHostStatus() {
   }
 }
 
-export function showHostModal() {
+export function showHostModal(): void {
   const modal = document.getElementById('hostModal')
-  const passwordInput = document.getElementById('hostPassword')
+  const passwordInput = document.getElementById('hostPassword') as HTMLInputElement | null
   const errorEl = document.getElementById('hostError')
 
   if (modal) {
@@ -58,13 +58,13 @@ export function showHostModal() {
   }
 }
 
-export function closeHostModal() {
+export function closeHostModal(): void {
   const modal = document.getElementById('hostModal')
   if (modal) modal.classList.remove('active')
 }
 
-export async function verifyHost(inputPassword) {
-  const captchaInput = document.getElementById('captchaInput')
+export async function verifyHost(inputPassword: string): Promise<void> {
+  const captchaInput = document.getElementById('captchaInput') as HTMLInputElement | null
 
   try {
     const res = await fetchWithAbort(`${BACKEND_URL}/login`, {
@@ -89,7 +89,7 @@ export async function verifyHost(inputPassword) {
       const modal = document.getElementById('hostModal')
       if (modal) modal.classList.remove('active')
     } else {
-      const errorMsg = data.error || 'Неверный пароль хоста!'
+      const errorMsg = (data.error as string) || 'Неверный пароль хоста!'
       showToast(errorMsg, 'error')
       store.isHost = false
       initCaptcha()
@@ -98,7 +98,7 @@ export async function verifyHost(inputPassword) {
     if (isAbortError(err)) return
     console.error('Ошибка входа:', err)
     showToast(
-      err.message === 'Сервер вернул некорректный ответ'
+      (err instanceof Error && err.message) === 'Сервер вернул некорректный ответ'
         ? 'Ошибка сервера: некорректный формат данных'
         : 'Ошибка соединения с сервером. Проверьте сеть или статус сервера.',
       'error'
@@ -107,7 +107,7 @@ export async function verifyHost(inputPassword) {
   }
 }
 
-export async function logoutHost() {
+export async function logoutHost(): Promise<void> {
   store.isHost = false
   stopTokenAutoRefresh()
   try {

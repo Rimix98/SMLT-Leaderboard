@@ -1,12 +1,12 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { store } from '../store'
 import { resolveCountry, CODE_TO_NAME, getFlagCode } from '../api/utils'
 import { makeOverlayClose } from '../utils/modal'
 import { Globe, ExternalLink } from '@lucide/vue'
 
-const props = defineProps({ playerIndex: { type: Number, default: -1 } })
-const emit = defineEmits(['close'])
+const props = withDefaults(defineProps<{ playerIndex?: number }>(), { playerIndex: -1 })
+const emit = defineEmits<{ close: [] }>()
 
 const player = computed(() => store.players[props.playerIndex])
 

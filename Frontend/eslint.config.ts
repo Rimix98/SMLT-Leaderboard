@@ -1,13 +1,19 @@
 import js from '@eslint/js'
 import pluginVue from 'eslint-plugin-vue'
+import tseslint from 'typescript-eslint'
 
-export default [
+export default tseslint.config(
   js.configs.recommended,
+  ...tseslint.configs.recommended,
   ...pluginVue.configs['flat/recommended'],
   {
+    files: ['**/*.{ts,vue}'],
     languageOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'module',
+      parserOptions: {
+        parser: tseslint.parser,
+        ecmaVersion: 2022,
+        sourceType: 'module',
+      },
       globals: {
         window: 'readonly',
         document: 'readonly',
@@ -27,12 +33,18 @@ export default [
         HTMLInputElement: 'readonly',
         HTMLImageElement: 'readonly',
         HTMLFormElement: 'readonly',
+        HTMLTextAreaElement: 'readonly',
+        HTMLSelectElement: 'readonly',
         HTMLButtonElement: 'readonly',
         requestAnimationFrame: 'readonly',
+        DOMException: 'readonly',
+        Map: 'readonly',
+        Set: 'readonly',
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'no-console': ['warn', { allow: ['error', 'warn'] }],
       'no-empty': 'warn',
       'vue/multi-word-component-names': 'off',
@@ -46,11 +58,12 @@ export default [
       'vue/first-attribute-linebreak': 'off',
       'vue/multiline-html-element-content-newline': 'off',
       'no-inner-declarations': 'error',
-      'no-undef': ['error', { 'typeof': true }],
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-require-imports': 'off',
       'preserve-caught-error': 'off',
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**', '*.config.js'],
+    ignores: ['dist/**', 'node_modules/**', '*.config.ts', '*.config.js'],
   },
-]
+)

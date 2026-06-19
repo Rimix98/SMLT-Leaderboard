@@ -1,12 +1,12 @@
-<script setup>
+<script setup lang="ts">
 import { ref, watch, nextTick, computed } from 'vue'
 import { store } from '../store'
 import { addPlayerToRoleApi } from '../api/staff'
 import { makeOverlayClose } from '../utils/modal'
 import { Plus } from '@lucide/vue'
 
-const props = defineProps({ visible: Boolean, roleIndex: { type: Number, default: -1 } })
-const emit = defineEmits(['close'])
+const props = withDefaults(defineProps<{ visible: boolean; roleIndex?: number }>(), { roleIndex: -1 })
+const emit = defineEmits<{ close: [] }>()
 
 const nickname = ref('')
 const discord = ref('')

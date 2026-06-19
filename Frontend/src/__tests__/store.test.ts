@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { store, setTheme, initTheme } from '../store.js'
+import { store, setTheme, initTheme } from '../store'
 
 describe('store', () => {
   beforeEach(() => {
@@ -28,7 +28,7 @@ describe('store', () => {
   it('is reactive', () => {
     store.isHost = true
     expect(store.isHost).toBe(true)
-    store.players = [{ name: 'test' }]
+    store.players = [{ name: 'test', id: 1, rank: 1, score: 0, nationality: null, records: [], hardest: null }]
     expect(store.players).toHaveLength(1)
   })
 })

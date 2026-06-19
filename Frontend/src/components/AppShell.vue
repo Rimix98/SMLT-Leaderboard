@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted, onUnmounted, provide, watch, nextTick, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { store, setTheme } from '../store'

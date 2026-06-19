@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { makeOverlayClose } from '../utils/modal.js'
+import { makeOverlayClose } from '../utils/modal'
 
 describe('makeOverlayClose', () => {
   it('returns object with onMousedown and onMouseup', () => {
@@ -18,10 +18,10 @@ describe('makeOverlayClose', () => {
 
     const currentTarget = { id: 'overlay' }
     const mousedownEvent = { target: currentTarget, currentTarget }
-    overlay.onMousedown(mousedownEvent)
+    overlay.onMousedown(mousedownEvent as unknown as MouseEvent)
 
     const mouseupEvent = { target: currentTarget, currentTarget }
-    overlay.onMouseup(mouseupEvent)
+    overlay.onMouseup(mouseupEvent as unknown as MouseEvent)
 
     expect(closeFn).toHaveBeenCalledTimes(1)
   })
@@ -33,8 +33,8 @@ describe('makeOverlayClose', () => {
     const currentTarget = { id: 'overlay' }
     const child = { id: 'child', parentElement: currentTarget }
 
-    overlay.onMousedown({ target: child, currentTarget })
-    overlay.onMouseup({ target: child, currentTarget })
+    overlay.onMousedown({ target: child, currentTarget } as unknown as MouseEvent)
+    overlay.onMouseup({ target: child, currentTarget } as unknown as MouseEvent)
 
     expect(closeFn).not.toHaveBeenCalled()
   })
@@ -46,8 +46,8 @@ describe('makeOverlayClose', () => {
     const currentTarget = { id: 'overlay' }
     const child = { id: 'child' }
 
-    overlay.onMousedown({ target: child, currentTarget })
-    overlay.onMouseup({ target: currentTarget, currentTarget })
+    overlay.onMousedown({ target: child, currentTarget } as unknown as MouseEvent)
+    overlay.onMouseup({ target: currentTarget, currentTarget } as unknown as MouseEvent)
 
     expect(closeFn).not.toHaveBeenCalled()
   })
@@ -58,11 +58,11 @@ describe('makeOverlayClose', () => {
 
     const currentTarget = { id: 'overlay' }
 
-    overlay.onMousedown({ target: currentTarget, currentTarget })
-    overlay.onMouseup({ target: currentTarget, currentTarget })
+    overlay.onMousedown({ target: currentTarget, currentTarget } as unknown as MouseEvent)
+    overlay.onMouseup({ target: currentTarget, currentTarget } as unknown as MouseEvent)
     expect(closeFn).toHaveBeenCalledTimes(1)
 
-    overlay.onMouseup({ target: currentTarget, currentTarget })
+    overlay.onMouseup({ target: currentTarget, currentTarget } as unknown as MouseEvent)
     expect(closeFn).toHaveBeenCalledTimes(1)
   })
 
@@ -75,10 +75,10 @@ describe('makeOverlayClose', () => {
     const target1 = { id: 'o1' }
     const target2 = { id: 'o2' }
 
-    overlay1.onMousedown({ target: target1, currentTarget: target1 })
-    overlay2.onMousedown({ target: target2, currentTarget: target2 })
+    overlay1.onMousedown({ target: target1, currentTarget: target1 } as unknown as MouseEvent)
+    overlay2.onMousedown({ target: target2, currentTarget: target2 } as unknown as MouseEvent)
 
-    overlay1.onMouseup({ target: target1, currentTarget: target1 })
+    overlay1.onMouseup({ target: target1, currentTarget: target1 } as unknown as MouseEvent)
     expect(closeFn1).toHaveBeenCalledTimes(1)
     expect(closeFn2).not.toHaveBeenCalled()
   })

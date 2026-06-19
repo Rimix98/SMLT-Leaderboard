@@ -1,34 +1,35 @@
 import { store } from '../store'
 import { fetchWithAbort, parseJsonResponse, isAbortError, BACKEND_URL, showToast, tokens, doAdminKnock } from './utils'
+import type { StaffRole, StaffPlayer, TierKey, TierConfig } from '../types'
 
-export const TIER_CONFIG = {
+export const TIER_CONFIG: Record<TierKey, TierConfig> = {
   priority: { label: 'Приоритет', color: '#00ffff' },
   base: { label: 'Основа', color: '#540b6d' },
   reserve: { label: 'Резерв', color: '#6d0b0d' },
   na: { label: 'N/A', color: '#888888' },
 }
 
-const TIER_CYCLE = ['na', 'priority', 'base', 'reserve']
+const TIER_CYCLE: TierKey[] = ['na', 'priority', 'base', 'reserve']
 
-export function getNextTier(current) {
+export function getNextTier(current: TierKey): TierKey {
   const idx = TIER_CYCLE.indexOf(current)
   if (idx === -1 || idx >= TIER_CYCLE.length - 1) return TIER_CYCLE[0]
   return TIER_CYCLE[idx + 1]
 }
 
-export function getPlayerTier(nickname) {
+export function getPlayerTier(nickname: string): TierKey {
   const entry = store.staffTiers.find(t => t.nickname === nickname)
   return entry ? entry.tier : 'na'
 }
 
-export function getTierConfig(nickname) {
+export function getTierConfig(nickname: string): TierConfig {
   return TIER_CONFIG[getPlayerTier(nickname)] || TIER_CONFIG.na
 }
 
-function sortRolePlayersByTiers(role) {
+export function sortRolePlayersByTiers(role: StaffRole): void {
   if (!role || !role.players) return
-  const tierOrder = { priority: 0, base: 1, reserve: 2, na: 3 }
-  role.players = [...role.players].sort((a, b) => {
+  const tierOrder: Record<string, number> = { priority: 0, base: 1, reserve: 2, na: 3 }
+  role.players = [...role.players].sort((a: StaffPlayer, b: StaffPlayer) => {
     const ta = tierOrder[getPlayerTier(a.nickname)] ?? 3
     const tb = tierOrder[getPlayerTier(b.nickname)] ?? 3
     if (ta !== tb) return ta - tb
@@ -36,10 +37,10 @@ function sortRolePlayersByTiers(role) {
   })
 }
 
-function sortRolesByTierDistribution(roleA, roleB) {
-  const getCounts = (role) => {
-    const counts = { priority: 0, base: 0, reserve: 0, na: 0 }
-    ;(role.players || []).forEach(p => {
+export function sortRolesByTierDistribution(roleA: StaffRole, roleB: StaffRole): number {
+  const getCounts = (role: StaffRole) => {
+    const counts: Record<TierKey, number> = { priority: 0, base: 0, reserve: 0, na: 0 }
+    ;(role.players || []).forEach((p: StaffPlayer) => {
       const tier = getPlayerTier(p.nickname)
       if (counts[tier] !== undefined) counts[tier]++
     })
@@ -49,7 +50,7 @@ function sortRolesByTierDistribution(roleA, roleB) {
   const countsA = getCounts(roleA)
   const countsB = getCounts(roleB)
 
-  for (const tier of ['priority', 'base', 'reserve']) {
+  for (const tier of ['priority', 'base', 'reserve'] as TierKey[]) {
     if (countsA[tier] !== countsB[tier]) {
       return countsB[tier] - countsA[tier]
     }
@@ -58,14 +59,14 @@ function sortRolesByTierDistribution(roleA, roleB) {
   return (roleA.name || '').localeCompare(roleB.name || '')
 }
 
-export function sortAllRolesByTiers() {
+export function sortAllRolesByTiers(): void {
   if (!store.staffRoles) return
   for (const role of store.staffRoles) {
     sortRolePlayersByTiers(role)
   }
 }
 
-export async function loadStaffRoles() {
+export async function loadStaffRoles(): Promise<void> {
   try {
     const res = await fetchWithAbort(`${BACKEND_URL}/staff`, { cache: 'no-store' }, 'staff-list')
     if (!res.ok) { console.warn('GET /api/staff вернул', res.status); store.staffRoles = [] }
@@ -76,7 +77,7 @@ export async function loadStaffRoles() {
   }
 }
 
-export async function loadStaffTiers() {
+export async function loadStaffTiers(): Promise<void> {
   try {
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/tiers`, { cache: 'no-store' }, 'staff-tiers')
     if (res.ok) { const data = await res.json(); store.staffTiers = Array.isArray(data.gp) ? data.gp : [] }
@@ -87,7 +88,7 @@ export async function loadStaffTiers() {
   }
 }
 
-export async function saveStaffRoles() {
+export async function saveStaffRoles(): Promise<void> {
   try {
     if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/save`, {
@@ -96,13 +97,13 @@ export async function saveStaffRoles() {
       credentials: 'include',
       body: JSON.stringify(store.staffRoles)
     }, 'staff-save')
-    if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || 'Ошибка сохранения ролей') }
+    if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error((err.error as string) || 'Ошибка сохранения ролей') }
   } catch (e) {
-    if (!isAbortError(e)) { console.error('Ошибка сохранения staff ролей:', e); showToast(e.message, 'error') }
+    if (!isAbortError(e)) { console.error('Ошибка сохранения staff ролей:', e); showToast((e as Error).message, 'error') }
   }
 }
 
-export async function addPlayerToRoleApi(roleIndex, nickname, discord) {
+export async function addPlayerToRoleApi(roleIndex: number, nickname: string, discord: string): Promise<boolean> {
   try {
     if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/add`, {
@@ -111,16 +112,16 @@ export async function addPlayerToRoleApi(roleIndex, nickname, discord) {
       credentials: 'include',
       body: JSON.stringify({ roleIndex, nickname, discord })
     }, 'add-player')
-    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка добавления игрока') }
+    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error((err.error as string) || 'Ошибка добавления игрока') }
     await Promise.all([loadStaffRoles(), loadStaffTiers()])
     return true
   } catch (e) {
-    if (!isAbortError(e)) { showToast(e.message, 'error') }
+    if (!isAbortError(e)) { showToast((e as Error).message, 'error') }
     return false
   }
 }
 
-export async function removeStaffPlayer(roleIndex, playerIndex) {
+export async function removeStaffPlayer(roleIndex: number, playerIndex: number): Promise<void> {
   const role = store.staffRoles[roleIndex]
   if (!role) return
   const player = role.players[playerIndex]
@@ -135,15 +136,15 @@ export async function removeStaffPlayer(roleIndex, playerIndex) {
       credentials: 'include',
       body: JSON.stringify({ roleIndex, nickname: player.nickname })
     }, 'remove-player')
-    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка удаления игрока') }
+    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error((err.error as string) || 'Ошибка удаления игрока') }
     await Promise.all([loadStaffRoles(), loadStaffTiers()])
     showToast(`Игрок «${player.nickname}» удалён из роли`, 'success')
   } catch (e) {
-    if (!isAbortError(e)) { showToast(e.message, 'error') }
+    if (!isAbortError(e)) { showToast((e as Error).message, 'error') }
   }
 }
 
-export async function moveRole(index, direction) {
+export async function moveRole(index: number, direction: 'up' | 'down'): Promise<void> {
   const target = direction === 'down' ? index + 1 : index - 1
   if (target < 0 || target >= store.staffRoles.length) return
   const prev = [...store.staffRoles]
@@ -161,7 +162,7 @@ export async function moveRole(index, direction) {
   }
 }
 
-export async function deleteRole(index) {
+export async function deleteRole(index: number): Promise<void> {
   const role = store.staffRoles[index]
   if (!role) return
   if (!confirm(`Удалить роль «${role.name}»?`)) return
@@ -174,15 +175,15 @@ export async function deleteRole(index) {
       credentials: 'include',
       body: JSON.stringify({ roleIndex: index })
     }, 'delete-role')
-    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка удаления роли') }
+    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error((err.error as string) || 'Ошибка удаления роли') }
     await loadStaffRoles()
     showToast('Роль удалена', 'success')
   } catch (e) {
-    if (!isAbortError(e)) { showToast(e.message, 'error') }
+    if (!isAbortError(e)) { showToast((e as Error).message, 'error') }
   }
 }
 
-export async function createRoleApi(name, color) {
+export async function createRoleApi(name: string, color: string): Promise<boolean> {
   try {
     if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
@@ -191,17 +192,17 @@ export async function createRoleApi(name, color) {
       credentials: 'include',
       body: JSON.stringify({ name, color })
     }, 'create-role')
-    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка создания роли') }
+    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error((err.error as string) || 'Ошибка создания роли') }
     await loadStaffRoles()
     showToast(`Роль «${name}» создана`, 'success')
     return true
   } catch (e) {
-    if (!isAbortError(e)) { showToast(e.message, 'error') }
+    if (!isAbortError(e)) { showToast((e as Error).message, 'error') }
     return false
   }
 }
 
-export async function updateRoleApi(roleIndex, name, color, tiersEnabled) {
+export async function updateRoleApi(roleIndex: number, name: string, color: string, tiersEnabled?: boolean): Promise<boolean> {
   try {
     if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/role`, {
@@ -210,17 +211,17 @@ export async function updateRoleApi(roleIndex, name, color, tiersEnabled) {
       credentials: 'include',
       body: JSON.stringify({ roleIndex, name, color, tiersEnabled })
     }, 'update-role')
-    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка обновления роли') }
+    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error((err.error as string) || 'Ошибка обновления роли') }
     await loadStaffRoles()
     showToast(`Роль «${name}» обновлена`, 'success')
     return true
   } catch (e) {
-    if (!isAbortError(e)) { showToast(e.message, 'error') }
+    if (!isAbortError(e)) { showToast((e as Error).message, 'error') }
     return false
   }
 }
 
-export async function setPlayerTier(nickname, tier) {
+export async function setPlayerTier(nickname: string, tier: TierKey): Promise<boolean> {
   try {
     if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/tier`, {
@@ -229,19 +230,19 @@ export async function setPlayerTier(nickname, tier) {
       credentials: 'include',
       body: JSON.stringify({ category: 'gp', nickname, tier })
     }, 'set-tier')
-    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка установки тира') }
+    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error((err.error as string) || 'Ошибка установки тира') }
     await Promise.all([loadStaffRoles(), loadStaffTiers()])
     showToast(`Тир для «${nickname}» установлен: ${TIER_CONFIG[tier]?.label || tier}`, 'success')
     return true
   } catch (e) {
-    if (!isAbortError(e)) { showToast(e.message, 'error') }
+    if (!isAbortError(e)) { showToast((e as Error).message, 'error') }
     return false
   }
 }
 
-export async function toggleRoleTiers(roleIndex) {
+export async function toggleRoleTiers(roleIndex: number): Promise<boolean> {
   const role = store.staffRoles[roleIndex]
-  if (!role) return
+  if (!role) return false
   const newName = role.name
   const newEnabled = role.tiersEnabled === false ? true : false
   try {
@@ -252,17 +253,17 @@ export async function toggleRoleTiers(roleIndex) {
       credentials: 'include',
       body: JSON.stringify({ roleIndex, name: role.name, color: role.color, tiersEnabled: newEnabled })
     }, 'role-toggle-tiers')
-    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка') }
+    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error((err.error as string) || 'Ошибка') }
     await loadStaffRoles()
     showToast(`Тиры для роли «${newName}» ${newEnabled ? 'включены' : 'выключены'}`, 'success')
     return true
   } catch (e) {
-    showToast(e.message, 'error')
+    showToast((e as Error).message, 'error')
     return false
   }
 }
 
-export async function removePlayerFromRoleApi(roleIndex, nickname) {
+export async function removePlayerFromRoleApi(roleIndex: number, nickname: string): Promise<boolean> {
   try {
     if (!tokens.adminKnockKey) await doAdminKnock()
     const res = await fetchWithAbort(`${BACKEND_URL}/staff/remove`, {
@@ -271,14 +272,12 @@ export async function removePlayerFromRoleApi(roleIndex, nickname) {
       credentials: 'include',
       body: JSON.stringify({ roleIndex, nickname })
     }, 'remove-player-modal')
-    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error(err.error || 'Ошибка удаления игрока') }
+    if (!res.ok) { const err = await parseJsonResponse(res); throw new Error((err.error as string) || 'Ошибка удаления игрока') }
     await Promise.all([loadStaffRoles(), loadStaffTiers()])
     showToast(`Игрок «${nickname}» удалён из роли`, 'success')
     return true
   } catch (e) {
-    if (!isAbortError(e)) { showToast(e.message, 'error') }
+    if (!isAbortError(e)) { showToast((e as Error).message, 'error') }
     return false
   }
 }
-
-export { sortRolePlayersByTiers, sortRolesByTierDistribution }

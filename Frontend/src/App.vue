@@ -1,5 +1,4 @@
-<script setup>
-import { watch } from 'vue'
+<script setup lang="ts">
 import { useRoute } from 'vue-router'
 import { initTheme } from './store'
 import { refreshCsrfToken } from './api/utils'

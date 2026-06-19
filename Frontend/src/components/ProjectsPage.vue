@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { store } from '../store'
 import AppShell from './AppShell.vue'
@@ -505,11 +505,11 @@ function renderParticipants(participants) {
                 </div>
                 <div class="part-field">
                   <span class="field-label" :style="getColoredLabel('GP')">GP</span>
-                  <input type="text" class="form-input participant-input" :value="stringifyMulti(part.gp)" @input="updateMultiField(part.gp, $event.target.value)" placeholder="GP (разделитель &)">
+                  <input type="text" class="form-input participant-input" :value="stringifyMulti(part.gp)" @input="updateMultiField(part.gp, ($event.target as HTMLInputElement).value)" placeholder="GP (разделитель &)">
                 </div>
                 <div class="part-field">
                   <span class="field-label" :style="getColoredLabel(participantConfig.fxMode ? 'FX' : 'DECO')">{{ participantConfig.fxMode ? 'FX' : 'DECO' }}</span>
-                  <input type="text" class="form-input participant-input" :value="stringifyMulti(part.deco)" @input="updateMultiField(part.deco, $event.target.value)" placeholder="DECO (разделитель &)">
+                  <input type="text" class="form-input participant-input" :value="stringifyMulti(part.deco)" @input="updateMultiField(part.deco, ($event.target as HTMLInputElement).value)" placeholder="DECO (разделитель &)">
                 </div>
                 <div class="part-transition">
                   <span class="field-label">TRANSITION</span>
@@ -525,7 +525,7 @@ function renderParticipants(participants) {
                 </div>
                 <div class="part-field">
                   <span class="field-label" :style="getColoredLabel('DECO')">END SCREEN</span>
-                  <input type="text" class="form-input participant-input" :value="stringifyMulti(participantConfig.endScreen)" @input="updateMultiField(participantConfig.endScreen, $event.target.value)" placeholder="END SCREEN (разделитель &)">
+                  <input type="text" class="form-input participant-input" :value="stringifyMulti(participantConfig.endScreen)" @input="updateMultiField(participantConfig.endScreen, ($event.target as HTMLInputElement).value)" placeholder="END SCREEN (разделитель &)">
                 </div>
               </div>
               <button v-if="!showEndScreen" class="btn btn-deco btn-sm participant-add-btn" @click="toggleEndScreen"><Plus :size="14" /> Добавить END SCREEN</button>

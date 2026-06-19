@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { store } from '../store'
 import { resolveCountry, CODE_TO_NAME, getFlagCode } from '../api/utils'
@@ -66,11 +66,11 @@ const totalCompletedLevels = computed(() => store.levels.all?.length || 0)
 
 const topLevelByVictors = computed(() => {
   if (!store.levels.all || store.levels.all.length === 0) return null
-  return store.levels.all.reduce((max, l) => (l.victors.length > (max?.victors?.length || 0)) ? l : max, null)
+  return store.levels.all.reduce<import('../types').LevelData | null>((max, l) => (l.victors.length > (max?.victors?.length || 0)) ? l : max, null)
 })
 
 const countryStats = computed(() => {
-  const counts = {}
+  const counts: Record<string, { name: string | null; count: number }> = {}
   let unknownCount = 0
   store.players.forEach(p => {
     const country = p.nationality
@@ -103,8 +103,8 @@ onMounted(async () => {
 
 function retryLoad() { loadLeaderboard() }
 
-const debouncedFilterPlayers = debounce((q) => filterPlayers(q), 250)
-const debouncedFilterLevels = debounce((q) => filterLevels(q), 250)
+const debouncedFilterPlayers = debounce((q: string) => filterPlayers(q), 250)
+const debouncedFilterLevels = debounce((q: string) => filterLevels(q), 250)
 
 const profileModalIndex = ref(-1)
 const countryModalName = ref(null)

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { store } from '../store'
 import { getPlayerTier, TIER_CONFIG, sortRolePlayersByTiers, createRoleApi, updateRoleApi, addPlayerToRoleApi, removePlayerFromRoleApi, saveStaffRoles, loadStaffTiers, setPlayerTier, toggleRoleTiers } from '../api/staff'
@@ -7,8 +7,8 @@ import {
   Pencil, BarChart3, Target,
 } from '@lucide/vue'
 
-const props = defineProps({ visible: Boolean, roleIndex: { type: Number, default: -1 } })
-const emit = defineEmits(['close'])
+const props = withDefaults(defineProps<{ visible: boolean; roleIndex?: number }>(), { roleIndex: -1 })
+const emit = defineEmits<{ close: [] }>()
 
 const isEditing = computed(() => props.roleIndex >= 0)
 const role = computed(() => isEditing.value ? store.staffRoles[props.roleIndex] : null)
@@ -146,7 +146,7 @@ async function onTierClick(nickname, tier) {
               <input type="color" class="color-input" v-model="roleColor">
               <div class="color-hex-input-wrapper">
                 <span class="color-hex-prefix">#</span>
-                <input type="text" class="form-input color-hex-input" placeholder="f1c40f" maxlength="6" :value="roleColor.replace('#', '')" @input="roleColor = '#' + $event.target.value">
+                <input type="text" class="form-input color-hex-input" placeholder="f1c40f" maxlength="6" :value="roleColor.replace('#', '')" @input="roleColor = '#' + ($event.target as HTMLInputElement).value">
               </div>
             </div>
           </div>

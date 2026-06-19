@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { debounce } from '../utils/debounce.js'
+import { debounce } from '../utils/debounce'
 
 describe('debounce', () => {
   beforeEach(() => {
@@ -59,7 +59,7 @@ describe('debounce', () => {
 
   it('preserves this context', () => {
     const obj = { value: 42 }
-    const fn = vi.fn(function () { return this.value })
+    const fn = vi.fn(function (this: typeof obj) { return this.value })
     const debounced = debounce(fn, 100)
 
     debounced.call(obj)

@@ -1,15 +1,15 @@
 export const API_BASE = 'https://api.demonlist.org'
 export const BACKEND_URL = '/api'
 
-export const pendingRequests = new Map()
+export const pendingRequests = new Map<string, AbortController>()
 
 export const tokens = {
   csrfToken: '',
   adminKnockKey: '',
 }
-let adminKnockRefreshTimer = null
+let adminKnockRefreshTimer: ReturnType<typeof setTimeout> | null = null
 
-function fetchWithTimeout(url, opts, ms) {
+function fetchWithTimeout(url: string, opts: RequestInit, ms: number): Promise<Response> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), ms)
   const p = fetch(url, { ...opts, signal: controller.signal })
@@ -17,9 +17,9 @@ function fetchWithTimeout(url, opts, ms) {
   return p
 }
 
-let autoRefreshTimer = null
+let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 
-export function startTokenAutoRefresh() {
+export function startTokenAutoRefresh(): void {
   if (autoRefreshTimer) return
   autoRefreshTimer = setInterval(async () => {
     try {
@@ -32,18 +32,18 @@ export function startTokenAutoRefresh() {
         store.isHost = false
         stopTokenAutoRefresh()
       }
-    } catch {}
+    } catch { /* ignore */ }
   }, 30 * 60 * 1000)
 }
 
-export function stopTokenAutoRefresh() {
+export function stopTokenAutoRefresh(): void {
   if (autoRefreshTimer) {
     clearInterval(autoRefreshTimer)
     autoRefreshTimer = null
   }
 }
 
-export async function refreshCsrfToken() {
+export async function refreshCsrfToken(): Promise<string | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await fetchWithTimeout(`${BACKEND_URL}/csrf-token`, { credentials: 'include' }, 10000)
@@ -59,7 +59,7 @@ export async function refreshCsrfToken() {
   return null
 }
 
-export async function doAdminKnock() {
+export async function doAdminKnock(): Promise<boolean> {
   try {
     const res = await fetchWithAbort(`${BACKEND_URL}/knock-knock-admin`, {
       method: 'POST',
@@ -68,9 +68,9 @@ export async function doAdminKnock() {
     if (!res.ok) return false
     const data = await parseJsonResponse(res)
     if (data && data.key) {
-      tokens.adminKnockKey = data.key
+      tokens.adminKnockKey = data.key as string
       if (adminKnockRefreshTimer) clearTimeout(adminKnockRefreshTimer)
-      const ttl = (data.ttl || 900) * 1000
+      const ttl = ((data.ttl as number) || 900) * 1000
       adminKnockRefreshTimer = setTimeout(() => doAdminKnock(), ttl - 60000)
       return true
     }
@@ -80,16 +80,20 @@ export async function doAdminKnock() {
   }
 }
 
-export async function fetchWithAbort(url, options = {}, key = null) {
+interface FetchOptions extends RequestInit {
+  timeout?: number
+}
+
+export async function fetchWithAbort(url: string, options: FetchOptions = {}, key: string | null = null): Promise<Response> {
   if (key && pendingRequests.has(key)) {
-    pendingRequests.get(key).abort()
+    pendingRequests.get(key)!.abort()
   }
   const controller = new AbortController()
   if (key) pendingRequests.set(key, controller)
 
-  const buildHeaders = () => {
-    const h = { ...options.headers, 'X-Requested-With': 'XMLHttpRequest' }
-    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase())) {
+  const buildHeaders = (): Record<string, string> => {
+    const h: Record<string, string> = { ...(options.headers as Record<string, string>), 'X-Requested-With': 'XMLHttpRequest' }
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase() || '')) {
       if (tokens.csrfToken) h['X-CSRF-Token'] = tokens.csrfToken
       if (tokens.adminKnockKey) h['X-Admin-Path-Key'] = tokens.adminKnockKey
     }
@@ -108,7 +112,7 @@ export async function fetchWithAbort(url, options = {}, key = null) {
 
   try {
     let headers = buildHeaders()
-    let res = null
+    let res: Response | null = null
     try {
       res = await fetch(url, { ...options, headers, signal: controller.signal })
     } catch (fetchErr) {
@@ -119,7 +123,7 @@ export async function fetchWithAbort(url, options = {}, key = null) {
     const newCsrf = res.headers.get('X-CSRF-Token')
     if (newCsrf) tokens.csrfToken = newCsrf
 
-    if (!res.ok && res.status === 404 && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase())) {
+    if (!res.ok && res.status === 404 && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase() || '')) {
       const cloned = res.clone()
       const text = await cloned.text().catch(() => '')
       if (text.includes('Роут не найден')) {
@@ -138,7 +142,7 @@ export async function fetchWithAbort(url, options = {}, key = null) {
       }
     }
 
-    if (!res.ok && res.status === 403 && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase())) {
+    if (!res.ok && res.status === 403 && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase() || '')) {
       tokens.csrfToken = ''
       const refreshed = await refreshCsrfToken()
       if (refreshed) {
@@ -161,11 +165,11 @@ export async function fetchWithAbort(url, options = {}, key = null) {
   }
 }
 
-export function isAbortError(err) {
-  return err?.name === 'AbortError'
+export function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError'
 }
 
-export async function parseJsonResponse(res) {
+export async function parseJsonResponse(res: Response): Promise<Record<string, unknown>> {
   const contentType = res.headers.get('content-type') || ''
   const text = await res.text()
   if (!text) return {}
@@ -176,7 +180,7 @@ export async function parseJsonResponse(res) {
     throw new Error('Сервер вернул некорректный ответ')
   }
   try {
-    return JSON.parse(text)
+    return JSON.parse(text) as Record<string, unknown>
   } catch (e) {
     console.error('Ошибка парсинга JSON:', e, text.slice(0, 200))
     throw new Error('Сервер вернул некорректный ответ')
@@ -184,23 +188,23 @@ export async function parseJsonResponse(res) {
 }
 
 // Flags & countries
-export const FLAGS = {
-  'RU': '🇷🇺', 'US': '🇺🇸', 'DE': '🇩🇪', 'FR': '🇫🇷', 'GB': '🇬🇧',
-  'BR': '🇧🇷', 'KR': '🇰🇷', 'JP': '🇯🇵', 'CN': '🇨🇳', 'PL': '🇵🇱',
-  'UA': '🇺🇦', 'CA': '🇨🇦', 'AU': '🇦🇺', 'ES': '🇪🇸', 'IT': '🇮🇹',
-  'AR': '🇦🇷', 'CL': '🇨🇱', 'MX': '🇲🇽', 'NL': '🇳🇱', 'SE': '🇸🇪',
-  'NO': '🇳🇴', 'FI': '🇫🇮', 'DK': '🇩🇰', 'BE': '🇧🇪', 'AT': '🇦🇹',
-  'CZ': '🇨🇿', 'SK': '🇸🇰', 'HU': '🇭🇺', 'RO': '🇷🇴', 'BG': '🇧🇬',
-  'TR': '🇹🇷', 'IL': '🇮🇱', 'SA': '🇸🇦', 'AE': '🇦🇪', 'IN': '🇮🇳',
-  'ID': '🇮🇩', 'TH': '🇹🇭', 'VN': '🇻🇳', 'MY': '🇲🇾', 'SG': '🇸🇬',
-  'PH': '🇵🇭', 'NZ': '🇳🇿', 'ZA': '🇿🇦', 'EG': '🇪🇬', 'NG': '🇳🇬',
-  'CO': '🇨🇴', 'PE': '🇵🇪', 'VE': '🇻🇪', 'EC': '🇪🇨', 'PT': '🇵🇹',
-  'GR': '🇬🇷', 'HR': '🇭🇷', 'RS': '🇷🇸', 'SI': '🇸🇮', 'EE': '🇪🇪',
-  'LV': '🇱🇻', 'LT': '🇱🇹', 'BY': '🇧🇾', 'KZ': '🇰🇿', 'UZ': '🇺🇿',
-  'TW': '🇹🇼', 'HK': '🇭🇰', 'MO': '🇲🇴', 'AM': '🇦🇲', 'MD': '🇲🇩'
+export const FLAGS: Record<string, string> = {
+  'RU': '\u{1F1F7}\u{1F1FA}', 'US': '\u{1F1FA}\u{1F1F8}', 'DE': '\u{1F1E9}\u{1F1EA}', 'FR': '\u{1F1EB}\u{1F1F7}', 'GB': '\u{1F1EC}\u{1F1E7}',
+  'BR': '\u{1F1E7}\u{1F1F7}', 'KR': '\u{1F1F0}\u{1F1F7}', 'JP': '\u{1F1EF}\u{1F1F5}', 'CN': '\u{1F1E8}\u{1F1F3}', 'PL': '\u{1F1F5}\u{1F1F1}',
+  'UA': '\u{1F1FA}\u{1F1E6}', 'CA': '\u{1F1E8}\u{1F1E6}', 'AU': '\u{1F1E6}\u{1F1FA}', 'ES': '\u{1F1EA}\u{1F1F8}', 'IT': '\u{1F1EE}\u{1F1F9}',
+  'AR': '\u{1F1E6}\u{1F1F7}', 'CL': '\u{1F1E8}\u{1F1F1}', 'MX': '\u{1F1F2}\u{1F1FD}', 'NL': '\u{1F1F3}\u{1F1F1}', 'SE': '\u{1F1F8}\u{1F1EA}',
+  'NO': '\u{1F1F3}\u{1F1F4}', 'FI': '\u{1F1EB}\u{1F1EE}', 'DK': '\u{1F1E9}\u{1F1F0}', 'BE': '\u{1F1E7}\u{1F1EA}', 'AT': '\u{1F1E6}\u{1F1F9}',
+  'CZ': '\u{1F1E8}\u{1F1FF}', 'SK': '\u{1F1F8}\u{1F1F0}', 'HU': '\u{1F1ED}\u{1F1FA}', 'RO': '\u{1F1F7}\u{1F1F4}', 'BG': '\u{1F1E7}\u{1F1EC}',
+  'TR': '\u{1F1F9}\u{1F1F7}', 'IL': '\u{1F1EE}\u{1F1F1}', 'SA': '\u{1F1F8}\u{1F1E6}', 'AE': '\u{1F1E6}\u{1F1EA}', 'IN': '\u{1F1EE}\u{1F1F3}',
+  'ID': '\u{1F1EE}\u{1F1E9}', 'TH': '\u{1F1F9}\u{1F1ED}', 'VN': '\u{1F1FB}\u{1F1F3}', 'MY': '\u{1F1F2}\u{1F1FE}', 'SG': '\u{1F1F8}\u{1F1EC}',
+  'PH': '\u{1F1F5}\u{1F1ED}', 'NZ': '\u{1F1F3}\u{1F1FF}', 'ZA': '\u{1F1FF}\u{1F1E6}', 'EG': '\u{1F1EA}\u{1F1EC}', 'NG': '\u{1F1F3}\u{1F1EC}',
+  'CO': '\u{1F1E8}\u{1F1F4}', 'PE': '\u{1F1F5}\u{1F1EA}', 'VE': '\u{1F1FB}\u{1F1EA}', 'EC': '\u{1F1EA}\u{1F1E8}', 'PT': '\u{1F1F5}\u{1F1F9}',
+  'GR': '\u{1F1EC}\u{1F1F7}', 'HR': '\u{1F1ED}\u{1F1F7}', 'RS': '\u{1F1F7}\u{1F1F8}', 'SI': '\u{1F1F8}\u{1F1EE}', 'EE': '\u{1F1EA}\u{1F1EA}',
+  'LV': '\u{1F1F1}\u{1F1FB}', 'LT': '\u{1F1F1}\u{1F1F9}', 'BY': '\u{1F1E7}\u{1F1FE}', 'KZ': '\u{1F1F0}\u{1F1FF}', 'UZ': '\u{1F1FA}\u{1F1FF}',
+  'TW': '\u{1F1F9}\u{1F1FC}', 'HK': '\u{1F1ED}\u{1F1F0}', 'MO': '\u{1F1F2}\u{1F1F4}', 'AM': '\u{1F1E6}\u{1F1F2}', 'MD': '\u{1F1F2}\u{1F1E9}'
 }
 
-export const COUNTRY_TO_CODE = {
+export const COUNTRY_TO_CODE: Record<string, string> = {
   'russia': 'RU', 'russian-federation': 'RU',
   'united-states': 'US', 'united-states-of-america': 'US', 'usa': 'US',
   'germany': 'DE', 'france': 'FR',
@@ -223,7 +227,7 @@ export const COUNTRY_TO_CODE = {
   'macau': 'MO', 'armenia': 'AM', 'moldova': 'MD'
 }
 
-export const CODE_TO_NAME = {
+export const CODE_TO_NAME: Record<string, string> = {
   'RU': 'Россия', 'US': 'США', 'DE': 'Германия', 'FR': 'Франция',
   'GB': 'Великобритания', 'BR': 'Бразилия', 'KR': 'Южная Корея',
   'JP': 'Япония', 'CN': 'Китай', 'PL': 'Польша', 'UA': 'Украина',
@@ -243,39 +247,37 @@ export const CODE_TO_NAME = {
   'HK': 'Гонконг', 'MO': 'Макао', 'AM': 'Армения', 'MD': 'Молдова'
 }
 
-export function resolveCountry(input) {
+export function resolveCountry(input: string | null): string | null {
   if (!input) return null
   let val = input.toString().trim()
   const upper = val.toUpperCase()
   if (FLAGS[upper]) return upper
   val = val.toLowerCase()
-  // strip parentheticals: "Russia (Russian Federation)" → "Russia"
   val = val.replace(/\s*\(.*?\)\s*/g, ' ').trim()
-  // strip common suffixes for fuzzy matching
   val = val.replace(/\s+(federation|republic|island|territory|kingdom|principality|emirate|commonwealth|union|state|states|region|province|of|the|and|islands)$/gi, '').trim()
   val = val.replace(/\s+/g, '-')
   const mapped = COUNTRY_TO_CODE[val]
   if (mapped) return mapped
-  // retry with full normalized string (without stripping suffixes)
   const fallback = input.toString().toLowerCase().trim().replace(/\s*\(.*?\)\s*/g, ' ').trim().replace(/\s+/g, '-')
   return COUNTRY_TO_CODE[fallback] || null
 }
 
-function isValidISOCode(code) {
+function isValidISOCode(code: string | null): code is string {
   return typeof code === 'string' && /^[A-Z]{2}$/.test(code)
 }
 
-export function getFlagCode(c) {
+export function getFlagCode(c: string | null | undefined): string | null {
+  if (!c) return null
   const code = resolveCountry(c)
   if (!code || !isValidISOCode(code)) return null
   return code.toLowerCase()
 }
 
-export function createFlagElement(c) {
+export function createFlagElement(c: string | null): HTMLElement {
   const code = resolveCountry(c)
   if (!code || !isValidISOCode(code)) {
     const span = document.createElement('span')
-    span.textContent = !code && c === null ? '❌' : '🌍'
+    span.textContent = !code && c === null ? '\u274C' : '\u{1F30D}'
     return span
   }
   const img = document.createElement('img')
@@ -286,13 +288,13 @@ export function createFlagElement(c) {
   return img
 }
 
-export function getCountryLabel(c) {
+export function getCountryLabel(c: string | null): string | null {
   const code = resolveCountry(c)
   if (!code || !isValidISOCode(code)) return null
   return CODE_TO_NAME[code] || null
 }
 
-export function showToast(msg, type = 'error') {
+export function showToast(msg: string, type = 'error'): void {
   const t = document.createElement('div')
   t.className = `toast toast-${type}`
   t.textContent = msg

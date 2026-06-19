@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import AppShell from './AppShell.vue'
 import { Trophy, Folder, Users, ClipboardList, Lock } from '@lucide/vue'
 </script>

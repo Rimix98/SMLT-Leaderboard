@@ -1,7 +1,8 @@
 import { store } from '../store'
 import { fetchWithAbort, parseJsonResponse, isAbortError, API_BASE, BACKEND_URL, doAdminKnock, tokens, showToast } from './utils'
+import type { LeaderboardPlayer, LevelData, LevelRecord } from '../types'
 
-const DEFAULT_PLAYER_NAMES = [
+const DEFAULT_PLAYER_NAMES: string[] = [
   "samoletik", "paradoxiz", "clokman", "itzslxnq", "H30n41k_GmD",
   "Filkoty", "DarBeast", "Florned", "Marzyiiik", "euphoriak8",
   "npoctou_gamer", "NopanicGD", "CandyCloud22", "Vakum", "Daggit",
@@ -10,13 +11,13 @@ const DEFAULT_PLAYER_NAMES = [
   "Спини", "Linqwq", "RossceorpGD", "69liqu69"
 ]
 
-export async function getPlayerNames() {
+export async function getPlayerNames(): Promise<string[]> {
   try {
     const res = await fetchWithAbort(`${BACKEND_URL}/players`, {}, 'players-list')
     if (!res.ok) return DEFAULT_PLAYER_NAMES
     const data = await res.json()
     if (Array.isArray(data) && data.length > 0) {
-      if (typeof data[0] === 'object' && data[0].name) return data.map(p => p.name)
+      if (typeof data[0] === 'object' && data[0].name) return data.map((p: { name: string }) => p.name)
       return data
     }
     return DEFAULT_PLAYER_NAMES
@@ -25,7 +26,7 @@ export async function getPlayerNames() {
   }
 }
 
-export async function savePlayerNames(names) {
+export async function savePlayerNames(names: string[]): Promise<void> {
   const formattedPlayers = names.map(n => ({ name: n }))
   if (!tokens.adminKnockKey) await doAdminKnock()
   const res = await fetchWithAbort(`${BACKEND_URL}/players/save`, {
@@ -36,15 +37,40 @@ export async function savePlayerNames(names) {
   }, 'players-save')
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || 'Ошибка сохранения игроков (возможно, сессия истекла)')
+    throw new Error((err.error as string) || 'Ошибка сохранения игроков (возможно, сессия истекла)')
   }
 }
 
-function fetchPlayerData(name) {
+interface DemonlistUser {
+  id: number
+  username?: string
+  placement?: number
+  points?: string
+  country?: string
+}
+
+interface DemonlistResponse {
+  message: string
+  data?: { users?: DemonlistUser[] }
+}
+
+interface DemonlistRecord {
+  status: string
+  level?: { id: number; name: string; placement: number }
+  percent?: number
+  progress?: number
+}
+
+interface DemonlistRecordsResponse {
+  message: string
+  data?: { records?: DemonlistRecord[] }
+}
+
+function fetchPlayerData(name: string): Promise<DemonlistUser | null> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 15000)
   return fetch(`${API_BASE}/leaderboard/user/list?search=${encodeURIComponent(name)}&limit=50`, { signal: controller.signal })
-    .then(r => r.ok ? r.json() : null)
+    .then(r => r.ok ? r.json() as Promise<DemonlistResponse> : null)
     .then(d => {
       if (d?.message !== 'success' || !d.data?.users?.length) return null
       const nl = name.toLowerCase().trim()
@@ -57,60 +83,67 @@ function fetchPlayerData(name) {
     .finally(() => clearTimeout(timeout))
 }
 
-function fetchRecords(id) {
+function fetchRecords(id: number): Promise<DemonlistRecord[]> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 15000)
   return fetch(`${API_BASE}/user/record/list?user_id=${id}&limit=50`, { signal: controller.signal })
-    .then(r => r.ok ? r.json() : [])
+    .then(r => r.ok ? r.json() as Promise<DemonlistRecordsResponse> : ({} as DemonlistRecordsResponse))
     .then(d => d.message === 'success' && d.data?.records ? d.data.records : [])
     .catch(() => [])
     .finally(() => clearTimeout(timeout))
 }
 
-function mapLeaderboardEntry(p) {
-  let userData = null
+interface RawLeaderboardEntry {
+  id?: number | string
+  name: string
+  data?: { data?: { users?: DemonlistUser[] }; users?: DemonlistUser[] }
+  records?: { data?: { records?: DemonlistRecord[] }; records?: DemonlistRecord[] }
+}
+
+function mapLeaderboardEntry(p: RawLeaderboardEntry): LeaderboardPlayer | null {
+  let userData: DemonlistUser | null = null
   if (p.data && p.data.data && Array.isArray(p.data.data.users) && p.data.data.users.length > 0) {
     userData = p.data.data.users[0]
   } else if (p.data && Array.isArray(p.data.users) && p.data.users.length > 0) {
     userData = p.data.users[0]
   }
 
-  let pRecs = []
+  let pRecs: DemonlistRecord[] = []
   if (p.records && p.records.data && Array.isArray(p.records.data.records)) {
     pRecs = p.records.data.records
   } else if (p.records && Array.isArray(p.records.records)) {
     pRecs = p.records.records
   }
 
-  let hardest = null
+  let hardest: LevelRecord | null = null
   const completedRecs = pRecs.filter(r => r.status === 'accepted' && r.level && (r.percent ?? r.progress ?? 100) >= 100)
   if (completedRecs.length > 0) {
-    hardest = completedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m)
+    hardest = completedRecs.reduce((m, r) => (!m || (r.level!.placement < m.level!.placement)) ? r : m) as unknown as LevelRecord
   }
 
   return {
-    id: userData?.id || p.id,
+    id: userData?.id ?? p.id ?? 0,
     name: p.name,
     rank: userData?.placement || 0,
-    score: parseFloat(userData?.points) || 0,
+    score: parseFloat(userData?.points || '0') || 0,
     nationality: userData?.country || null,
-    records: pRecs,
+    records: pRecs as unknown as LevelRecord[],
     hardest
   }
 }
 
 let _loadingLeaderboard = false
 
-export async function loadAllPlayers() {
+export async function loadAllPlayers(): Promise<void> {
   if (_loadingLeaderboard) return
   _loadingLeaderboard = true
 
   try {
-    let playersToMap = []
+    let playersToMap: RawLeaderboardEntry[] = []
     const res = await fetchWithAbort('/api/leaderboard', {}, 'leaderboard')
     if (res.ok) {
       const responseData = await parseJsonResponse(res)
-      if (Array.isArray(responseData)) playersToMap = responseData
+      if (Array.isArray(responseData)) playersToMap = responseData as unknown as RawLeaderboardEntry[]
     }
 
     if (playersToMap.length === 0) {
@@ -118,13 +151,13 @@ export async function loadAllPlayers() {
       return
     }
 
-    const loaded = playersToMap.map(mapLeaderboardEntry).filter(p => p.id)
-    if (loaded.length === 0) {
+    const mapped = playersToMap.map(mapLeaderboardEntry).filter(p => p !== null && p !== undefined && p.id != null) as LeaderboardPlayer[]
+    if (mapped.length === 0) {
       await loadPlayersFromClientAPI()
       return
     }
 
-    store.players = loaded.sort((a, b) => (a.rank || 999999) - (b.rank || 999999))
+    store.players = mapped.sort((a, b) => (a.rank || 999999) - (b.rank || 999999))
     store.allPlayers = [...store.players]
     renderHardestLevels()
   } catch (e) {
@@ -135,7 +168,7 @@ export async function loadAllPlayers() {
   }
 }
 
-async function loadPlayersFromClientAPI() {
+async function loadPlayersFromClientAPI(): Promise<void> {
   const names = await getPlayerNames()
 
   const promises = names.map(async (name) => {
@@ -143,25 +176,25 @@ async function loadPlayersFromClientAPI() {
       const fp = await fetchPlayerData(name)
       if (!fp) return null
       const recs = await fetchRecords(fp.id)
-      let hardest = null
+      let hardest: LevelRecord | null = null
       const completedRecs = recs.filter(r => r.status === 'accepted' && r.level && (r.percent ?? r.progress ?? 100) >= 100)
       if (completedRecs.length > 0) {
-        hardest = completedRecs.reduce((m, r) => (!m || r.level.placement < m.level.placement) ? r : m)
+        hardest = completedRecs.reduce((m, r) => (!m || (r.level!.placement < m.level!.placement)) ? r : m) as unknown as LevelRecord
       }
       return {
         id: fp.id,
         name: fp.username || name,
         rank: fp.placement || 0,
-        score: parseFloat(fp.points) || 0,
+        score: parseFloat(fp.points || '0') || 0,
         nationality: fp.country || null,
-        records: recs,
+        records: recs as unknown as LevelRecord[],
         hardest
       }
     } catch (e) { console.error(`Ошибка загрузки игрока ${name}:`, e); return null }
   })
 
   const results = await Promise.all(promises)
-  const loaded = results.filter(p => p !== null)
+  const loaded = results.filter(p => p !== null) as LeaderboardPlayer[]
   if (loaded.length === 0) return
 
   store.players = loaded.sort((a, b) => (a.rank || 999999) - (b.rank || 999999))
@@ -169,7 +202,7 @@ async function loadPlayersFromClientAPI() {
   renderHardestLevels()
 }
 
-export function filterPlayers(query) {
+export function filterPlayers(query: string): void {
   if (!query) {
     store.players = [...store.allPlayers]
   } else {
@@ -178,8 +211,8 @@ export function filterPlayers(query) {
   }
 }
 
-function renderHardestLevels() {
-  const levelMap = new Map()
+function renderHardestLevels(): void {
+  const levelMap = new Map<number, LevelData>()
 
   store.players.forEach(player => {
     if (player.records) {
@@ -194,7 +227,7 @@ function renderHardestLevels() {
               victors: []
             })
           }
-          const levelData = levelMap.get(levelId)
+          const levelData = levelMap.get(levelId)!
           if (!levelData.victors.find(v => v.id === player.id)) {
             levelData.victors.push({ id: player.id, name: player.name, nationality: player.nationality })
           }
@@ -216,13 +249,13 @@ function renderHardestLevels() {
   store.levels.all = sortedLevels
   store.levels.expanded = false
   store.levels.filter = ''
-  store.levels.levelData = new Map()
+  store.levels.levelData = new Map<string, LevelData>()
   for (const [k, v] of levelMap) {
     store.levels.levelData.set(String(k), v)
   }
 }
 
-export function getFilteredLevels() {
+export function getFilteredLevels(): LevelData[] {
   if (!store.levels.all) return []
   const q = store.levels.filter?.toLowerCase().trim()
   let list = q ? store.levels.all.filter(l => l.name.toLowerCase().includes(q)) : store.levels.all
@@ -230,20 +263,20 @@ export function getFilteredLevels() {
   return list
 }
 
-export function expandLevels() {
+export function expandLevels(): void {
   store.levels.expanded = !store.levels.expanded
 }
 
-export function filterLevels(query) {
+export function filterLevels(query: string): void {
   store.levels.filter = query
 }
 
-export async function addPlayer(name) {
+export async function addPlayer(name: string): Promise<void> {
   if (!store.isHost) { showToast('Только хост может добавлять игроков', 'error'); return }
   if (!name) return
   if (name.length < 2 || name.length > 32) { showToast('Ник должен быть от 2 до 32 символов', 'error'); return }
 
-  let playerNames = await getPlayerNames()
+  const playerNames = await getPlayerNames()
   if (playerNames.includes(name)) { showToast('Такой игрок уже есть', 'error'); return }
 
   playerNames.push(name)
@@ -253,15 +286,15 @@ export async function addPlayer(name) {
     showToast('Игрок успешно добавлен', 'success')
   } catch (e) {
     if (isAbortError(e)) return
-    showToast(e.message, 'error')
-    if (e.message.includes('сессия истекла') || e.message.includes('401')) {
+    showToast((e as Error).message, 'error')
+    if ((e as Error).message.includes('сессия истекла') || (e as Error).message.includes('401')) {
       const { logoutHost } = await import('./auth')
       logoutHost()
     }
   }
 }
 
-export async function removePlayer(name) {
+export async function removePlayer(name: string): Promise<void> {
   if (!store.isHost) { showToast('Только хост может удалять игроков', 'error'); return }
   if (!confirm(`Удалить игрока "${name}"?`)) return
   await doAdminKnock()
@@ -275,11 +308,11 @@ export async function removePlayer(name) {
     }, 'players-delete')
     if (res.ok) { await loadAllPlayers(); showToast(`Игрок "${name}" удалён`, 'success'); return }
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || 'Ошибка удаления игрока')
+    throw new Error((err.error as string) || 'Ошибка удаления игрока')
   } catch (e) {
     if (isAbortError(e)) return
-    showToast(e.message, 'error')
-    if (e.message.includes('сессия') || e.message.includes('401') || e.message.includes('доступ')) {
+    showToast((e as Error).message, 'error')
+    if ((e as Error).message.includes('сессия') || (e as Error).message.includes('401') || (e as Error).message.includes('доступ')) {
       const { logoutHost } = await import('./auth')
       logoutHost()
     }

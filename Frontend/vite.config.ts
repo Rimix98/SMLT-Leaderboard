@@ -10,12 +10,12 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    setupFiles: ['src/__tests__/setup.js'],
-    include: ['src/**/*.{test,spec}.js'],
+    setupFiles: ['src/__tests__/setup.ts'],
+    include: ['src/**/*.{test,spec}.{ts,js}'],
     coverage: {
       provider: 'v8',
-      include: ['src/**/*.{js,vue}'],
-      exclude: ['src/main.js', 'src/va-init.js'],
+      include: ['src/**/*.{ts,vue}'],
+      exclude: ['src/main.ts', 'src/va-init.ts'],
     },
   },
 })

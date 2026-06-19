@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { store } from '../store'
 import { loadStaffRoles, loadStaffTiers, getTierConfig, getPlayerTier, removeStaffPlayer, deleteRole, moveRole, sortRolesByTierDistribution } from '../api/staff'

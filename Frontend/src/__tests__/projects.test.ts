@@ -7,8 +7,8 @@ import {
   createDefaultParticipantConfig,
   parseParticipantConfig,
   serializeParticipantConfig,
-} from '../api/projects.js'
-import { store } from '../store.js'
+} from '../api/projects'
+import { store } from '../store'
 
 describe('getStatusClass', () => {
   it('returns correct class for готов', () => {
@@ -39,9 +39,8 @@ describe('getStatusClass', () => {
     expect(getStatusClass('something')).toBe('status-planned')
   })
 
-  it('returns default for null/undefined', () => {
-    expect(getStatusClass(null)).toBe('status-planned')
-    expect(getStatusClass(undefined)).toBe('status-planned')
+  it('returns default for empty string', () => {
+    expect(getStatusClass('')).toBe('status-planned')
   })
 
   it('is case-insensitive', () => {
@@ -97,8 +96,8 @@ describe('toYoutubeId11', () => {
   })
 
   it('returns null for null/undefined', () => {
-    expect(toYoutubeId11(null)).toBeNull()
-    expect(toYoutubeId11(undefined)).toBeNull()
+    expect(toYoutubeId11(null as unknown as string)).toBeNull()
+    expect(toYoutubeId11(undefined as unknown as string)).toBeNull()
   })
 })
 
@@ -109,7 +108,7 @@ describe('generateProjectId', () => {
   })
 
   it('generates unique IDs', () => {
-    const ids = new Set()
+    const ids = new Set<string>()
     for (let i = 0; i < 100; i++) {
       ids.add(generateProjectId())
     }
@@ -135,7 +134,7 @@ describe('createDefaultParticipantConfig', () => {
 
 describe('parseParticipantConfig', () => {
   it('returns default config for null project', () => {
-    const config = parseParticipantConfig(null)
+    const config = parseParticipantConfig(null as unknown as { participants?: string[] })
     expect(config.host).toBe('')
     expect(config.parts).toEqual([])
   })
@@ -200,7 +199,7 @@ describe('parseParticipantConfig', () => {
 describe('serializeParticipantConfig', () => {
   it('serializes config to array with JSON string', () => {
     const config = { host: 'Test', parts: [] }
-    const result = serializeParticipantConfig(config)
+    const result = serializeParticipantConfig(config as import('../types').ParticipantConfig)
     expect(Array.isArray(result)).toBe(true)
     expect(result).toHaveLength(1)
     expect(JSON.parse(result[0])).toEqual(config)

@@ -1,11 +1,11 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { store } from '../store'
 import { getPlayerTier, TIER_CONFIG, addPlayerToRoleApi, removePlayerFromRoleApi, saveStaffRoles, loadStaffTiers, setPlayerTier } from '../api/staff'
 import { Pencil } from '@lucide/vue'
 
-const props = defineProps({ visible: Boolean })
-const emit = defineEmits(['close'])
+const props = defineProps<{ visible: boolean }>()
+const emit = defineEmits<{ close: [] }>()
 
 const nickname = ref('')
 const discord = ref('')

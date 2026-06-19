@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
+import type { Store } from './types'
 
-export const store = reactive({
+export const store = reactive<Store>({
   isHost: false,
   theme: localStorage.getItem('smlt-theme') || 'dark',
   players: [],
@@ -18,12 +19,12 @@ export const store = reactive({
   selectedRoleColor: '#3b82f6',
 })
 
-let themeTransitionTimer = null
+let themeTransitionTimer: ReturnType<typeof setTimeout> | null = null
 
-const themes = ['dark', 'light', 'gray']
+const themes = ['dark', 'light', 'gray'] as const
 
-export function setTheme(theme) {
-  if (!themes.includes(theme)) return
+export function setTheme(theme: string): void {
+  if (!(themes as readonly string[]).includes(theme)) return
 
   document.body.classList.add('theme-transitioning')
   if (themeTransitionTimer) clearTimeout(themeTransitionTimer)
@@ -36,8 +37,8 @@ export function setTheme(theme) {
   localStorage.setItem('smlt-theme', theme)
 }
 
-export function initTheme() {
-  const saved = themes.includes(store.theme) ? store.theme : 'dark'
+export function initTheme(): void {
+  const saved = (themes as readonly string[]).includes(store.theme) ? store.theme : 'dark'
   store.theme = saved
   document.documentElement.setAttribute('data-theme', saved)
 }

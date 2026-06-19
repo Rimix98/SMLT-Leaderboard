@@ -7,7 +7,7 @@ import {
   resolveCountry,
   CODE_TO_NAME,
   getFlagCode,
-} from '../api/utils.js'
+} from '../api/utils'
 
 describe('API constants', () => {
   it('API_BASE is demonlist.org', () => {
@@ -28,7 +28,7 @@ describe('tokens', () => {
 
 describe('isAbortError', () => {
   it('returns true for AbortError', () => {
-    const err = { name: 'AbortError', message: 'aborted' }
+    const err = new DOMException('aborted', 'AbortError')
     expect(isAbortError(err)).toBe(true)
   })
 

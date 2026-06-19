@@ -1,12 +1,12 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import { store } from '../store'
 import { getFlagCode } from '../api/utils'
 import { makeOverlayClose } from '../utils/modal'
 import { Trophy, Globe } from '@lucide/vue'
 
-const props = defineProps({ levelId: { type: [String, Number], default: null }, visible: { type: Boolean, default: false } })
-const emit = defineEmits(['close'])
+const props = withDefaults(defineProps<{ levelId?: string | number | null; visible?: boolean }>(), { levelId: null, visible: false })
+const emit = defineEmits<{ close: [] }>()
 
 const levelData = computed(() => {
   if (props.levelId == null) return null

@@ -1,12 +1,12 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import { store } from '../store'
 import { resolveCountry, CODE_TO_NAME, getFlagCode } from '../api/utils'
 import { makeOverlayClose } from '../utils/modal'
 import { Globe } from '@lucide/vue'
 
-const props = defineProps({ countryName: { type: String, default: null }, visible: { type: Boolean, default: false } })
-const emit = defineEmits(['close'])
+const props = withDefaults(defineProps<{ countryName?: string | null; visible?: boolean }>(), { countryName: null, visible: false })
+const emit = defineEmits<{ close: [] }>()
 
 const countryPlayers = computed(() => {
   if (props.countryName === null) {
