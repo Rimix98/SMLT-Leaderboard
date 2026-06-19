@@ -289,6 +289,7 @@ export async function addPlayer(name: string): Promise<void> {
     store.allPlayers.push(newPlayer)
     store.players.push(newPlayer)
     showToast('Игрок успешно добавлен', 'success')
+    loadAllPlayers()
   } catch (e) {
     if (isAbortError(e)) return
     showToast((e as Error).message, 'error')
@@ -315,6 +316,7 @@ export async function removePlayer(name: string): Promise<void> {
       store.allPlayers = store.allPlayers.filter(p => p.name !== name)
       store.players = store.players.filter(p => p.name !== name)
       showToast(`Игрок "${name}" удалён`, 'success')
+      loadAllPlayers()
       return
     }
     const err = await res.json().catch(() => ({}))
