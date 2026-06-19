@@ -285,7 +285,9 @@ export async function addPlayer(name: string): Promise<void> {
   playerNames.push(name)
   try {
     await savePlayerNames(playerNames)
-    await loadAllPlayers()
+    const newPlayer = { id: name, name, rank: 0, score: 0, nationality: null, records: [], hardest: null }
+    store.allPlayers.push(newPlayer)
+    store.players.push(newPlayer)
     showToast('Игрок успешно добавлен', 'success')
   } catch (e) {
     if (isAbortError(e)) return
@@ -309,7 +311,12 @@ export async function removePlayer(name: string): Promise<void> {
       credentials: 'include',
       body: JSON.stringify({ name })
     }, 'players-delete')
-    if (res.ok) { await loadAllPlayers(); showToast(`Игрок "${name}" удалён`, 'success'); return }
+    if (res.ok) {
+      store.allPlayers = store.allPlayers.filter(p => p.name !== name)
+      store.players = store.players.filter(p => p.name !== name)
+      showToast(`Игрок "${name}" удалён`, 'success')
+      return
+    }
     const err = await res.json().catch(() => ({}))
     throw new Error((err.error as string) || 'Ошибка удаления игрока')
   } catch (e) {
