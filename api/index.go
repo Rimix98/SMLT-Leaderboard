@@ -99,6 +99,23 @@ type memoryBucket struct {
 	resetAt time.Time
 }
 
+type PlayerHistoryEntry struct {
+	PlayerID     string    `json:"playerId" firestore:"playerId"`
+	PlayerName   string    `json:"playerName" firestore:"playerName"`
+	Date         string    `json:"date" firestore:"date"`
+	Rank         int       `json:"rank" firestore:"rank"`
+	Score        float64   `json:"score" firestore:"score"`
+	RecordsCount int       `json:"recordsCount" firestore:"recordsCount"`
+	HardestLevel string    `json:"hardestLevel" firestore:"hardestLevel"`
+	SnapshotAt   time.Time `json:"snapshotAt" firestore:"snapshotAt"`
+}
+
+type LeaderboardCheckResponse struct {
+	Hash        string `json:"hash"`
+	LastUpdated string `json:"lastUpdated"`
+	PlayerCount int    `json:"playerCount"`
+}
+
 type tokenVersionCacheEntry struct {
 	version   int64
 	expiresAt time.Time
@@ -452,7 +469,9 @@ var errRateLimitExceeded = fmt.Errorf("rate limit exceeded")
 
 type cacheEntry struct {
 	data      []byte
+	hash      string
 	expiresAt time.Time
+	lastSet   time.Time
 }
 
 type responseCache struct {
@@ -475,10 +494,23 @@ func cacheGet(key string) ([]byte, bool) {
 func cacheSet(key string, data []byte, ttl time.Duration) {
 	apiCache.mu.Lock()
 	defer apiCache.mu.Unlock()
+	h := sha256.Sum256(data)
 	apiCache.entries[key] = &cacheEntry{
 		data:      data,
+		hash:      hex.EncodeToString(h[:]),
 		expiresAt: time.Now().Add(ttl),
+		lastSet:   time.Now(),
 	}
+}
+
+func cacheGetWithMeta(key string) ([]byte, string, time.Time, bool) {
+	apiCache.mu.RLock()
+	defer apiCache.mu.RUnlock()
+	e, ok := apiCache.entries[key]
+	if !ok || time.Now().After(e.expiresAt) {
+		return nil, "", time.Time{}, false
+	}
+	return e.data, e.hash, e.lastSet, true
 }
 
 func cacheInvalidate(prefix string) {
@@ -3636,6 +3668,220 @@ func handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // ──────────────────────────────────────────────
+// HANDLER: LEADERBOARD CHECK (real-time polling)
+// ──────────────────────────────────────────────
+
+func handleLeaderboardCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	_, hash, lastSet, ok := cacheGetWithMeta("leaderboard")
+	if !ok {
+		writeJSON(w, LeaderboardCheckResponse{Hash: "", LastUpdated: "", PlayerCount: 0})
+		return
+	}
+	writeJSON(w, LeaderboardCheckResponse{
+		Hash:        hash,
+		LastUpdated: lastSet.UTC().Format(time.RFC3339),
+		PlayerCount: 0,
+	})
+}
+
+// ──────────────────────────────────────────────
+// HANDLER: PLAYER HISTORY
+// ──────────────────────────────────────────────
+
+func handlePlayerHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+
+	playerID := strings.TrimPrefix(r.URL.Path, "/api/history/")
+	playerID = strings.TrimSuffix(playerID, "/")
+	if playerID == "" {
+		sendError(w, http.StatusBadRequest, "playerId обязателен")
+		return
+	}
+
+	ctx := r.Context()
+	iter := fsClient.Collection("player_history").
+		Where("playerId", "==", playerID).
+		OrderBy("date", firestore.Desc).
+		Limit(90).
+		Documents(ctx)
+	defer iter.Stop()
+
+	var entries []PlayerHistoryEntry
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			sendError(w, http.StatusInternalServerError, "Ошибка чтения истории")
+			return
+		}
+		var entry PlayerHistoryEntry
+		if err := doc.DataTo(&entry); err != nil {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+
+	if entries == nil {
+		entries = []PlayerHistoryEntry{}
+	}
+	writeJSON(w, entries)
+}
+
+func handleSaveHistorySnapshot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+
+	ctx := r.Context()
+	players := playersForLeaderboard(ctx)
+
+	type job struct {
+		name string
+	}
+	jobs := make(chan job, len(players))
+	var mu sync.Mutex
+	type snapshotResult struct {
+		name   string
+		rank   int
+		score  float64
+		recs   int
+		hardest string
+	}
+	var results []snapshotResult
+
+	var wg sync.WaitGroup
+	workerCount := 5
+	if len(players) < workerCount {
+		workerCount = len(players)
+	}
+
+	for wn := 0; wn < workerCount; wn++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case j, ok := <-jobs:
+					if !ok {
+						return
+					}
+					entry := FullPlayerData{Name: j.name}
+					u1 := fmt.Sprintf("https://api.demonlist.org/leaderboard/user/list?search=%s&limit=1", url.QueryEscape(j.name))
+					if body, err := fetchAPIWithRetry(ctx, u1, 2); err == nil {
+						json.Unmarshal(body, &entry.Data)
+					}
+					userID := extractUserID(entry.Data, j.name)
+					rank := 0
+					score := 0.0
+					if m, ok := entry.Data.(map[string]interface{}); ok {
+						if d, ok := m["data"].(map[string]interface{}); ok {
+							if users, ok := d["users"].([]interface{}); ok && len(users) > 0 {
+								if u, ok := users[0].(map[string]interface{}); ok {
+									if p, ok := u["placement"].(float64); ok {
+										rank = int(p)
+									}
+									if s, ok := u["points"].(string); ok {
+										score, _ = strconv.ParseFloat(s, 64)
+									}
+								}
+							}
+						}
+					}
+					recs := 0
+					hardest := ""
+					if userID != "" {
+						u2 := fmt.Sprintf("https://api.demonlist.org/user/record/list?user_id=%s&limit=50", userID)
+						if body, err := fetchAPIWithRetry(ctx, u2, 2); err == nil {
+							var recData interface{}
+							json.Unmarshal(body, &recData)
+							if rm, ok := recData.(map[string]interface{}); ok {
+								if d, ok := rm["data"].(map[string]interface{}); ok {
+									if records, ok := d["records"].([]interface{}); ok {
+										recs = len(records)
+										for _, r := range records {
+											if rec, ok := r.(map[string]interface{}); ok {
+												if status, _ := rec["status"].(string); status == "accepted" {
+													if lvl, ok := rec["level"].(map[string]interface{}); ok {
+														if placement, ok := lvl["placement"].(float64); ok {
+															if name, ok := lvl["name"].(string); ok {
+																if hardest == "" || placement < 100 {
+																	hardest = name
+																}
+															}
+														}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+					mu.Lock()
+					results = append(results, snapshotResult{name: j.name, rank: rank, score: score, recs: recs, hardest: hardest})
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	for _, p := range players {
+		jobs <- job{name: p.Name}
+	}
+	close(jobs)
+	wg.Wait()
+
+	today := time.Now().UTC().Format("2006-01-02")
+	batch := fsClient.Batch()
+	for _, res := range results {
+		docID := fmt.Sprintf("%s_%s", res.name, today)
+		entry := PlayerHistoryEntry{
+			PlayerID:     res.name,
+			PlayerName:   res.name,
+			Date:         today,
+			Rank:         res.rank,
+			Score:        res.score,
+			RecordsCount: res.recs,
+			HardestLevel: res.hardest,
+			SnapshotAt:   time.Now().UTC(),
+		}
+		batch.Set(fsClient.Collection("player_history").Doc(docID), entry)
+	}
+	if _, err := batch.Commit(ctx); err != nil {
+		log.Printf("history snapshot commit error: %v", err)
+		sendError(w, http.StatusInternalServerError, "Ошибка сохранения снимка")
+		return
+	}
+
+	securityEvent(ctx, "history_snapshot", getRealIP(r), "/api/history/snapshot", map[string]string{
+		"player_count": strconv.Itoa(len(results)),
+	})
+	writeJSON(w, map[string]interface{}{
+		"success":       true,
+		"snapshotDate":  today,
+		"playersSaved":  len(results),
+	})
+}
+
+// ──────────────────────────────────────────────
 // MAIN HANDLER (Vercel entry point)
 // ──────────────────────────────────────────────
 
@@ -3701,6 +3947,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/csrf-token":         rateLimitMiddleware(30)(handleGetCSRFToken),
 		"/api/auth/refresh":       rateLimitMiddleware(10)(handleRefreshToken),
 		"/api/leaderboard":        rateLimitMiddleware(30)(handleLeaderboard),
+		"/api/leaderboard/check":  rateLimitMiddleware(30)(handleLeaderboardCheck),
+		"/api/history/snapshot":   rateLimitMiddleware(5)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveHistorySnapshot)))),
 		"/api/staff":              rateLimitMiddleware(60)(handleGetStaff),
 		"/api/security/dashboard": rateLimitMiddleware(10)(authMiddleware(handleSecurityDashboard)),
 		"/api/knock-knock-admin":  rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleAdminKnock))),
@@ -3727,5 +3975,11 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		gzipMiddleware(botDetectionMiddleware(h))(w, r)
 		return
 	}
+
+	if strings.HasPrefix(path, "/api/history/") && path != "/api/history/snapshot" {
+		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(60)(handlePlayerHistory)))(w, r)
+		return
+	}
+
 	sendError(w, http.StatusNotFound, "Роут не найден")
 }

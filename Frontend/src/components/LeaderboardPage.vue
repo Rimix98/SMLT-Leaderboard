@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { store } from '../store'
 import { resolveCountry, CODE_TO_NAME, getFlagCode } from '../api/utils'
 import { debounce } from '../utils/debounce'
@@ -16,6 +16,7 @@ import {
   addPlayer as addPlayerApi,
   removePlayer as removePlayerApi,
 } from '../api/leaderboard'
+import { checkLeaderboardChanged, setLastLeaderboardHash, saveHistorySnapshot } from '../api/history'
 import {
   Trophy, AlertTriangle, RefreshCw, Crown, Plus, BookOpen,
   Globe, BarChart3,
@@ -96,9 +97,28 @@ const countryStats = computed(() => {
 
 const displayedLevels = computed(() => getFilteredLevels())
 
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+async function pollLeaderboard() {
+  if (document.hidden) return
+  const changed = await checkLeaderboardChanged()
+  if (changed) {
+    await loadAllPlayers()
+  }
+}
+
 onMounted(async () => {
-  loadLeaderboard()
+  await loadLeaderboard()
+  setLastLeaderboardHash('')
+  pollTimer = setInterval(pollLeaderboard, 30000)
   nextTick(() => updateIndicator('players'))
+})
+
+onUnmounted(() => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
 })
 
 function retryLoad() { loadLeaderboard() }

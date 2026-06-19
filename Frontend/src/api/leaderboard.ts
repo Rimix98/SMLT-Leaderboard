@@ -277,7 +277,10 @@ export async function addPlayer(name: string): Promise<void> {
   if (name.length < 2 || name.length > 32) { showToast('Ник должен быть от 2 до 32 символов', 'error'); return }
 
   const playerNames = await getPlayerNames()
-  if (playerNames.includes(name)) { showToast('Такой игрок уже есть', 'error'); return }
+  if (playerNames.some(n => n.toLowerCase() === name.toLowerCase())) {
+    showToast('Такой игрок уже есть', 'error')
+    return
+  }
 
   playerNames.push(name)
   try {
