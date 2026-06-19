@@ -3711,7 +3711,6 @@ func handlePlayerHistory(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	iter := fsClient.Collection("player_history").
 		Where("playerId", "==", playerID).
-		OrderBy("date", firestore.Desc).
 		Limit(90).
 		Documents(ctx)
 	defer iter.Stop()
@@ -3723,8 +3722,8 @@ func handlePlayerHistory(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if err != nil {
-			sendError(w, http.StatusInternalServerError, "Ошибка чтения истории")
-			return
+			log.Printf("history query error for %s: %v", playerID, err)
+			break
 		}
 		var entry PlayerHistoryEntry
 		if err := doc.DataTo(&entry); err != nil {
@@ -3732,6 +3731,10 @@ func handlePlayerHistory(w http.ResponseWriter, r *http.Request) {
 		}
 		entries = append(entries, entry)
 	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Date > entries[j].Date
+	})
 
 	if entries == nil {
 		entries = []PlayerHistoryEntry{}
