@@ -9,15 +9,15 @@
 <br>
 
 [![Live Demo](https://img.shields.io/badge/Демо-открыть_сайт-5865F2?style=for-the-badge)](https://smltdemonlist.vercel.app)
-[![Demonlist](https://img.shields.io/badge/Демонлист-таблица_лидеров-00ADD8?style=for-the-badge)](https://smltdemonlist.vercel.app/leaderboard.html)
-[![Projects](https://img.shields.io/badge/Проекты-коллабы-22c55e?style=for-the-badge)](https://smltdemonlist.vercel.app/projects.html)
+[![Demonlist](https://img.shields.io/badge/Демонлист-таблица_лидеров-00ADD8?style=for-the-badge)](https://smltdemonlist.vercel.app/leaderboard)
+[![Projects](https://img.shields.io/badge/Проекты-коллабы-22c55e?style=for-the-badge)](https://smltdemonlist.vercel.app/projects)
 
 <br>
 
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Hosting-Vercel-000?logo=vercel&logoColor=white)
 ![Firebase](https://img.shields.io/badge/DB-Firestore-FFCA28?logo=firebase&logoColor=black)
-![Vue JS](https://img.shields.io/badge/Frontend-Vanilla_JS-F7DF1E?logo=javascript&logoColor=black)
+![Vue JS](https://img.shields.io/badge/Frontend-Vue_3-42b883?logo=vue.js&logoColor=white)
 
 [Содержание](#содержание) · [Возможности](#-возможности) · [Архитектура](#-архитектура) · [Разработка](#-для-разработчиков) · [Discord](https://discord.gg/VK56W7ZzdA)
 
@@ -32,8 +32,9 @@
 | Страница | Что внутри |
 |----------|------------|
 | [Главная](https://smltdemonlist.vercel.app/) | О сообществе, ссылки, вход хоста |
-| [Демонлист](https://smltdemonlist.vercel.app/leaderboard.html) | Топ игроков, рекорды, hardest, флаги стран |
-| [Проекты](https://smltdemonlist.vercel.app/projects.html) | Коллабы: роли, статусы, участники, превью |
+| [Демонлист](https://smltdemonlist.vercel.app/leaderboard) | Топ игроков, рекорды, hardest, флаги стран |
+| [Проекты](https://smltdemonlist.vercel.app/projects) | Коллабы: роли, статусы, участники, превью |
+| [Стафф](https://smltdemonlist.vercel.app/staff) | Роли сообщества, тиры, редактирование |
 
 > Первый заход на демонлист может занять **30–60 секунд** — данные подтягиваются с внешнего API для каждого игрока.
 
@@ -48,9 +49,9 @@
 - [Для разработчиков](#-для-разработчиков)
   - [Быстрый деплой](#быстрый-деплой-на-vercel)
   - [Переменные окружения](#переменные-окружения)
-  - [Upstash](#upstash-redis-rate-limit)
   - [Firebase](#firebase--firestore)
-  - [Локально](#локальная-разработка)
+  - [Локальная разработка](#локальная-разработка)
+  - [Команды](#команды)
   - [API](#api)
 - [Безопасность](#-безопасность)
 - [Устранение неполадок](#устранение-неполадок)
@@ -74,11 +75,17 @@
 - Статусы, комментарии, список участников
 - Редактирование доступно только **хосту** (админу сайта)
 
+### Стафф
+
+- Роли сообщества с визуальными индикаторами
+- Система тиров: `priority`, `base`, `reserve`, `na`
+- Управление составом ролей через панель хоста
+
 ### Интерфейс и админка
 
-- Тёмная и светлая **тема**
+- Тёмная, светлая и серая **тема**
 - Адаптивная вёрстка под телефон и десктоп
-- Вход **Хоста**: пароль → JWT в **HttpOnly**-куке → управление игроками и проектами в Firestore
+- Вход **Хоста**: пароль → JWT в **HttpOnly**-куке → управление игроками и проектами
 - Тосты и плавные переходы состояний
 
 ---
@@ -91,7 +98,10 @@
 | **База данных** | Google Cloud Firestore |
 | **Авторизация** | JWT (HS256) + bcrypt + IP-привязка + CSRF |
 | **Rate limiting** | Upstash Redis REST (прод) / in-memory (fallback) + exponential backoff |
-| **Frontend** | Vue 3, HTML, CSS, Vanilla JS |
+| **Frontend** | Vue 3, TypeScript, Vue Router |
+| **Стилизация** | CSS (кастомные переменные, темы) |
+| **Иконки** | Lucide Vue |
+| **Тестирование** | Vitest |
 | **Алерты** | Discord Webhooks (worker pool, buffered channel) |
 | **Внешние API** | Demonlist.org |
 | **Хостинг** | Vercel |
@@ -103,7 +113,7 @@
 ```mermaid
 flowchart LR
   subgraph Client
-    UI[Frontend HTML/JS/CSS]
+    UI[Vue 3 SPA]
   end
 
   subgraph Vercel
@@ -129,26 +139,40 @@ flowchart LR
 ## 📁 Структура репозитория
 
 ```
-SMLT-Demonlist/
+SMLT-Leaderboard/
 ├── api/
-│   └── index.go           # Роутинг, auth, Firestore, leaderboard, security alerts
+│   └── index.go              # Роутинг, auth, Firestore, leaderboard, security alerts
 ├── cmd/
 │   └── server/
-│       └── main.go        # Локальный dev-сервер
+│       └── main.go           # Локальный dev-сервер
 ├── Frontend/
 │   ├── src/
-│   │   ├── api/           # Модули: auth, staff, projects, leaderboard, utils
-│   │   ├── components/    # Vue-компоненты: AppShell, HomePage, LeaderboardPage и др.
-│   │   ├── store.js       # Реактивное состояние
-│   │   └── main.*.js      # Точки входа (home, leaderboard, projects, staff)
-│   ├── index.html
-│   ├── leaderboard.html
-│   ├── projects.html
-│   ├── staff.html
-│   └── styles.css
-├── Secret/                # (gitignored) serviceAccountKey.json, .env.local
+│   │   ├── api/              # Модули: auth, staff, projects, leaderboard, utils
+│   │   ├── components/       # Vue-компоненты
+│   │   │   ├── AppShell.vue        # Обёртка: шапка, навигация, модалки
+│   │   │   ├── HomePage.vue        # Главная страница
+│   │   │   ├── LeaderboardPage.vue # Лидерборд и топ уровней
+│   │   │   ├── ProjectsPage.vue    # Коллабы
+│   │   │   ├── StaffPage.vue       # Стафф-роли
+│   │   │   ├── ProfileModal.vue    # Модалка профиля игрока
+│   │   │   ├── CountryModal.vue    # Модалка страны
+│   │   │   ├── LevelVictorsModal.vue # Модалка викторов уровня
+│   │   │   ├── RoleEditModal.vue   # Редактирование роли
+│   │   │   ├── StaffEditPanel.vue  # Панель редактирования стаффа
+│   │   │   └── AddPlayerModal.vue  # Добавление игрока
+│   │   ├── store.ts          # Реактивное состояние (Pinia-like)
+│   │   ├── router.ts         # Маршрутизация (Vue Router)
+│   │   ├── types.ts          # TypeScript-типы
+│   │   ├── utils/            # Утилиты (debounce, modal)
+│   │   ├── main.ts           # Точка входа
+│   │   └── App.vue           # Корневой компонент
+│   ├── styles.css            # Глобальные стили
+│   ├── index.html            # SPA entry
+│   └── package.json
+├── static_data/              # JSON-данные (лидерборд, стафф, проекты)
+├── Secret/                   # (gitignored) serviceAccountKey.json, .env.local
 ├── docs/
-│   └── screenshots/       # (опционально) для README на GitHub
+│   └── screenshots/          # (опционально) для README на GitHub
 ├── vercel.json
 ├── go.mod
 └── README.md
@@ -163,6 +187,7 @@ SMLT-Demonlist/
 ### Требования
 
 - [Go](https://go.dev/dl/) 1.26+
+- [Node.js](https://nodejs.org/) 18+
 - [Vercel CLI](https://vercel.com/docs/cli) (для локального запуска)
 - Аккаунты: [Vercel](https://vercel.com), [Firebase](https://firebase.google.com), [Upstash](https://upstash.com) (рекомендуется)
 
@@ -171,15 +196,15 @@ SMLT-Demonlist/
 1. **Fork** репозитория → **Import** в Vercel.
 2. **Environment Variables** — см. [таблицу](#переменные-окружения) (минимум три обязательные).
 3. **Deploy** → проверка:
-   - `/leaderboard.html` — таблица грузится
+   - `/leaderboard` — таблица грузится
    - `/api/players` — JSON, не HTML
    - вход **Хост** — `{"success":true}`
 
 После смены переменных: **Deployments → Redeploy**.
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/SMLT-Demonlist.git
-cd SMLT-Demonlist
+git clone https://github.com/YOUR_USERNAME/SMLT-Leaderboard.git
+cd SMLT-Leaderboard
 # настройте env в Vercel, затем:
 git push origin main
 ```
@@ -192,7 +217,7 @@ git push origin main
 
 | Переменная | Описание |
 |------------|----------|
-| `JWT_SECRET` | Секрет JWT, ≥ 32 символа (`openssl rand -hex 32`) |
+| `JWT_SECRET` | Секрет JWT, ≥ 32 символов (`openssl rand -hex 32`) |
 | `ADMIN_HASH` | Bcrypt-хеш пароля хоста |
 | `FIREBASE_CREDENTIALS` | JSON service account Firebase (одной строкой) |
 
@@ -245,8 +270,6 @@ go run tools/hash.go "ваш_надёжный_пароль"
 | `players` | имя игрока | Список для лидерборда |
 | `projects` | id проекта | Коллабы |
 
-Если Firestore пуст: **GET** leaderboard/players работает с дефолтным списком. **POST/DELETE** требуют рабочую БД.
-
 ### Локальная разработка
 
 Секреты остаются локальными и не должны попадать в репозиторий.
@@ -267,13 +290,37 @@ vercel link
 vercel dev
 ```
 
-- http://localhost:3000/index.html  
-- http://localhost:3000/leaderboard.html  
-- http://localhost:3000/projects.html  
+- http://localhost:3000/ — главная
+- http://localhost:3000/leaderboard — лидерборд
+- http://localhost:3000/projects — проекты
+- http://localhost:3000/staff — стафф
 
 ```bash
 cd api && go build .
 ```
+
+### Команды
+
+#### Frontend
+
+| Команда | Описание |
+|---------|----------|
+| `npm run dev` | Запуск dev-сервера (Vite) |
+| `npm run build` | Production сборка (TypeScript + Vite) |
+| `npm run typecheck` | Проверка типов (Vue TypeScript) |
+| `npm run lint` | ESLint проверка |
+| `npm run lint:fix` | ESLint автоисправление |
+| `npm run format` | Prettier форматирование |
+| `npm test` | Запуск тестов (Vitest) |
+| `npm run test:watch` | Тесты в watch-режиме |
+| `npm run test:coverage` | Тесты с покрытием |
+
+#### Backend
+
+| Команда | Описание |
+|---------|----------|
+| `cd api && go build .` | Сборка Go API |
+| `go run tools/hash.go "пароль"` | Генерация bcrypt-хеша для `ADMIN_HASH` |
 
 ### API
 
@@ -382,7 +429,7 @@ curl -X POST https://smltdemonlist.vercel.app/api/login \
 
 | Роль | Контакт |
 |------|---------|
-| Admin / сообщество | Discord **@.samoletik** · Telegram **@samoltik** |
+| Admin / сообщество | Discord **@ParadoXiZ** · Telegram **@ParadoXiZ.** |
 | Backend & security | Discord **@rimix.98** |
 
 ---
