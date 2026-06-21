@@ -1,14 +1,10 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
-import HomePage from './components/HomePage.vue'
-import LeaderboardPage from './components/LeaderboardPage.vue'
-import ProjectsPage from './components/ProjectsPage.vue'
-import StaffPage from './components/StaffPage.vue'
 
 const routes: RouteRecordRaw[] = [
-  { path: '/', name: 'home', component: HomePage, meta: { title: 'SMLT - Главная', bodyClass: 'home-page' } },
-  { path: '/leaderboard', name: 'leaderboard', component: LeaderboardPage, meta: { title: 'Лидерборд -- SMLT', bodyClass: '' } },
-  { path: '/projects', name: 'projects', component: ProjectsPage, meta: { title: 'Проекты SMLT', bodyClass: '' } },
-  { path: '/staff', name: 'staff', component: StaffPage, meta: { title: 'Стафф -- SMLT', bodyClass: '' } },
+  { path: '/', name: 'home', component: () => import('./components/HomePage.vue'), meta: { title: 'SMLT - Главная', bodyClass: 'home-page' } },
+  { path: '/leaderboard', name: 'leaderboard', component: () => import('./components/LeaderboardPage.vue'), meta: { title: 'Лидерборд -- SMLT', bodyClass: '' } },
+  { path: '/projects', name: 'projects', component: () => import('./components/ProjectsPage.vue'), meta: { title: 'Проекты SMLT', bodyClass: '' } },
+  { path: '/staff', name: 'staff', component: () => import('./components/StaffPage.vue'), meta: { title: 'Стафф -- SMLT', bodyClass: '' } },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 
