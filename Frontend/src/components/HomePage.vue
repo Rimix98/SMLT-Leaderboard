@@ -59,7 +59,7 @@ import { Trophy, Folder, Users, ClipboardList, Lock } from '@lucide/vue'
               <span class="info-label">Админ</span>
               <div class="info-value">
                 Discord: <span class="highlight">@.samoletik</span><br>
-                Telegram: <span class="highlight">@samoltik</span>
+                Telegram: <span class="highlight">@paradoxiz</span>
               </div>
             </div>
             <div class="info-item security">
