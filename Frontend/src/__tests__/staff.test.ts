@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { TIER_CONFIG, getNextTier } from '../api/staff'
-import type { TierKey } from '../types'
+import { TIER_CONFIG } from '../api/staff'
 
 describe('TIER_CONFIG', () => {
   it('has all tier types', () => {
@@ -18,26 +17,4 @@ describe('TIER_CONFIG', () => {
       expect(config.color).toMatch(/^#[0-9a-fA-F]{6}$/)
     })
   }
-})
-
-describe('getNextTier', () => {
-  it('cycles na -> priority', () => {
-    expect(getNextTier('na')).toBe('priority')
-  })
-
-  it('cycles priority -> base', () => {
-    expect(getNextTier('priority')).toBe('base')
-  })
-
-  it('cycles base -> reserve', () => {
-    expect(getNextTier('base')).toBe('reserve')
-  })
-
-  it('cycles reserve -> na (wraps around)', () => {
-    expect(getNextTier('reserve')).toBe('na')
-  })
-
-  it('returns na for unknown tier', () => {
-    expect(getNextTier('unknown' as TierKey)).toBe('na')
-  })
 })

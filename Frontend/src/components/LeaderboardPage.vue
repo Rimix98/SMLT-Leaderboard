@@ -16,7 +16,7 @@ import {
   addPlayer as addPlayerApi,
   removePlayer as removePlayerApi,
 } from '../api/leaderboard'
-import { checkLeaderboardChanged, setLastLeaderboardHash, saveHistorySnapshot } from '../api/history'
+import { checkLeaderboardChanged, setLastLeaderboardHash } from '../api/history'
 import {
   Trophy, AlertTriangle, RefreshCw, Crown, Plus, BookOpen,
   Globe, BarChart3,

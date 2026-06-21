@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, provide, watch, nextTick, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { store, setTheme } from '../store'
 import { initHostStatus, initCaptcha, verifyHost, logoutHost } from '../api/auth'
@@ -101,8 +101,6 @@ function closeInfoModal() {
   infoModalOpen.value = false
 }
 
-// Provide for child components
-provide('openHostModal', openHostModal)
 </script>
 
 <template>

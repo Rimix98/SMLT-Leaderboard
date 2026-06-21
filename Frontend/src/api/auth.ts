@@ -42,27 +42,6 @@ export async function initHostStatus(): Promise<void> {
   }
 }
 
-export function showHostModal(): void {
-  const modal = document.getElementById('hostModal')
-  const passwordInput = document.getElementById('hostPassword') as HTMLInputElement | null
-  const errorEl = document.getElementById('hostError')
-
-  if (modal) {
-    modal.classList.add('active')
-    if (passwordInput) {
-      passwordInput.value = ''
-      passwordInput.focus()
-    }
-    if (errorEl) errorEl.style.display = 'none'
-    initCaptcha()
-  }
-}
-
-export function closeHostModal(): void {
-  const modal = document.getElementById('hostModal')
-  if (modal) modal.classList.remove('active')
-}
-
 export async function verifyHost(inputPassword: string): Promise<void> {
   const captchaInput = document.getElementById('captchaInput') as HTMLInputElement | null
 

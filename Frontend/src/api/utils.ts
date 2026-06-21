@@ -273,27 +273,6 @@ export function getFlagCode(c: string | null | undefined): string | null {
   return code.toLowerCase()
 }
 
-export function createFlagElement(c: string | null): HTMLElement {
-  const code = resolveCountry(c)
-  if (!code || !isValidISOCode(code)) {
-    const span = document.createElement('span')
-    span.textContent = !code && c === null ? '\u274C' : '\u{1F30D}'
-    return span
-  }
-  const img = document.createElement('img')
-  img.src = `https://flagcdn.com/w20/${code.toLowerCase()}.png`
-  img.alt = code
-  img.width = 20
-  img.style.cssText = 'vertical-align:middle;border-radius:2px;margin-right:4px'
-  return img
-}
-
-export function getCountryLabel(c: string | null): string | null {
-  const code = resolveCountry(c)
-  if (!code || !isValidISOCode(code)) return null
-  return CODE_TO_NAME[code] || null
-}
-
 export function showToast(msg: string, type = 'error'): void {
   const t = document.createElement('div')
   t.className = `toast toast-${type}`

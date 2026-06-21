@@ -9,14 +9,6 @@ export const TIER_CONFIG: Record<TierKey, TierConfig> = {
   na: { label: 'N/A', color: '#888888' },
 }
 
-const TIER_CYCLE: TierKey[] = ['na', 'priority', 'base', 'reserve']
-
-export function getNextTier(current: TierKey): TierKey {
-  const idx = TIER_CYCLE.indexOf(current)
-  if (idx === -1 || idx >= TIER_CYCLE.length - 1) return TIER_CYCLE[0]
-  return TIER_CYCLE[idx + 1]
-}
-
 export function getPlayerTier(nickname: string): TierKey {
   const entry = store.staffTiers.find(t => t.nickname === nickname)
   return entry ? entry.tier : 'na'
