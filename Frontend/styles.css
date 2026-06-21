@@ -1013,7 +1013,7 @@ a:hover {
     box-shadow: 0 0 0 1px var(--color-border);
 }
 
-.flag-img {
+.player-info {
     display: flex;
     flex-direction: column;
     gap: 2px;
