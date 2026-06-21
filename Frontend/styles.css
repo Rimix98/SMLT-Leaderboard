@@ -1695,14 +1695,14 @@ textarea:focus-visible {
 }
 
 .flag-inline {
-.tier-stat-base { color: #a855f7; }
-.tier-stat-reserve { color: #f87171; }
-.tier-stat-na { color: #71717a; }
-
-.flag-inline {
     vertical-align: middle;
     margin-right: 4px;
 }
+
+.tier-stat-priority { color: #00ffff; }
+.tier-stat-base { color: #a855f7; }
+.tier-stat-reserve { color: #f87171; }
+.tier-stat-na { color: #71717a; }
 
 .no-data-text {
     color: var(--color-text-muted);
@@ -2142,8 +2142,7 @@ textarea:focus-visible {
     transform: scale(1.2);
 }
 
-@media (max-width: 768px) {
-    .edit-panel {
+.captcha-row {
     display: flex;
     align-items: center;
     gap: var(--spacing-sm);
@@ -2160,7 +2159,7 @@ textarea:focus-visible {
     background: var(--color-surface-2);
 }
 
-.captcha-row {
+/* === Tier Legend === */
 .tier-legend {
     display: flex;
     gap: var(--spacing-md);
