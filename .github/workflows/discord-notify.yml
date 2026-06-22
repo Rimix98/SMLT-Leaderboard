@@ -1,0 +1,38 @@
+name: Discord Notify
+
+on:
+  push:
+    branches: ["*"]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          REPO="${GITHUB_REPOSITORY}"
+          ACTOR="${GITHUB_ACTOR}"
+          COMMITS="${{ github.event.head_commit.message }}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          COMPACT_MSG=$(echo "$COMMITS" | head -1 | sed 's/"/\\"/g')
+
+          JSON=$(cat <<EOF
+          {
+            "embeds": [{
+              "title": "📝 New commit in ${REPO}",
+              "url": "${{ github.event.head_compare }}",
+              "description": "**${ACTOR}** pushed to **${BRANCH}**\n\n\`\`\`\n${COMPACT_MSG}\n\`\`\`",
+              "color": 5814783,
+              "footer": {
+                "text": "${SHORT_SHA}"
+              },
+              "timestamp": "${{ github.event.head_commit.timestamp }}"
+            }]
+          }
+          EOF
+          )
+
+          curl -s -H "Content-Type: application/json" -d "$JSON" "$DISCORD_WEBHOOK_URL"
