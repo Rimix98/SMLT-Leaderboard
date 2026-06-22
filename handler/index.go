@@ -88,6 +88,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/players":            rateLimitMiddleware(60)(handleGetPlayers),
 		"/api/players/save":       rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSavePlayers)))),
 		"/api/players/delete":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),
+		"/api/security/ip-ban":   rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleIPBan)))),
+		"/api/security/ip-unban": rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleIPUnban)))),
 	}
 
 	h, ok := mux[path]

@@ -197,6 +197,14 @@ type DeviceBan struct {
 	BannedBy    string    `firestore:"bannedBy" json:"bannedBy"`
 }
 
+type IPBan struct {
+	IP        string    `firestore:"ip" json:"ip"`
+	Reason    string    `firestore:"reason" json:"reason"`
+	BannedAt  time.Time `firestore:"bannedAt" json:"bannedAt"`
+	ExpiresAt time.Time `firestore:"expiresAt" json:"expiresAt"`
+	BannedBy  string    `firestore:"bannedBy" json:"bannedBy"`
+}
+
 type staffData struct {
 	Roles []StaffRole `json:"roles" firestore:"roles"`
 }

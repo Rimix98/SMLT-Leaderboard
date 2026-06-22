@@ -59,6 +59,8 @@ var (
 		"rate_limit_exceeded":          0xFFCC00,
 		"oversized_request":            0xFF8800,
 		"device_banned":                0xFF0000,
+		"ip_banned":                   0xFF0000,
+		"ip_banned_manual":            0xFF0000,
 		"token_refreshed":              0x5865F2,
 	}
 	alertTitles = map[string]string{
@@ -71,6 +73,8 @@ var (
 		"rate_limit_exceeded":          "Rate limit exceeded",
 		"oversized_request":            "Oversized request",
 		"device_banned":                "Banned device accessed",
+		"ip_banned":                   "Banned IP accessed",
+		"ip_banned_manual":            "IP banned by admin",
 		"token_refreshed":              "Token refreshed",
 	}
 

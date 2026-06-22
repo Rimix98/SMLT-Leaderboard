@@ -211,6 +211,13 @@ func botDetectionMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		ua := r.UserAgent()
 		ip := getRealIP(r)
 
+		if isIPBanned(r.Context(), ip) {
+			securityEvent(r.Context(), "ip_banned", ip, r.URL.Path, map[string]string{"ua": ua})
+			alertSecurityEvent("ip_banned", ip, r.URL.Path, map[string]string{"ua": ua})
+			sendError(w, http.StatusForbidden, "IP заблокирован")
+			return
+		}
+
 		if isDeviceBanned(r.Context(), generateFingerprint(r)) {
 			securityEvent(r.Context(), "device_banned", ip, r.URL.Path, map[string]string{
 				"ua":          ua,

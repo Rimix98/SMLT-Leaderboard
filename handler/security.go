@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	mathrand "math/rand/v2"
+	"net"
 	"net/http"
 	"os"
 	"sort"
@@ -282,6 +283,128 @@ func unbanDevice(ctx context.Context, fingerprint string) error {
 	}
 	_, err := fsClient.Collection("device_bans").Doc(fingerprint).Delete(ctx)
 	return err
+}
+
+func isIPBanned(ctx context.Context, ip string) bool {
+	if fsClient == nil || ip == "" {
+		return false
+	}
+	doc, err := fsClient.Collection("ip_bans").Doc(ip).Get(ctx)
+	if err != nil {
+		return false
+	}
+	var ban IPBan
+	if err := doc.DataTo(&ban); err != nil {
+		return false
+	}
+	if time.Now().Before(ban.ExpiresAt) {
+		return true
+	}
+	doc.Ref.Delete(ctx)
+	return false
+}
+
+func banIP(ctx context.Context, ip, reason, bannedBy string, duration time.Duration) error {
+	if fsClient == nil {
+		return errors.New("firestore not available")
+	}
+	ban := IPBan{
+		IP:        ip,
+		Reason:    reason,
+		BannedAt:  time.Now(),
+		ExpiresAt: time.Now().Add(duration),
+		BannedBy:  bannedBy,
+	}
+	_, err := fsClient.Collection("ip_bans").Doc(ip).Set(ctx, ban)
+	return err
+}
+
+func unbanIP(ctx context.Context, ip string) error {
+	if fsClient == nil {
+		return errors.New("firestore not available")
+	}
+	_, err := fsClient.Collection("ip_bans").Doc(ip).Delete(ctx)
+	return err
+}
+
+func handleIPBan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+
+	var req struct {
+		IP       string `json:"ip"`
+		Reason   string `json:"reason"`
+		Duration int    `json:"duration"` // seconds, 0 = 24h
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Неверный запрос")
+		return
+	}
+	req.IP = strings.TrimSpace(req.IP)
+	if net.ParseIP(req.IP) == nil {
+		sendError(w, http.StatusBadRequest, "Неверный IP")
+		return
+	}
+	if req.Reason == "" {
+		req.Reason = "Без причины"
+	}
+	dur := 24 * time.Hour
+	if req.Duration > 0 {
+		dur = time.Duration(req.Duration) * time.Second
+	}
+
+	adminIP := getRealIP(r)
+	if err := banIP(r.Context(), req.IP, req.Reason, adminIP, dur); err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка бана")
+		return
+	}
+
+	securityEvent(r.Context(), "ip_banned_manual", req.IP, "/api/security/ip-ban", map[string]string{
+		"reason":   req.Reason,
+		"duration": dur.String(),
+		"admin":    adminIP,
+	})
+	alertSecurityEvent("ip_banned_manual", req.IP, "/api/security/ip-ban", map[string]string{
+		"reason": req.Reason,
+		"admin":  adminIP,
+	})
+
+	writeJSON(w, map[string]string{"status": "banned", "ip": req.IP})
+}
+
+func handleIPUnban(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+
+	var req struct {
+		IP string `json:"ip"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Неверный запрос")
+		return
+	}
+	req.IP = strings.TrimSpace(req.IP)
+	if req.IP == "" {
+		sendError(w, http.StatusBadRequest, "IP обязателен")
+		return
+	}
+
+	if err := unbanIP(r.Context(), req.IP); err != nil {
+		sendError(w, http.StatusInternalServerError, "Ошибка разбана")
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "unbanned", "ip": req.IP})
 }
 
 func handleSecurityDashboard(w http.ResponseWriter, r *http.Request) {
