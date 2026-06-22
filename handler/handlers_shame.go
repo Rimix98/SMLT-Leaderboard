@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -90,24 +91,32 @@ func fetchDiscordRoleMembers() ([]discordGuildMember, error) {
 			return nil, err
 		}
 
-		var members []discordGuildMember
-		if err := json.NewDecoder(resp.Body).Decode(&members); err != nil {
-			resp.Body.Close()
+		bodyBytes, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
 			return nil, err
 		}
-		resp.Body.Close()
 
 		if resp.StatusCode == 429 {
 			var rateLimit struct {
 				RetryAfter float64 `json:"retry_after"`
 			}
-			json.NewDecoder(resp.Body).Decode(&rateLimit)
-			time.Sleep(time.Duration(rateLimit.RetryAfter*1000) * time.Millisecond)
+			json.Unmarshal(bodyBytes, &rateLimit)
+			retry := rateLimit.RetryAfter
+			if retry < 1 {
+				retry = 2
+			}
+			time.Sleep(time.Duration(retry*1000) * time.Millisecond)
 			continue
 		}
 
 		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("Discord API returned %d", resp.StatusCode)
+			return nil, fmt.Errorf("Discord API returned %d: %s", resp.StatusCode, string(bodyBytes[:min(len(bodyBytes), 200)]))
+		}
+
+		var members []discordGuildMember
+		if err := json.Unmarshal(bodyBytes, &members); err != nil {
+			return nil, err
 		}
 
 		for _, m := range members {
