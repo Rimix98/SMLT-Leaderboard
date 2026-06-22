@@ -57,7 +57,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := requestPath(r)
-	log.Printf("[debug] path=%q method=%s URL.Path=%q RequestURI=%q", path, r.Method, r.URL.Path, r.RequestURI)
+	log.Printf("[path-debug] path=%q method=%s URL.Path=%q RawPath=%q RequestURI=%q", path, r.Method, r.URL.Path, r.URL.RawPath, r.RequestURI)
 
 	if isHoneypot(path) {
 		handleHoneypot(w, r)
@@ -108,11 +108,11 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if path == "/api/security/ip-ban" {
+	if strings.HasSuffix(path, "/security/ip-ban") {
 		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleIPBan))))))(w, r)
 		return
 	}
-	if path == "/api/security/ip-unban" {
+	if strings.HasSuffix(path, "/security/ip-unban") {
 		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleIPUnban))))))(w, r)
 		return
 	}
