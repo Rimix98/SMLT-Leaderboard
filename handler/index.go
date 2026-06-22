@@ -108,11 +108,11 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.HasSuffix(path, "/security/ip-ban") {
+	if strings.Contains(path, "security/ip-ban") && !strings.Contains(path, "ip-unban") {
 		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleIPBan))))))(w, r)
 		return
 	}
-	if strings.HasSuffix(path, "/security/ip-unban") {
+	if strings.Contains(path, "security/ip-unban") {
 		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleIPUnban))))))(w, r)
 		return
 	}
