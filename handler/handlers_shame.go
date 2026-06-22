@@ -25,6 +25,10 @@ var (
 	shameCacheMu      sync.RWMutex
 	shameCacheData    []byte
 	shameCacheExpires time.Time
+
+	discordMembersCache   []discordGuildMember
+	discordMembersCacheAt time.Time
+	discordMembersCacheMu sync.RWMutex
 )
 
 func initDiscordShame() {
@@ -61,6 +65,41 @@ type discordGuildMember struct {
 
 type discordGuildMemberResponse struct {
 	Members []discordGuildMember `json:"-"`
+}
+
+func fetchDiscordRoleMembersCached() ([]discordGuildMember, error) {
+	discordMembersCacheMu.RLock()
+	if discordMembersCache != nil && time.Since(discordMembersCacheAt) < 5*time.Minute {
+		result := make([]discordGuildMember, len(discordMembersCache))
+		copy(result, discordMembersCache)
+		discordMembersCacheMu.RUnlock()
+		return result, nil
+	}
+	discordMembersCacheMu.RUnlock()
+
+	discordMembersCacheMu.Lock()
+	defer discordMembersCacheMu.Unlock()
+
+	if discordMembersCache != nil && time.Since(discordMembersCacheAt) < 5*time.Minute {
+		result := make([]discordGuildMember, len(discordMembersCache))
+		copy(result, discordMembersCache)
+		return result, nil
+	}
+
+	members, err := fetchDiscordRoleMembers()
+	if err != nil {
+		if discordMembersCache != nil {
+			log.Printf("[shame] discord fetch failed, using stale cache: %v", err)
+			result := make([]discordGuildMember, len(discordMembersCache))
+			copy(result, discordMembersCache)
+			return result, nil
+		}
+		return nil, err
+	}
+
+	discordMembersCache = members
+	discordMembersCacheAt = time.Now()
+	return members, nil
 }
 
 func fetchDiscordRoleMembers() ([]discordGuildMember, error) {
@@ -196,14 +235,8 @@ func handleGetShameBoard(w http.ResponseWriter, r *http.Request) {
 	}
 	shameCacheMu.RUnlock()
 
-	discordMembers, err := fetchDiscordRoleMembers()
-	if err != nil {
-		log.Printf("[shame] fetch discord members: %v", err)
-		sendError(w, http.StatusBadGateway, "Ошибка получения данных из Discord")
-		return
-	}
-
 	ctx := r.Context()
+
 	fsEntries, err := getShameBoardFirestore(ctx)
 	if err != nil {
 		log.Printf("[shame] firestore read: %v", err)
@@ -211,19 +244,44 @@ func handleGetShameBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	discordMembers, discordErr := fetchDiscordRoleMembersCached()
+
 	var result []ShameBoardEntry
-	for _, dm := range discordMembers {
-		entry := ShameBoardEntry{
-			DiscordID: dm.User.ID,
-			Username:  dm.User.Username,
-			Avatar:    dm.User.Avatar,
+
+	if discordErr != nil {
+		log.Printf("[shame] discord fetch failed, returning firestore only: %v", discordErr)
+		for _, entry := range fsEntries {
+			result = append(result, entry)
 		}
-		if fsEntry, ok := fsEntries[dm.User.ID]; ok {
-			entry.Reason = fsEntry.Reason
-			entry.AddedAt = fsEntry.AddedAt
-			entry.AddedBy = fsEntry.AddedBy
+	} else {
+		for _, dm := range discordMembers {
+			entry := ShameBoardEntry{
+				DiscordID: dm.User.ID,
+				Username:  dm.User.Username,
+				Avatar:    dm.User.Avatar,
+			}
+			if fsEntry, ok := fsEntries[dm.User.ID]; ok {
+				entry.Reason = fsEntry.Reason
+				entry.AddedAt = fsEntry.AddedAt
+				entry.AddedBy = fsEntry.AddedBy
+			}
+			result = append(result, entry)
 		}
-		result = append(result, entry)
+		for id, entry := range fsEntries {
+			if !strings.HasPrefix(id, "manual_") {
+				continue
+			}
+			found := false
+			for _, r := range result {
+				if r.DiscordID == id {
+					found = true
+					break
+				}
+			}
+			if !found {
+				result = append(result, entry)
+			}
+		}
 	}
 
 	body, _ := json.Marshal(result)
@@ -337,7 +395,7 @@ func handleShameBoardCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	discordMembers, err := fetchDiscordRoleMembers()
+	discordMembers, err := fetchDiscordRoleMembersCached()
 	if err != nil {
 		log.Printf("[shame] check fetch: %v", err)
 		sendError(w, http.StatusBadGateway, "Ошибка получения данных из Discord")
@@ -554,7 +612,7 @@ func handleSyncShameBoard(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = r.Body
 
-	discordMembers, err := fetchDiscordRoleMembers()
+	discordMembers, err := fetchDiscordRoleMembersCached()
 	if err != nil {
 		log.Printf("[shame] sync fetch: %v", err)
 		sendError(w, http.StatusBadGateway, "Ошибка получения данных из Discord")
@@ -632,6 +690,9 @@ func handleSyncShameBoard(w http.ResponseWriter, r *http.Request) {
 	shameCacheMu.Lock()
 	shameCacheData = nil
 	shameCacheMu.Unlock()
+	discordMembersCacheMu.Lock()
+	discordMembersCache = nil
+	discordMembersCacheMu.Unlock()
 
 	var added []ShameBoardEntry
 	for _, dm := range discordMembers {
