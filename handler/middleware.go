@@ -156,14 +156,7 @@ func clearCookie(w http.ResponseWriter, name string) {
 func requestPath(r *http.Request) string {
 	p := r.URL.Path
 	if p == "/api" || p == "/api/" {
-		if r.RequestURI != "" && r.RequestURI != "/api" && r.RequestURI != "/api/" {
-			return r.RequestURI
-		}
-		xfvf := r.Header.Get("X-Vercel-Forwarded-For")
-		if xfvf != "" {
-			log.Printf("[debug] requestPath: URL.Path=%q RequestURI=%q Header=%q", p, r.RequestURI, xfvf)
-		}
-		return p
+		return r.RequestURI
 	}
 	return p
 }

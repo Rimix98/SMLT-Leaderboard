@@ -57,7 +57,6 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := requestPath(r)
-	log.Printf("[path-debug] path=%q method=%s URL.Path=%q RawPath=%q RequestURI=%q", path, r.Method, r.URL.Path, r.URL.RawPath, r.RequestURI)
 
 	if isHoneypot(path) {
 		handleHoneypot(w, r)
@@ -89,8 +88,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/players":            rateLimitMiddleware(60)(handleGetPlayers),
 		"/api/players/save":       rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSavePlayers)))),
 		"/api/players/delete":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),
-		"/api/security/ip-ban":   rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleIPBan)))),
-		"/api/security/ip-unban": rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleIPUnban)))),
+		"/api/security/ip-ban":   rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPBan))),
+		"/api/security/ip-unban": rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPUnban))),
 	}
 
 	h, ok := mux[path]
@@ -109,11 +108,11 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if strings.Contains(path, "security/ip-ban") && !strings.Contains(path, "ip-unban") {
-		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleIPBan))))))(w, r)
+		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPBan)))))(w, r)
 		return
 	}
 	if strings.Contains(path, "security/ip-unban") {
-		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleIPUnban))))))(w, r)
+		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPUnban)))))(w, r)
 		return
 	}
 
