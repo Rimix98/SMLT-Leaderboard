@@ -57,6 +57,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := requestPath(r)
+	log.Printf("[debug] path=%q method=%s URL.Path=%q RequestURI=%q", path, r.Method, r.URL.Path, r.RequestURI)
 
 	if isHoneypot(path) {
 		handleHoneypot(w, r)
