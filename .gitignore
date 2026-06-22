@@ -6,6 +6,7 @@ serviceAccountKey.json
 
 .vercel/
 .vscode/
+AGENTS.md
 
 *.swp
 *.swo
