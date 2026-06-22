@@ -22,9 +22,9 @@ jobs:
           JSON=$(cat <<EOF
           {
             "embeds": [{
-              "title": "📝 New commit in ${REPO}",
+              "title": "📝 Новый коммит в ${REPO}",
               "url": "${{ github.event.head_compare }}",
-              "description": "**${ACTOR}** pushed to **${BRANCH}**\n\n\`\`\`\n${COMPACT_MSG}\n\`\`\`",
+              "description": "**${ACTOR}** запушил в **${BRANCH}**\n\n\`\`\`\n${COMPACT_MSG}\n\`\`\`",
               "color": 5814783,
               "footer": {
                 "text": "${SHORT_SHA}"
