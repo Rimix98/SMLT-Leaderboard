@@ -1,11 +1,11 @@
-package main
+package handler
 
 import (
 	"net/http"
 
-	"smlt-backend/handler"
+	h "smlt-backend/handler"
 )
 
 func Handler(w http.ResponseWriter, r *http.Request) {
-	handler.Handler(w, r)
+	h.Handler(w, r)
 }
