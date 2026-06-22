@@ -107,5 +107,14 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if path == "/api/security/ip-ban" {
+		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleIPBan))))))(w, r)
+		return
+	}
+	if path == "/api/security/ip-unban" {
+		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleIPUnban))))))(w, r)
+		return
+	}
+
 	sendError(w, http.StatusNotFound, "Роут не найден")
 }
