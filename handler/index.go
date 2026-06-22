@@ -58,11 +58,6 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	path := requestPath(r)
 
-	if isHoneypot(path) {
-		handleHoneypot(w, r)
-		return
-	}
-
 	mux := map[string]http.HandlerFunc{
 		"/api/captcha":            rateLimitMiddleware(30)(handleCaptcha),
 		"/api/login":              rateLimitLoginMiddleware(handleLogin),
@@ -88,8 +83,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/players":            rateLimitMiddleware(60)(handleGetPlayers),
 		"/api/players/save":       rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSavePlayers)))),
 		"/api/players/delete":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),
-		"/api/security/ip-ban":   rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPBan))),
-		"/api/security/ip-unban": rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPUnban))),
+		"/api/security/ip-ban":    rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPBan))),
+		"/api/security/ip-unban":  rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPUnban))),
 	}
 
 	h, ok := mux[path]
@@ -102,17 +97,13 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.HasPrefix(path, "/api/history/") && path != "/api/history/snapshot" {
-		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(60)(handlePlayerHistory)))(w, r)
+	if isHoneypot(path) {
+		handleHoneypot(w, r)
 		return
 	}
 
-	if strings.Contains(path, "security/ip-ban") && !strings.Contains(path, "ip-unban") {
-		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPBan)))))(w, r)
-		return
-	}
-	if strings.Contains(path, "security/ip-unban") {
-		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPUnban)))))(w, r)
+	if strings.HasPrefix(path, "/api/history/") && path != "/api/history/snapshot" {
+		gzipMiddleware(botDetectionMiddleware(rateLimitMiddleware(60)(handlePlayerHistory)))(w, r)
 		return
 	}
 
