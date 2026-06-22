@@ -88,6 +88,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/shame-board":        rateLimitMiddleware(30)(handleGetShameBoard),
 		"/api/shame-board/check":  rateLimitMiddleware(10)(authMiddleware(handleShameBoardCheck)),
 		"/api/shame-board/save":   rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveShameReason)))),
+		"/api/shame-board/add":    rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleAddShameManual)))),
 		"/api/shame-board/delete": rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeleteShameEntry)))),
 		"/api/shame-board/sync":   rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleSyncShameBoard)))),
 	}

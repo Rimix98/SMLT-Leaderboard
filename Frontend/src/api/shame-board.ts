@@ -128,3 +128,27 @@ export async function syncShameBoard(): Promise<{ newCount: number; added: Shame
     return null
   }
 }
+
+export async function addManualEntry(username: string, discordId: string, reason: string): Promise<boolean> {
+  try {
+    if (!tokens.adminKnockKey) await doAdminKnock()
+    const res = await fetchWithAbort(`${BACKEND_URL}/shame-board/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ username, discordId, reason })
+    }, 'shame-add-manual')
+    if (!res.ok) {
+      const err = await parseJsonResponse(res)
+      throw new Error((err.error as string) || 'Ошибка добавления')
+    }
+    cachedEntries = null
+    showToast('Участник добавлен на Доску позора', 'success')
+    return true
+  } catch (e) {
+    if (!isAbortError(e)) {
+      showToast((e as Error).message, 'error')
+    }
+    return false
+  }
+}

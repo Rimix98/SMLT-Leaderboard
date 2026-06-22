@@ -7,12 +7,13 @@ import {
   saveShameReason,
   deleteShameEntry,
   syncShameBoard,
+  addManualEntry,
   type ShameBoardEntry,
 } from '../api/shame-board'
 import AppShell from './AppShell.vue'
 import { showToast } from '../api/utils'
 import {
-  Skull, Crown, RefreshCw, AlertTriangle, Pencil, Trash2, UserX,
+  Skull, Crown, RefreshCw, AlertTriangle, Pencil, Trash2, UserX, Plus,
 } from '@lucide/vue'
 
 const loading = ref(true)
@@ -24,6 +25,10 @@ const editingEntry = ref<ShameBoardEntry | null>(null)
 const editReason = ref('')
 const notifications = ref<{ discordId: string; username: string }[]>([])
 const notificationPanelOpen = ref(false)
+const addModalOpen = ref(false)
+const addUsername = ref('')
+const addDiscordId = ref('')
+const addReason = ref('')
 
 const totalOnBoard = computed(() => entries.value.length)
 const entriesWithReason = computed(() => entries.value.filter(e => e.reason).length)
@@ -100,6 +105,28 @@ function getAvatarUrl(entry: ShameBoardEntry): string {
   if (!entry.avatar) return ''
   return `https://cdn.discordapp.com/avatars/${entry.discordId}/${entry.avatar}.png?size=128`
 }
+
+function openAddModal() {
+  addUsername.value = ''
+  addDiscordId.value = ''
+  addReason.value = ''
+  addModalOpen.value = true
+  document.body.classList.add('modal-open')
+}
+
+function closeAddModal() {
+  addModalOpen.value = false
+  document.body.classList.remove('modal-open')
+}
+
+async function doAddManual() {
+  if (!addUsername.value.trim()) return
+  const ok = await addManualEntry(addUsername.value.trim(), addDiscordId.value.trim(), addReason.value.trim())
+  if (ok) {
+    closeAddModal()
+    entries.value = await loadShameBoard()
+  }
+}
 </script>
 
 <template>
@@ -124,6 +151,9 @@ function getAvatarUrl(entry: ShameBoardEntry): string {
           </button>
           <button class="btn btn-secondary" @click="checkForNewMembers" :disabled="checking">
             <AlertTriangle :size="16" /> Проверить новых
+          </button>
+          <button class="btn btn-secondary" @click="openAddModal">
+            <Plus :size="16" /> Добавить вручную
           </button>
         </div>
       </div>
@@ -242,6 +272,51 @@ function getAvatarUrl(entry: ShameBoardEntry): string {
           </div>
           <div class="modal-actions-row">
             <button class="btn btn-primary btn-full-width" @click="doSaveReason">Сохранить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" :class="{ active: addModalOpen }" @mousedown.self="closeAddModal">
+      <div class="modal" style="max-width: 520px;" @mousedown.stop @mouseup.stop>
+        <div class="modal-header">
+          <div class="modal-title"><Plus :size="16" /> Добавить участника вручную</div>
+          <button class="modal-close" @click="closeAddModal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Имя участника *</label>
+            <input
+              v-model="addUsername"
+              type="text"
+              class="form-input"
+              placeholder="Username из Discord"
+              maxlength="64"
+            />
+          </div>
+          <div class="form-group">
+            <label>Discord ID <span style="color:var(--color-text-muted);font-weight:400">(необязательно)</span></label>
+            <input
+              v-model="addDiscordId"
+              type="text"
+              class="form-input"
+              placeholder="123456789012345678"
+              maxlength="64"
+            />
+          </div>
+          <div class="form-group">
+            <label>Причина попадания</label>
+            <textarea
+              v-model="addReason"
+              class="form-input shame-reason-textarea"
+              placeholder="Опишите за что этот участник попал на Доску позора..."
+              rows="4"
+              maxlength="500"
+            ></textarea>
+            <div class="shame-char-count">{{ addReason.length }}/500</div>
+          </div>
+          <div class="modal-actions-row">
+            <button class="btn btn-primary btn-full-width" @click="doAddManual" :disabled="!addUsername.trim()">Добавить</button>
           </div>
         </div>
       </div>

@@ -433,6 +433,103 @@ func handleDeleteShameEntry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"success": true})
 }
 
+func handleAddShameManual(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !requireFirestore(w) {
+		return
+	}
+
+	var req struct {
+		Username  string `json:"username"`
+		DiscordID string `json:"discordId"`
+		Reason    string `json:"reason"`
+	}
+	if err := decodeRequestJSON(w, r, &req); err != nil {
+		sendError(w, http.StatusBadRequest, "Кривой JSON")
+		return
+	}
+	req.Username = sanitizeString(req.Username)
+	req.DiscordID = sanitizeString(req.DiscordID)
+	req.Reason = sanitizeString(req.Reason)
+	if req.Username == "" || len(req.Username) > 64 {
+		sendError(w, http.StatusBadRequest, "Некорректное имя")
+		return
+	}
+	if req.DiscordID == "" {
+		req.DiscordID = "manual_" + req.Username
+	}
+	if len(req.Reason) > 500 {
+		sendError(w, http.StatusBadRequest, "Причина слишком длинная")
+		return
+	}
+
+	ctx := r.Context()
+	entry := ShameBoardEntry{
+		DiscordID: req.DiscordID,
+		Username:  req.Username,
+		Reason:    req.Reason,
+		AddedAt:   time.Now().UTC().Format(time.RFC3339),
+	}
+
+	err := fsClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		docRef := fsClient.Collection("config").Doc("shame_board")
+		doc, err := tx.Get(docRef)
+		var data struct {
+			Members []ShameBoardEntry `firestore:"members"`
+		}
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				data.Members = []ShameBoardEntry{}
+			} else {
+				return err
+			}
+		} else {
+			if err := doc.DataTo(&data); err != nil {
+				data.Members = []ShameBoardEntry{}
+			}
+		}
+
+		existingIDs := make(map[string]bool)
+		for _, e := range data.Members {
+			existingIDs[e.DiscordID] = true
+		}
+		if existingIDs[entry.DiscordID] {
+			return errValidation{"duplicate"}
+		}
+
+		data.Members = append(data.Members, entry)
+		return tx.Set(docRef, map[string]interface{}{"members": data.Members}, firestore.Merge(firestore.FieldPath{"members"}))
+	})
+
+	if err != nil {
+		if ve, ok := err.(errValidation); ok && ve.msg == "duplicate" {
+			sendError(w, http.StatusConflict, "Участник уже есть на Доске позора")
+		} else {
+			log.Printf("[shame] manual add: %v", err)
+			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
+		}
+		return
+	}
+
+	cacheInvalidate("shame")
+	shameCacheMu.Lock()
+	shameCacheData = nil
+	shameCacheMu.Unlock()
+
+	auditLog(ctx, AuditEntry{
+		Action:  "shame.manualAdd",
+		Details: map[string]interface{}{"username": req.Username, "discordId": req.DiscordID},
+	})
+
+	writeJSON(w, map[string]interface{}{
+		"success": true,
+		"entry":   entry,
+	})
+}
+
 func handleSyncShameBoard(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
@@ -446,6 +543,7 @@ func handleSyncShameBoard(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusServiceUnavailable, "Discord интеграция не настроена")
 		return
 	}
+	_ = r.Body
 
 	discordMembers, err := fetchDiscordRoleMembers()
 	if err != nil {
