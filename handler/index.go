@@ -85,6 +85,11 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/players/delete":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),
 		"/api/security/ip-ban":    rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPBan))),
 		"/api/security/ip-unban":  rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPUnban))),
+		"/api/shame-board":        rateLimitMiddleware(30)(handleGetShameBoard),
+		"/api/shame-board/check":  rateLimitMiddleware(10)(authMiddleware(handleShameBoardCheck)),
+		"/api/shame-board/save":   rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveShameReason)))),
+		"/api/shame-board/delete": rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeleteShameEntry)))),
+		"/api/shame-board/sync":   rateLimitMiddleware(10)(knockMiddleware(authMiddleware(csrfMiddleware(handleSyncShameBoard)))),
 	}
 
 	h, ok := mux[path]
