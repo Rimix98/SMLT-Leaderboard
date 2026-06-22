@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"smlt-backend/api"
+	"smlt-backend/handler"
 )
 
 func main() {
