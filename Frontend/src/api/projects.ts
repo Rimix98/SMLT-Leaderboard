@@ -272,7 +272,6 @@ export async function deleteProject(idx: number): Promise<void> {
   syncProjectOrder()
   try {
     await saveProjects(store.projects)
-    await loadProjects()
     showToast('Проект удалён', 'success')
   } catch (e) {
     if (isAbortError(e)) return
