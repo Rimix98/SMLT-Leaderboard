@@ -13,14 +13,14 @@ const route = useRoute()
 const currentPage = computed(() => route.name)
 
 const themeOpen = ref(false)
-const themeBtnRef = ref(null)
+const themeBtnRef = ref<HTMLElement | null>(null)
 
 function toggleThemeDropdown() {
   themeOpen.value = !themeOpen.value
 }
 
-function onDocumentClick(e) {
-  if (themeOpen.value && themeBtnRef.value && !themeBtnRef.value.contains(e.target)) {
+function onDocumentClick(e: MouseEvent) {
+  if (themeOpen.value && themeBtnRef.value && !(themeBtnRef.value as HTMLElement).contains(e.target as Node)) {
     themeOpen.value = false
   }
 }
@@ -28,7 +28,7 @@ function onDocumentClick(e) {
 onMounted(() => document.addEventListener('click', onDocumentClick))
 onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
-const navRef = ref(null)
+const navRef = ref<HTMLElement | null>(null)
 const navIndicatorStyle = ref({ left: '0px', width: '0px' })
 
 function updateNavIndicator() {
@@ -89,7 +89,7 @@ function closeHostModal() {
 
 async function doVerify() {
   hostError.value = ''
-  const res = await verifyHost(hostPassword.value)
+  await verifyHost(hostPassword.value)
   if (store.isHost) hostModalOpen.value = false
 }
 

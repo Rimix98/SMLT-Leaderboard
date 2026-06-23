@@ -8,7 +8,6 @@ import {
   parseParticipantConfig,
   serializeParticipantConfig,
 } from '../api/projects'
-import { store } from '../store'
 
 describe('getStatusClass', () => {
   it('returns correct class for готов', () => {
@@ -198,8 +197,8 @@ describe('parseParticipantConfig', () => {
 
 describe('serializeParticipantConfig', () => {
   it('serializes config to array with JSON string', () => {
-    const config = { host: 'Test', parts: [] }
-    const result = serializeParticipantConfig(config as import('../types').ParticipantConfig)
+    const config = { host: 'Test', parts: [], endScreen: [], playtest: [], verifier: [], merger: [], merger2: [], showcaser: '', fxMode: false, soloGp: null } as import('../types').ParticipantConfig
+    const result = serializeParticipantConfig(config)
     expect(Array.isArray(result)).toBe(true)
     expect(result).toHaveLength(1)
     expect(JSON.parse(result[0])).toEqual(config)

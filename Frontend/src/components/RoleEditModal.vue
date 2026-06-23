@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { store } from '../store'
-import { getPlayerTier, TIER_CONFIG, sortRolePlayersByTiers, createRoleApi, updateRoleApi, addPlayerToRoleApi, removePlayerFromRoleApi, saveStaffRoles, loadStaffTiers, setPlayerTier, toggleRoleTiers } from '../api/staff'
+import { getPlayerTier, TIER_CONFIG, sortRolePlayersByTiers, createRoleApi, updateRoleApi, removePlayerFromRoleApi, saveStaffRoles, setPlayerTier, toggleRoleTiers } from '../api/staff'
+import type { TierKey } from '../types'
 import { makeOverlayClose } from '../utils/modal'
 import {
   Pencil, BarChart3, Target,
@@ -19,6 +20,7 @@ const playerSearch = ref('')
 const addNickname = ref('')
 const addDiscord = ref('')
 const editPlayerIdx = ref(-1)
+const submitting = ref(false)
 
 const closeOverlay = makeOverlayClose(() => emit('close'))
 
@@ -52,37 +54,20 @@ async function submitRole() {
   const name = roleName.value.trim()
   if (!name) return
   const color = roleColor.value || '#3b82f6'
-  if (isEditing.value) {
-    await updateRoleApi(props.roleIndex, name, color)
-  } else {
-    await createRoleApi(name, color)
-  }
-  emit('close')
-}
-
-async function addPlayer() {
-  if (!isEditing.value) return
-  const nickname = addNickname.value.trim()
-  if (!nickname) return
-  const discord = addDiscord.value.trim()
-
-  if (editPlayerIdx.value >= 0) {
-    const r = store.staffRoles[props.roleIndex]
-    if (r?.players?.[editPlayerIdx.value]) {
-      r.players[editPlayerIdx.value].nickname = nickname
-      r.players[editPlayerIdx.value].discord = discord
-      await saveStaffRoles()
-      await loadStaffTiers()
+  submitting.value = true
+  try {
+    if (isEditing.value) {
+      await updateRoleApi(props.roleIndex, name, color)
+    } else {
+      await createRoleApi(name, color)
     }
-    editPlayerIdx.value = -1
-  } else {
-    await addPlayerToRoleApi(props.roleIndex, nickname, discord)
+    emit('close')
+  } finally {
+    submitting.value = false
   }
-  addNickname.value = ''
-  addDiscord.value = ''
 }
 
-function startEditPlayer(pIdx) {
+function startEditPlayer(pIdx: number) {
   const p = role.value?.players?.[pIdx]
   if (!p) return
   addNickname.value = p.nickname
@@ -90,13 +75,7 @@ function startEditPlayer(pIdx) {
   editPlayerIdx.value = pIdx
 }
 
-function cancelEditPlayer() {
-  editPlayerIdx.value = -1
-  addNickname.value = ''
-  addDiscord.value = ''
-}
-
-async function movePlayer(pIdx, dir) {
+async function movePlayer(pIdx: number, dir: 'up' | 'down') {
   const r = role.value
   if (!r?.players) return
   const target = dir === 'down' ? pIdx + 1 : pIdx - 1
@@ -105,7 +84,7 @@ async function movePlayer(pIdx, dir) {
   await saveStaffRoles()
 }
 
-async function removePlayer(nickname) {
+async function removePlayer(nickname: string) {
   if (!isEditing.value) return
   if (!confirm(`Удалить игрока «${nickname}» из роли?`)) return
   await removePlayerFromRoleApi(props.roleIndex, nickname)
@@ -122,7 +101,7 @@ async function toggleTiers() {
   await toggleRoleTiers(props.roleIndex)
 }
 
-async function onTierClick(nickname, tier) {
+async function onTierClick(nickname: string, tier: TierKey) {
   await setPlayerTier(nickname, tier)
 }
 </script>
@@ -186,7 +165,7 @@ async function onTierClick(nickname, tier) {
 
         <div class="modal-actions-row-spaced">
           <button class="btn btn-secondary" @click="emit('close')">Отмена</button>
-          <button class="btn btn-primary" @click="submitRole">{{ isEditing ? 'Сохранить' : 'Создать' }}</button>
+          <button class="btn btn-primary" @click="submitRole" :disabled="submitting">{{ submitting ? 'Сохранение...' : (isEditing ? 'Сохранить' : 'Создать') }}</button>
         </div>
       </div>
     </div>

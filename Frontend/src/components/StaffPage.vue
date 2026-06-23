@@ -7,10 +7,11 @@ import RoleEditModal from './RoleEditModal.vue'
 import AddPlayerModal from './AddPlayerModal.vue'
 import StaffEditPanel from './StaffEditPanel.vue'
 import {
-  Users, Crown, Plus, Pencil, BarChart3, Target, Trash2,
+  Users, Crown, Plus, Pencil, BarChart3, Target, Trash2, AlertTriangle, RefreshCw,
 } from '@lucide/vue'
 
 const loading = ref(true)
+const error = ref(false)
 const roleModalVisible = ref(false)
 const roleModalIndex = ref(-1)
 const addPlayerModalVisible = ref(false)
@@ -45,8 +46,13 @@ const tierCounts = computed(() => {
 })
 
 onMounted(async () => {
-  await Promise.all([loadStaffRoles(), loadStaffTiers()])
-  loading.value = false
+  try {
+    await Promise.all([loadStaffRoles(), loadStaffTiers()])
+  } catch {
+    error.value = true
+  } finally {
+    loading.value = false
+  }
 })
 
 function openAddRole() {
@@ -54,7 +60,7 @@ function openAddRole() {
   roleModalVisible.value = true
   document.body.classList.add('modal-open')
 }
-function openEditRole(idx) {
+function openEditRole(idx: number) {
   roleModalIndex.value = idx
   roleModalVisible.value = true
   document.body.classList.add('modal-open')
@@ -64,7 +70,7 @@ function closeRoleModal() {
   document.body.classList.remove('modal-open')
 }
 
-function openAddPlayer(idx) {
+function openAddPlayer(idx: number) {
   addPlayerRoleIndex.value = idx
   addPlayerModalVisible.value = true
   document.body.classList.add('modal-open')
@@ -81,6 +87,18 @@ function openEditPanel() {
 function closeEditPanel() {
   editPanelVisible.value = false
   document.body.style.overflow = ''
+}
+
+async function reloadStaff() {
+  error.value = false
+  loading.value = true
+  try {
+    await Promise.all([loadStaffRoles(), loadStaffTiers()])
+  } catch {
+    error.value = true
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -167,6 +185,12 @@ function closeEditPanel() {
           <div class="spinner"></div>
           <div class="loading-text">Загрузка состава...</div>
         </div>
+      </div>
+
+      <div v-else-if="error" class="loading-state">
+        <div class="error-icon"><AlertTriangle :size="48" /></div>
+        <div class="error-text">Не удалось загрузить состав</div>
+        <button class="btn btn-primary" @click="reloadStaff"><RefreshCw :size="16" /> Повторить</button>
       </div>
 
       <TransitionGroup name="list" tag="div" class="projects-grid">

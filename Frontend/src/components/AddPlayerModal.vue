@@ -10,6 +10,7 @@ const emit = defineEmits<{ close: [] }>()
 
 const nickname = ref('')
 const discord = ref('')
+const submitting = ref(false)
 const closeOverlay = makeOverlayClose(() => emit('close'))
 
 const roleName = computed(() => store.staffRoles[props.roleIndex]?.name || '')
@@ -25,8 +26,13 @@ async function submit() {
   const nick = nickname.value.trim()
   if (!nick) return
   const disc = discord.value.trim()
-  const ok = await addPlayerToRoleApi(props.roleIndex, nick, disc)
-  if (ok) emit('close')
+  submitting.value = true
+  try {
+    const ok = await addPlayerToRoleApi(props.roleIndex, nick, disc)
+    if (ok) emit('close')
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 
@@ -48,7 +54,7 @@ async function submit() {
         </div>
         <div class="modal-actions-row-spaced">
           <button class="btn btn-secondary" @click="emit('close')">Отмена</button>
-          <button class="btn btn-primary" @click="submit">Добавить игрока</button>
+          <button class="btn btn-primary" @click="submit" :disabled="submitting">{{ submitting ? 'Добавление...' : 'Добавить игрока' }}</button>
         </div>
       </div>
     </div>

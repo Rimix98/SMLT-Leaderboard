@@ -1,22 +1,21 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { store } from '../store'
+import type { Project } from '../types'
 import AppShell from './AppShell.vue'
 import {
   loadProjects,
   saveProjects,
   getStatusClass,
   toYoutubeId11,
-  editProject,
   deleteProject,
   moveProject,
-  showAddProjectModal,
-  closeProjectModal,
-  saveProject,
+  saveProjectFromForm,
   parseParticipantConfig,
   serializeParticipantConfig,
   autoFillParticipantConfig,
   createDefaultParticipantConfig,
+  type ProjectFormData,
 } from '../api/projects'
 import {
   fetchWithAbort,
@@ -25,17 +24,34 @@ import {
 } from '../api/utils'
 import {
   Folder, Crown, Plus, Pencil, Trash2, Film, ExternalLink, Save, Users,
+  AlertTriangle, RefreshCw,
 } from '@lucide/vue'
 
-const selectedProject = ref(null)
+const selectedProject = ref<Project | null>(null)
 const showParticipantTab = ref(false)
 const participantConfig = ref(createDefaultParticipantConfig())
 const editingIdx = ref(-1)
 const loading = ref(true)
+const error = ref(false)
+const savingParticipant = ref(false)
+
+const projectModalVisible = ref(false)
+const projectFormTitle = ref('Добавить проект')
+const formName = ref('')
+const formVideo = ref('')
+const formId = ref('')
+const formStatus = ref('планируется')
+const formVerifier = ref('')
+const formComment = ref('')
 
 onMounted(async () => {
-  await Promise.all([loadProjects(), loadStaffRoles()])
-  loading.value = false
+  try {
+    await Promise.all([loadProjects(), loadStaffRoles()])
+  } catch {
+    error.value = true
+  } finally {
+    loading.value = false
+  }
 })
 
 async function loadStaffRoles() {
@@ -45,12 +61,12 @@ async function loadStaffRoles() {
       const data = await res.json()
       store.staffRoles = Array.isArray(data) ? data : []
     }
-  } catch {}
+  } catch { /* network error */ }
 }
 
 const projectDetailMousedown = ref(false)
 
-function openProjectDetail(project) {
+function openProjectDetail(project: Project) {
   selectedProject.value = project
   document.body.classList.add('modal-open')
 }
@@ -61,21 +77,52 @@ function closeProjectDetail() {
 }
 
 function openAddProject() {
+  if (!store.isHost) { showToast('Только хост может добавлять проекты', 'error'); return }
   editingIdx.value = -1
-  showAddProjectModal()
+  projectFormTitle.value = 'Добавить проект'
+  formName.value = ''
+  formVideo.value = ''
+  formId.value = ''
+  formStatus.value = 'планируется'
+  formVerifier.value = ''
+  formComment.value = ''
+  projectModalVisible.value = true
   document.body.classList.add('modal-open')
 }
 
-function onEditProject(idx) {
+function onEditProject(idx: number) {
+  if (!store.isHost) { showToast('Только хост может редактировать проекты', 'error'); return }
+  const project = store.projects[idx]
+  if (!project) return
   editingIdx.value = idx
-  editProject(idx)
+  projectFormTitle.value = 'Редактировать проект'
+  formName.value = project.name || ''
+  formVideo.value = project.videoId || ''
+  formId.value = project.id || ''
+  formStatus.value = project.status || 'планируется'
+  formVerifier.value = project.verifier || ''
+  formComment.value = project.comment || ''
+  projectModalVisible.value = true
   document.body.classList.add('modal-open')
 }
 
 function closeProjectEditModal() {
   editingIdx.value = -1
-  closeProjectModal()
+  projectModalVisible.value = false
   document.body.classList.remove('modal-open')
+}
+
+function submitProjectForm() {
+  const formData: ProjectFormData = {
+    name: formName.value,
+    videoId: formVideo.value,
+    id: formId.value,
+    comment: formComment.value,
+    status: formStatus.value,
+    verifier: formVerifier.value,
+  }
+  saveProjectFromForm(formData, editingIdx.value)
+  closeProjectEditModal()
 }
 
 function openParticipantTabFromEditModal() {
@@ -86,11 +133,11 @@ function openParticipantTabFromEditModal() {
   }
 }
 
-function onProjectDetailMousedown(e) {
+function onProjectDetailMousedown(e: MouseEvent) {
   projectDetailMousedown.value = e.target === e.currentTarget
 }
 
-function onProjectDetailMouseup(e) {
+function onProjectDetailMouseup(e: MouseEvent) {
   if (projectDetailMousedown.value && e.target === e.currentTarget) {
     closeProjectDetail()
   }
@@ -116,7 +163,7 @@ function closeParticipantTab() {
   showParticipantTab.value = false
 }
 
-function reactiveClone(obj) {
+function reactiveClone<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj))
 }
 
@@ -124,7 +171,7 @@ function addPart() {
   participantConfig.value.parts.push({ gp: [], deco: [], transition: '' })
 }
 
-function removePart(index) {
+function removePart(index: number) {
   participantConfig.value.parts.splice(index, 1)
 }
 
@@ -133,7 +180,7 @@ function addPlaytestField() {
   participantConfig.value.playtest.push('')
 }
 
-function removePlaytestField(index) {
+function removePlaytestField(index: number) {
   participantConfig.value.playtest.splice(index, 1)
 }
 
@@ -142,7 +189,7 @@ function addVerifierField() {
   participantConfig.value.verifier.push('')
 }
 
-function removeVerifierField(index) {
+function removeVerifierField(index: number) {
   participantConfig.value.verifier.splice(index, 1)
 }
 
@@ -151,7 +198,7 @@ function addMergerField() {
   participantConfig.value.merger.push('')
 }
 
-function removeMergerField(index) {
+function removeMergerField(index: number) {
   participantConfig.value.merger.splice(index, 1)
 }
 
@@ -160,7 +207,7 @@ function addMerger2Field() {
   participantConfig.value.merger2.push('')
 }
 
-function removeMerger2Field(index) {
+function removeMerger2Field(index: number) {
   participantConfig.value.merger2.splice(index, 1)
 }
 
@@ -208,45 +255,57 @@ function initParticipantTabState() {
 async function saveParticipantConfig() {
   if (!selectedProject.value) return
   if (!store.isHost) { showToast('Только хост может сохранять участников', 'error'); return }
-  const proj = store.projects.find(p => p.id === selectedProject.value.id)
+  const currentProject = selectedProject.value
+  const proj = store.projects.find(p => p.id === currentProject.id)
   if (!proj) return
   proj.participants = serializeParticipantConfig(participantConfig.value)
+  savingParticipant.value = true
   try {
     await saveProjects(store.projects)
     await loadProjects()
-    selectedProject.value = store.projects.find(p => p.id === proj.id)
+    selectedProject.value = store.projects.find(p => p.id === proj.id) ?? null
     showParticipantTab.value = false
     showToast('Участники сохранены!', 'success')
-  } catch {}
+  } catch (e) {
+    showToast((e instanceof Error ? e.message : 'Ошибка сохранения участников'), 'error')
+  } finally {
+    savingParticipant.value = false
+  }
 }
 
-function getRoleByName(name) {
+async function reloadProjects() {
+  error.value = false
+  loading.value = true
+  try {
+    await Promise.all([loadProjects(), loadStaffRoles()])
+  } catch {
+    error.value = true
+  } finally {
+    loading.value = false
+  }
+}
+
+function getRoleByName(name: string) {
   return (store.staffRoles || []).find(r => r.name === name)
 }
 
-function roleColor(name) {
+function roleColor(name: string) {
   const role = getRoleByName(name)
   return role?.color || null
 }
 
-function getColoredLabel(label) {
+function getColoredLabel(label: string) {
   const color = roleColor(label)
   return color ? { color } : {}
 }
 
-function parseMultiField(value) {
-  if (!value) return []
-  if (Array.isArray(value)) return value
-  return []
-}
-
-function stringifyMulti(value) {
+function stringifyMulti(value: unknown) {
   if (!value) return ''
   if (Array.isArray(value)) return value.filter(Boolean).join(' & ')
   return ''
 }
 
-function updateMultiField(arr, str) {
+function updateMultiField(arr: string[], str: string) {
   arr.length = 0
   str.split('&').forEach(s => {
     const t = s.trim()
@@ -254,12 +313,12 @@ function updateMultiField(arr, str) {
   })
 }
 
-function renderParticipants(participants) {
+function renderParticipants(participants: string[]) {
   if (!participants || participants.length === 0) return []
   const config = parseParticipantConfig({ participants })
   const items = []
   if (config.host) items.push({ name: config.host, role: 'HOST', color: roleColor('HOST') })
-  config.parts.forEach((part, i) => {
+  config.parts.forEach((part) => {
     ;(part.gp || []).forEach(g => {
       if (g) items.push({ name: g, role: config.fxMode ? 'FX' : 'GP', color: config.fxMode ? roleColor('FX') : roleColor('GP') })
     })
@@ -338,13 +397,20 @@ function renderParticipants(participants) {
         </div>
       </div>
 
+      <div v-else-if="error" class="loading-state">
+        <div class="error-icon"><AlertTriangle :size="48" /></div>
+        <div class="error-text">Не удалось загрузить проекты</div>
+        <button class="btn btn-primary" @click="reloadProjects"><RefreshCw :size="16" /> Повторить</button>
+      </div>
+
       <TransitionGroup name="list" tag="div" class="projects-grid" id="projectsGrid">
         <div v-for="(project, idx) in store.projects" :key="project.id || idx" class="project-card project-card-clickable" @click="openProjectDetail(project)">
           <template v-if="toYoutubeId11(project.videoId)">
             <div class="project-video">
               <iframe :src="`https://www.youtube.com/embed/${toYoutubeId11(project.videoId)}?rel=0`" frameborder="0" allowfullscreen loading="lazy"
                 allow="accelerometer;clipboard-write;encrypted-media;gyroscope;picture-in-picture;web-share"
-                referrerpolicy="strict-origin-when-cross-origin"></iframe>
+                referrerpolicy="strict-origin-when-cross-origin"
+></iframe>
             </div>
           </template>
           <template v-else>
@@ -382,31 +448,30 @@ function renderParticipants(participants) {
   </main>
 
   <Teleport to="body">
-    <div id="projectModal" class="modal-overlay">
+    <div class="modal-overlay" :class="{ active: projectModalVisible }">
       <div class="modal modal-lg">
         <div class="modal-header">
-          <div class="modal-title" id="projectModalTitle"><Folder :size="16" /> Добавить проект</div>
+          <div class="modal-title"><Folder :size="16" /> {{ projectFormTitle }}</div>
           <button class="modal-close" @click="closeProjectEditModal()">✕</button>
         </div>
         <div class="modal-body">
-          <form id="projectForm" @submit.prevent="saveProject">
-            <input type="hidden" id="projectIndex" value="-1">
+          <form @submit.prevent="submitProjectForm">
             <div class="form-group">
-              <label for="projectName">Название:</label>
-              <input type="text" id="projectName" class="form-input" placeholder="Название проекта">
+              <label>Название:</label>
+              <input type="text" class="form-input" placeholder="Название проекта" v-model="formName">
             </div>
             <div class="form-group">
-              <label for="projectVideo">Видео (YouTube ID или ссылка):</label>
-              <input type="text" id="projectVideo" class="form-input" placeholder="https://youtube.com/watch?v=...">
+              <label>Видео (YouTube ID или ссылка):</label>
+              <input type="text" class="form-input" placeholder="https://youtube.com/watch?v=..." v-model="formVideo">
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="projectId">ID:</label>
-                <input type="text" id="projectId" class="form-input" placeholder="Уникальный ID (оставьте пустым для генерации)">
+                <label>ID:</label>
+                <input type="text" class="form-input" placeholder="Уникальный ID (оставьте пустым для генерации)" v-model="formId">
               </div>
               <div class="form-group">
-                <label for="projectStatus">Статус:</label>
-                <select id="projectStatus" class="form-select">
+                <label>Статус:</label>
+                <select class="form-select" v-model="formStatus">
                   <option value="планируется">Планируется</option>
                   <option value="в процессе постройки">В процессе постройки</option>
                   <option value="в процессе верифа">В процессе верифа</option>
@@ -417,12 +482,12 @@ function renderParticipants(participants) {
               </div>
             </div>
             <div class="form-group">
-              <label for="projectVerifier">Верифнут:</label>
-              <input type="text" id="projectVerifier" class="form-input" placeholder="Кто верифер?">
+              <label>Верифнут:</label>
+              <input type="text" class="form-input" placeholder="Кто верифер?" v-model="formVerifier">
             </div>
             <div class="form-group">
-              <label for="projectComment">Комментарий:</label>
-              <textarea id="projectComment" class="form-textarea" placeholder="Комментарий к проекту"></textarea>
+              <label>Комментарий:</label>
+              <textarea class="form-textarea" placeholder="Комментарий к проекту" v-model="formComment"></textarea>
             </div>
             <div v-if="editingIdx !== -1" class="form-group">
               <button type="button" class="btn btn-primary btn-full-width" @click="openParticipantTabFromEditModal"><Users :size="16" /> Добавить участников</button>
@@ -477,7 +542,7 @@ function renderParticipants(participants) {
           </div>
           <template v-if="toYoutubeId11(selectedProject.videoId)">
             <div class="project-info-bordered">
-                <a :href="`https://www.youtube.com/watch?v=${encodeURIComponent(toYoutubeId11(selectedProject.videoId))}`" target="_blank" rel="noopener noreferrer" class="project-video-link"><ExternalLink :size="14" /> Открыть на YouTube</a>
+                <a :href="`https://www.youtube.com/watch?v=${encodeURIComponent(toYoutubeId11(selectedProject.videoId) ?? '')}`" target="_blank" rel="noopener noreferrer" class="project-video-link"><ExternalLink :size="14" /> Открыть на YouTube</a>
             </div>
           </template>
         </div>
@@ -606,7 +671,7 @@ function renderParticipants(participants) {
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" @click="closeParticipantTab">Отмена</button>
-          <button class="btn btn-primary" @click="saveParticipantConfig"><Save :size="14" /> Сохранить участников</button>
+          <button class="btn btn-primary" @click="saveParticipantConfig" :disabled="savingParticipant"><Save :size="14" /> {{ savingParticipant ? 'Сохранение...' : 'Сохранить участников' }}</button>
         </div>
       </div>
     </div>

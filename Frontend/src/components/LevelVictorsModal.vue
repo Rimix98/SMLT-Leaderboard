@@ -28,7 +28,7 @@ const close = makeOverlayClose(() => emit('close'))
           <div v-for="(victor, idx) in levelData.victors" :key="victor.id" class="level-victors-list" style="display:flex;justify-content:space-between;padding:var(--spacing-sm);border-bottom:1px solid var(--color-border)">
             <span>
               <strong>#{{ idx + 1 }}</strong>
-              <img v-if="getFlagCode(victor.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(victor.nationality)}.png`" :alt="getFlagCode(victor.nationality).toUpperCase()" width="20" class="flag-img flag-inline">
+              <img v-if="getFlagCode(victor.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(victor.nationality)}.png`" :alt="(getFlagCode(victor.nationality) ?? '').toUpperCase()" width="20" class="flag-img flag-inline">
               <span v-else><Globe :size="16" /></span>
               {{ victor.name }}
             </span>

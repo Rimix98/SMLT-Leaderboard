@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { store } from '../store'
 import { getFlagCode } from '../api/utils'
 import { makeOverlayClose } from '../utils/modal'

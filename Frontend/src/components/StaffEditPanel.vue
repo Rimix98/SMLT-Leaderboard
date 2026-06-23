@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { store } from '../store'
 import { getPlayerTier, TIER_CONFIG, addPlayerToRoleApi, removePlayerFromRoleApi, saveStaffRoles, loadStaffTiers, setPlayerTier } from '../api/staff'
+import type { TierKey } from '../types'
 import { Pencil } from '@lucide/vue'
 
 const props = defineProps<{ visible: boolean }>()
@@ -12,6 +13,7 @@ const discord = ref('')
 const selectedRoleIndex = ref('')
 const editKey = ref('')
 const searchQuery = ref('')
+const submitting = ref(false)
 
 watch(() => props.visible, (v) => {
   if (!v) return
@@ -43,42 +45,47 @@ async function submit() {
   const ri = parseInt(selectedRoleIndex.value)
   if (isNaN(ri) || ri < 0 || ri >= store.staffRoles.length) return
 
-  if (editKey.value) {
-    const [oldRoleIdx, playerIdx] = editKey.value.split(':').map(Number)
-    const oldRole = store.staffRoles[oldRoleIdx]
-    const role = store.staffRoles[ri]
-    if (oldRoleIdx !== ri) {
-      if (oldRole?.players) oldRole.players.splice(playerIdx, 1)
-      if (!role.players) role.players = []
-      role.players.push({ nickname: name, discord: disc })
-    } else if (role?.players?.[playerIdx]) {
-      role.players[playerIdx].nickname = name
-      role.players[playerIdx].discord = disc
+  submitting.value = true
+  try {
+    if (editKey.value) {
+      const [oldRoleIdx, playerIdx] = editKey.value.split(':').map(Number)
+      const oldRole = store.staffRoles[oldRoleIdx]
+      const role = store.staffRoles[ri]
+      if (oldRoleIdx !== ri) {
+        if (oldRole?.players) oldRole.players.splice(playerIdx, 1)
+        if (!role.players) role.players = []
+        role.players.push({ nickname: name, discord: disc })
+      } else if (role?.players?.[playerIdx]) {
+        role.players[playerIdx].nickname = name
+        role.players[playerIdx].discord = disc
+      }
+      await saveStaffRoles()
+      await loadStaffTiers()
+      editKey.value = ''
+    } else {
+      await addPlayerToRoleApi(ri, name, disc)
     }
-    await saveStaffRoles()
-    await loadStaffTiers()
-    editKey.value = ''
-  } else {
-    await addPlayerToRoleApi(ri, name, disc)
+    nickname.value = ''
+    discord.value = ''
+    selectedRoleIndex.value = ''
+  } finally {
+    submitting.value = false
   }
-  nickname.value = ''
-  discord.value = ''
-  selectedRoleIndex.value = ''
 }
 
-function editPlayer(p) {
+function editPlayer(p: { nickname: string; discord?: string; _roleIndex: number; _playerIndex: number; _roleName: string }) {
   nickname.value = p.nickname
   discord.value = p.discord || ''
   selectedRoleIndex.value = String(p._roleIndex)
   editKey.value = `${p._roleIndex}:${p._playerIndex}`
 }
 
-async function removePlayer(p) {
+async function removePlayer(p: { nickname: string; _roleIndex: number; _roleName: string }) {
   if (!confirm(`Удалить игрока «${p.nickname}» из роли «${p._roleName}»?`)) return
   await removePlayerFromRoleApi(p._roleIndex, p.nickname)
 }
 
-async function onTierClick(nickname, tier) {
+async function onTierClick(nickname: string, tier: TierKey) {
   await setPlayerTier(nickname, tier)
 }
 </script>
@@ -106,7 +113,7 @@ async function onTierClick(nickname, tier) {
           <option v-for="(role, idx) in store.staffRoles" :key="idx" :value="idx">{{ role.name }}</option>
         </select>
       </div>
-      <button class="btn btn-primary" @click="submit">{{ editKey ? 'Сохранить' : 'Добавить игрока' }}</button>
+      <button class="btn btn-primary" @click="submit" :disabled="submitting">{{ submitting ? 'Сохранение...' : (editKey ? 'Сохранить' : 'Добавить игрока') }}</button>
       <div class="edit-player-list">
         <h4>Игроки:</h4>
         <input type="text" class="form-input" placeholder="Поиск игрока..." style="margin-bottom:var(--spacing-sm)" v-model="searchQuery">

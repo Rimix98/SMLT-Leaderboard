@@ -27,12 +27,12 @@ const playerSearch = ref('')
 const leaderboardLoading = ref(true)
 const leaderboardError = ref(false)
 
-const tabHeaderRef = ref(null)
-const playerTabBtn = ref(null)
-const levelTabBtn = ref(null)
+const tabHeaderRef = ref<HTMLElement | null>(null)
+const playerTabBtn = ref<HTMLElement | null>(null)
+const levelTabBtn = ref<HTMLElement | null>(null)
 const indicatorStyle = ref({ left: '0px', width: '0px' })
 
-function updateIndicator(tab) {
+function updateIndicator(tab: string) {
   const btn = tab === 'players' ? playerTabBtn.value : levelTabBtn.value
   if (!btn || !tabHeaderRef.value) return
   const headerRect = tabHeaderRef.value.getBoundingClientRect()
@@ -43,7 +43,7 @@ function updateIndicator(tab) {
   }
 }
 
-function switchTab(tab) {
+function switchTab(tab: string) {
   activeTab.value = tab
   nextTick(() => updateIndicator(tab))
 }
@@ -127,12 +127,12 @@ const debouncedFilterPlayers = debounce((q: string) => filterPlayers(q), 250)
 const debouncedFilterLevels = debounce((q: string) => filterLevels(q), 250)
 
 const profileModalIndex = ref(-1)
-const countryModalName = ref(null)
+const countryModalName = ref<string | null>(null)
 const countryModalVisible = ref(false)
-const levelModalId = ref(null)
+const levelModalId = ref<number | null>(null)
 const levelModalVisible = ref(false)
 
-function openProfile(index) {
+function openProfile(index: number) {
   document.body.classList.add('modal-open')
   profileModalIndex.value = index
 }
@@ -140,7 +140,7 @@ function closeProfile() {
   profileModalIndex.value = -1
   document.body.classList.remove('modal-open')
 }
-function openCountry(name) {
+function openCountry(name: string | null) {
   document.body.classList.add('modal-open')
   countryModalName.value = name
   countryModalVisible.value = true
@@ -149,7 +149,7 @@ function closeCountry() {
   countryModalVisible.value = false
   document.body.classList.remove('modal-open')
 }
-function openLevel(id) {
+function openLevel(id: number) {
   document.body.classList.add('modal-open')
   levelModalId.value = id
   levelModalVisible.value = true
@@ -161,6 +161,7 @@ function closeLevel() {
 
 const addPlayerModalVisible = ref(false)
 const newPlayerName = ref('')
+const addingPlayer = ref(false)
 
 function openAddPlayerModal() {
   newPlayerName.value = ''
@@ -176,11 +177,16 @@ function closeAddPlayerModal() {
 async function doAddPlayer() {
   const name = newPlayerName.value.trim()
   if (!name) return
-  await addPlayerApi(name)
-  closeAddPlayerModal()
+  addingPlayer.value = true
+  try {
+    await addPlayerApi(name)
+    closeAddPlayerModal()
+  } finally {
+    addingPlayer.value = false
+  }
 }
 
-function doRemovePlayer(name) {
+function doRemovePlayer(name: string) {
   removePlayerApi(name)
 }
 </script>
@@ -258,7 +264,7 @@ function doRemovePlayer(name) {
                   </div>
                   <div class="cell cell-player">
                     <span class="player-flag">
-                      <img v-if="getFlagCode(p.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(p.nationality)}.png`" :alt="getFlagCode(p.nationality).toUpperCase()" width="20" loading="lazy" class="flag-img flag-inline">
+                      <img v-if="getFlagCode(p.nationality)" :src="`https://flagcdn.com/w20/${getFlagCode(p.nationality)}.png`" :alt="(getFlagCode(p.nationality) ?? '').toUpperCase()" width="20" loading="lazy" class="flag-img flag-inline">
                       <span v-else><Globe :size="16" /></span>
                     </span>
                     <div class="player-info">
@@ -341,7 +347,8 @@ function doRemovePlayer(name) {
             </div>
             <div class="stat-card">
               <div class="stat-value stat-card-compact"
-                :title="topLevelByVictors ? `${topLevelByVictors.name} — ${topLevelByVictors.victors.length} victors` : ''">
+                :title="topLevelByVictors ? `${topLevelByVictors.name} — ${topLevelByVictors.victors.length} victors` : ''"
+>
                 {{ topLevelByVictors?.name || '—' }}
               </div>
               <div class="stat-label">Топ уровень</div>
@@ -351,10 +358,10 @@ function doRemovePlayer(name) {
         <div class="stats-section">
           <h3><Globe :size="16" /> По странам</h3>
           <div class="country-list" id="countryList">
-            <div v-for="c in countryStats" :key="c.code" class="country-item country-item-clickable" @click="openCountry(c.name)">
+            <div v-for="c in countryStats" :key="c.code ?? 'unknown'" class="country-item country-item-clickable" @click="openCountry(c.name)">
               <div class="country-info">
                 <span class="country-flag">
-                  <img v-if="getFlagCode(c.name)" :src="`https://flagcdn.com/w20/${getFlagCode(c.name)}.png`" :alt="getFlagCode(c.name).toUpperCase()" width="20" loading="lazy" class="flag-img flag-inline">
+                  <img v-if="getFlagCode(c.name)" :src="`https://flagcdn.com/w20/${getFlagCode(c.name)}.png`" :alt="(getFlagCode(c.name) ?? '').toUpperCase()" width="20" loading="lazy" class="flag-img flag-inline">
                   <span v-else><Globe :size="16" /></span>
                 </span>
                 <span class="country-name">{{ c.displayName }}</span>
@@ -387,7 +394,7 @@ function doRemovePlayer(name) {
           </div>
           <div class="modal-actions-row">
             <button class="btn btn-secondary" @click="closeAddPlayerModal">Отмена</button>
-            <button class="btn btn-primary" @click="doAddPlayer">Добавить</button>
+            <button class="btn btn-primary" @click="doAddPlayer" :disabled="addingPlayer">{{ addingPlayer ? 'Добавление...' : 'Добавить' }}</button>
           </div>
         </div>
       </div>

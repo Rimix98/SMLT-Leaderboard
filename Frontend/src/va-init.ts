@@ -1,1 +1,7 @@
-;(window as any).va = (window as any).va || function (...args: unknown[]) { ((window as any).vaq = (window as any).vaq || []).push(args) }
+interface VaWindow {
+  va?: ((...args: unknown[]) => void) & { q?: unknown[][] }
+  vaq?: unknown[][]
+}
+
+const w = window as VaWindow
+w.va = w.va || function (...args: unknown[]) { (w.vaq = w.vaq || []).push(args) }

@@ -17,9 +17,12 @@ import {
 } from '@lucide/vue'
 
 const loading = ref(true)
+const error = ref(false)
 const entries = ref<ShameBoardEntry[]>([])
 const checking = ref(false)
 const syncing = ref(false)
+const savingReason = ref(false)
+const addingManual = ref(false)
 const editModalOpen = ref(false)
 const editingEntry = ref<ShameBoardEntry | null>(null)
 const editReason = ref('')
@@ -35,8 +38,13 @@ const entriesWithReason = computed(() => entries.value.filter(e => e.reason).len
 const entriesWithoutReason = computed(() => entries.value.filter(e => !e.reason).length)
 
 onMounted(async () => {
-  entries.value = await loadShameBoard()
-  loading.value = false
+  try {
+    entries.value = await loadShameBoard()
+  } catch {
+    error.value = true
+  } finally {
+    loading.value = false
+  }
   if (store.isHost) {
     checkForNewMembers()
   }
@@ -85,9 +93,16 @@ function closeEditModal() {
 
 async function doSaveReason() {
   if (!editingEntry.value) return
-  await saveShameReason(editingEntry.value.discordId, editReason.value)
-  closeEditModal()
-  entries.value = await loadShameBoard()
+  savingReason.value = true
+  try {
+    await saveShameReason(editingEntry.value.discordId, editReason.value)
+    closeEditModal()
+    entries.value = await loadShameBoard()
+  } catch (e) {
+    showToast((e instanceof Error ? e.message : 'Ошибка сохранения'), 'error')
+  } finally {
+    savingReason.value = false
+  }
 }
 
 async function doDeleteEntry(entry: ShameBoardEntry) {
@@ -119,12 +134,31 @@ function closeAddModal() {
   document.body.classList.remove('modal-open')
 }
 
+async function reloadShameBoard() {
+  error.value = false
+  loading.value = true
+  try {
+    entries.value = await loadShameBoard()
+  } catch {
+    error.value = true
+  } finally {
+    loading.value = false
+  }
+}
+
 async function doAddManual() {
   if (!addUsername.value.trim()) return
-  const ok = await addManualEntry(addUsername.value.trim(), addDiscordId.value.trim(), addReason.value.trim())
-  if (ok) {
-    closeAddModal()
-    entries.value = await loadShameBoard()
+  addingManual.value = true
+  try {
+    const ok = await addManualEntry(addUsername.value.trim(), addDiscordId.value.trim(), addReason.value.trim())
+    if (ok) {
+      closeAddModal()
+      entries.value = await loadShameBoard()
+    }
+  } catch (e) {
+    showToast((e instanceof Error ? e.message : 'Ошибка добавления'), 'error')
+  } finally {
+    addingManual.value = false
   }
 }
 </script>
@@ -209,6 +243,12 @@ async function doAddManual() {
         </div>
       </div>
 
+      <div v-else-if="error" class="loading-state">
+        <div class="error-icon"><AlertTriangle :size="48" /></div>
+        <div class="error-text">Не удалось загрузить Доску позора</div>
+        <button class="btn btn-primary" @click="reloadShameBoard"><RefreshCw :size="16" /> Повторить</button>
+      </div>
+
       <TransitionGroup name="list" tag="div" class="projects-grid">
         <div v-for="entry in entries" :key="entry.discordId" class="project-card shame-card">
           <div class="shame-card-header">
@@ -271,7 +311,7 @@ async function doAddManual() {
             <div class="shame-char-count">{{ editReason.length }}/500</div>
           </div>
           <div class="modal-actions-row">
-            <button class="btn btn-primary btn-full-width" @click="doSaveReason">Сохранить</button>
+            <button class="btn btn-primary btn-full-width" @click="doSaveReason" :disabled="savingReason">{{ savingReason ? 'Сохранение...' : 'Сохранить' }}</button>
           </div>
         </div>
       </div>
@@ -316,7 +356,7 @@ async function doAddManual() {
             <div class="shame-char-count">{{ addReason.length }}/500</div>
           </div>
           <div class="modal-actions-row">
-            <button class="btn btn-primary btn-full-width" @click="doAddManual" :disabled="!addUsername.trim()">Добавить</button>
+            <button class="btn btn-primary btn-full-width" @click="doAddManual" :disabled="!addUsername.trim() || addingManual">{{ addingManual ? 'Добавление...' : 'Добавить' }}</button>
           </div>
         </div>
       </div>

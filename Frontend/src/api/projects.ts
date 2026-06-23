@@ -1,5 +1,5 @@
 import { store } from '../store'
-import { fetchWithAbort, parseJsonResponse, isAbortError, BACKEND_URL, doAdminKnock, tokens, refreshCsrfToken, showToast } from './utils'
+import { fetchWithAbort, isAbortError, BACKEND_URL, doAdminKnock, tokens, refreshCsrfToken, showToast } from './utils'
 import type { Project, ParticipantConfig, StaffRole } from '../types'
 
 export async function getProjects(): Promise<Project[]> {
@@ -211,24 +211,33 @@ export function autoFillParticipantConfig(): ParticipantConfig {
   return config
 }
 
-export function saveProject(): void {
+export interface ProjectFormData {
+  name: string
+  videoId: string
+  id: string
+  comment: string
+  status: string
+  verifier: string
+}
+
+const MAX_NAME_LEN = 100
+function truncate(s: string): string { return s && s.length > MAX_NAME_LEN ? s.slice(0, MAX_NAME_LEN) : s }
+
+export function saveProjectFromForm(formData: ProjectFormData, editingIdx: number): void {
   if (!store.isHost) { showToast('Только хост может сохранять проекты', 'error'); return }
-  const idx = parseInt((document.getElementById('projectIndex') as HTMLInputElement).value)
-  let projectId = (document.getElementById('projectId') as HTMLInputElement).value.trim()
+  const idx = editingIdx
+  let projectId = formData.id.trim()
   if (idx === -1 && !projectId) {
     projectId = generateProjectId()
-    ;(document.getElementById('projectId') as HTMLInputElement).value = projectId
   }
-  const MAX_NAME_LEN = 100
-  function truncate(s: string): string { return s && s.length > MAX_NAME_LEN ? s.slice(0, MAX_NAME_LEN) : s }
 
   const project: Project = {
-    name: truncate((document.getElementById('projectName') as HTMLInputElement).value.trim()),
-    videoId: extractVideoId((document.getElementById('projectVideo') as HTMLInputElement).value.trim()),
+    name: truncate(formData.name.trim()),
+    videoId: extractVideoId(formData.videoId.trim()),
     id: projectId,
-    comment: truncate((document.getElementById('projectComment') as HTMLTextAreaElement).value.trim()),
-    status: (document.getElementById('projectStatus') as HTMLSelectElement).value,
-    verifier: truncate((document.getElementById('projectVerifier') as HTMLInputElement).value.trim()),
+    comment: truncate(formData.comment.trim()),
+    status: formData.status,
+    verifier: truncate(formData.verifier.trim()),
     participants: idx === -1 ? [] : (store.projects[idx]?.participants || []),
   }
 
@@ -245,7 +254,6 @@ export function saveProject(): void {
     saveProjects(store.projects).then(() => {
       loadProjects()
       showToast(idx === -1 ? 'Проект добавлен!' : 'Проект обновлён!', 'success')
-      closeProjectModal()
     }).catch((e: Error) => {
       if (idx === -1) { store.projects.pop() } else if (oldProject) { store.projects[idx] = oldProject }
       showToast(e.message, 'error')
@@ -271,40 +279,6 @@ export async function deleteProject(idx: number): Promise<void> {
     store.projects.splice(idx, 0, removed[0])
     syncProjectOrder()
     showToast((e as Error).message, 'error')
-  }
-}
-
-export function editProject(idx: number): void {
-  if (!store.isHost) { showToast('Только хост может редактировать проекты', 'error'); return }
-  const project = store.projects[idx]
-  if (!project) return
-
-  ;(document.getElementById('projectIndex') as HTMLInputElement).value = String(idx)
-  document.getElementById('projectModalTitle')!.textContent = 'Редактировать проект'
-  ;(document.getElementById('projectName') as HTMLInputElement).value = project.name || ''
-  ;(document.getElementById('projectVideo') as HTMLInputElement).value = project.videoId || ''
-  ;(document.getElementById('projectId') as HTMLInputElement).value = project.id || ''
-  ;(document.getElementById('projectComment') as HTMLTextAreaElement).value = project.comment || ''
-  ;(document.getElementById('projectStatus') as HTMLSelectElement).value = project.status || 'планируется'
-  ;(document.getElementById('projectVerifier') as HTMLInputElement).value = project.verifier || ''
-
-  document.getElementById('projectModal')!.classList.add('active')
-}
-
-export function closeProjectModal(): void {
-  const modal = document.getElementById('projectModal')
-  if (modal) modal.classList.remove('active')
-}
-
-export function showAddProjectModal(): void {
-  if (!store.isHost) { showToast('Только хост может добавлять проекты', 'error'); return }
-  const modal = document.getElementById('projectModal')
-  const form = document.getElementById('projectForm') as HTMLFormElement
-  if (modal && form) {
-    form.reset()
-    ;(document.getElementById('projectIndex') as HTMLInputElement).value = '-1'
-    document.getElementById('projectModalTitle')!.textContent = 'Добавить проект'
-    modal.classList.add('active')
   }
 }
 

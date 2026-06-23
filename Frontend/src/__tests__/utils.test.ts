@@ -68,7 +68,7 @@ describe('CODE_TO_NAME', () => {
   })
 
   it('values are strings', () => {
-    for (const [key, val] of Object.entries(CODE_TO_NAME)) {
+    for (const [, val] of Object.entries(CODE_TO_NAME)) {
       expect(typeof val).toBe('string')
       expect(val.length).toBeGreaterThan(0)
     }

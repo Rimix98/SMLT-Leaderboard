@@ -60,11 +60,9 @@ jobs:
 
       - name: Lint
         run: npx eslint src/ --max-warnings 0
-        continue-on-error: true
 
       - name: Test
         run: npx vitest run --coverage
-        continue-on-error: true
 
       - name: Build
         run: npm run build

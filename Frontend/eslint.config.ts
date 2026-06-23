@@ -40,6 +40,8 @@ export default tseslint.config(
         DOMException: 'readonly',
         Map: 'readonly',
         Set: 'readonly',
+        MouseEvent: 'readonly',
+        Node: 'readonly',
       },
     },
     rules: {

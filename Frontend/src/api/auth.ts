@@ -14,7 +14,7 @@ export async function initCaptcha(): Promise<void> {
     const res = await fetchWithAbort(`${BACKEND_URL}/captcha`, { credentials: 'include' }, 'captcha-fetch')
     const data = await parseJsonResponse(res)
     if (!res.ok || !data.captchaId) {
-      console.error('Ошибка получения капчи')
+      showToast('Не удалось загрузить капчу', 'error')
       return
     }
     captchaId = data.captchaId as string
@@ -23,7 +23,7 @@ export async function initCaptcha(): Promise<void> {
     if (input) input.value = ''
   } catch (err) {
     if (isAbortError(err)) return
-    console.error('Ошибка загрузки капчи:', err)
+    showToast('Ошибка загрузки капчи', 'error')
   }
 }
 
