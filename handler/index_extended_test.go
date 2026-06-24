@@ -1150,7 +1150,7 @@ func TestHandler_AllSecurityHeaders(t *testing.T) {
 		"X-XSS-Protection":       "1; mode=block",
 		"Referrer-Policy":         "strict-origin-when-cross-origin",
 		"Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
-		"Permissions-Policy":      "camera=(), microphone=(), geolocation=(), payment=()",
+		"Permissions-Policy":      "camera=(), microphone=(), geolocation=(), payment=(), interest-cohort=(), browsing-topics=()",
 		"Cross-Origin-Opener-Policy": "same-origin",
 		"Cross-Origin-Resource-Policy": "same-origin",
 	}
