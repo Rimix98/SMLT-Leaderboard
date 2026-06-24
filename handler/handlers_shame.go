@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -37,9 +37,9 @@ func initDiscordShame() {
 		discordGuildID = os.Getenv("DISCORD_GUILD_ID")
 		discordShameRole = os.Getenv("DISCORD_SHAME_ROLE_ID")
 		if discordBotToken == "" || discordGuildID == "" || discordShameRole == "" {
-			log.Println("[shame] Discord env vars not set, shame board disabled")
+			slog.Warn("Discord env vars not set, shame board disabled")
 		} else {
-			log.Printf("[shame] enabled (guild=%s, role=%s)", discordGuildID, discordShameRole)
+			slog.Info("shame board enabled", "guild", discordGuildID, "role", discordShameRole)
 		}
 	})
 }
@@ -89,7 +89,7 @@ func fetchDiscordRoleMembersCached() ([]discordGuildMember, error) {
 	members, err := fetchDiscordRoleMembers()
 	if err != nil {
 		if discordMembersCache != nil {
-			log.Printf("[shame] discord fetch failed, using stale cache: %v", err)
+			slog.Error("discord fetch failed, using stale cache", "error", err)
 			result := make([]discordGuildMember, len(discordMembersCache))
 			copy(result, discordMembersCache)
 			return result, nil
@@ -239,7 +239,7 @@ func handleGetShameBoard(w http.ResponseWriter, r *http.Request) {
 
 	fsEntries, err := getShameBoardFirestore(ctx)
 	if err != nil {
-		log.Printf("[shame] firestore read: %v", err)
+		slog.Error("shame board firestore read failed", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -249,7 +249,7 @@ func handleGetShameBoard(w http.ResponseWriter, r *http.Request) {
 	var result []ShameBoardEntry
 
 	if discordErr != nil {
-		log.Printf("[shame] discord fetch failed, returning firestore only: %v", discordErr)
+		slog.Error("discord fetch failed, returning firestore only", "error", discordErr)
 		for _, entry := range fsEntries {
 			result = append(result, entry)
 		}
@@ -368,7 +368,7 @@ func handleSaveShameReason(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		log.Printf("[shame] save reason: %v", err)
+		slog.Error("shame save reason failed", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -397,7 +397,7 @@ func handleShameBoardCheck(w http.ResponseWriter, r *http.Request) {
 
 	discordMembers, err := fetchDiscordRoleMembersCached()
 	if err != nil {
-		log.Printf("[shame] check fetch: %v", err)
+		slog.Error("shame check fetch failed", "error", err)
 		sendError(w, http.StatusBadGateway, "Ошибка получения данных из Discord")
 		return
 	}
@@ -405,7 +405,7 @@ func handleShameBoardCheck(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	fsEntries, err := getShameBoardFirestore(ctx)
 	if err != nil {
-		log.Printf("[shame] check firestore: %v", err)
+		slog.Error("shame check firestore failed", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -486,7 +486,7 @@ func handleDeleteShameEntry(w http.ResponseWriter, r *http.Request) {
 		if _, ok := err.(errValidation); ok {
 			sendError(w, http.StatusNotFound, "Запись не найдена")
 		} else {
-			log.Printf("[shame] delete entry: %v", err)
+			slog.Error("shame delete entry failed", "error", err)
 			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		}
 		return
@@ -575,7 +575,7 @@ func handleAddShameManual(w http.ResponseWriter, r *http.Request) {
 		if ve, ok := err.(errValidation); ok && ve.msg == "duplicate" {
 			sendError(w, http.StatusConflict, "Участник уже есть на Доске позора")
 		} else {
-			log.Printf("[shame] manual add: %v", err)
+			slog.Error("shame manual add failed", "error", err)
 			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		}
 		return
@@ -614,7 +614,7 @@ func handleSyncShameBoard(w http.ResponseWriter, r *http.Request) {
 
 	discordMembers, err := fetchDiscordRoleMembersCached()
 	if err != nil {
-		log.Printf("[shame] sync fetch: %v", err)
+		slog.Error("shame sync fetch failed", "error", err)
 		sendError(w, http.StatusBadGateway, "Ошибка получения данных из Discord")
 		return
 	}
@@ -622,7 +622,7 @@ func handleSyncShameBoard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	fsEntries, err := getShameBoardFirestore(ctx)
 	if err != nil {
-		log.Printf("[shame] sync firestore: %v", err)
+		slog.Error("shame sync firestore failed", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -681,7 +681,7 @@ func handleSyncShameBoard(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		log.Printf("[shame] sync save: %v", err)
+		slog.Error("shame sync save failed", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -735,14 +735,14 @@ func shameBoardNotificationLoop() {
 			members, err := fetchDiscordRoleMembers()
 			if err != nil {
 				cancel()
-				log.Printf("[shame] notification check failed: %v", err)
+				slog.Error("shame notification check failed", "error", err)
 				continue
 			}
 
 			fsEntries, err := getShameBoardFirestore(ctx)
 			cancel()
 			if err != nil {
-				log.Printf("[shame] notification fs read failed: %v", err)
+				slog.Error("shame notification fs read failed", "error", err)
 				continue
 			}
 
@@ -794,7 +794,7 @@ func shameBoardNotificationLoop() {
 					resp, err := httpClient.Do(req)
 					cancel()
 					if err != nil {
-						log.Printf("[shame] webhook send: %v", err)
+						slog.Error("shame webhook send failed", "error", err)
 						continue
 					}
 					resp.Body.Close()

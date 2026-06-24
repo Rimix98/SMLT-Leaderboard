@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	mathrand "math/rand/v2"
 	"net"
 	"net/http"
@@ -59,14 +59,14 @@ func initDiscordAlerts() {
 	alertOnce.Do(func() {
 		discordWebhookURL = os.Getenv("DISCORD_SECURITY_WEBHOOK")
 		if discordWebhookURL == "" {
-			log.Println("[discord] DISCORD_SECURITY_WEBHOOK not set, alerts disabled")
+			slog.Warn("DISCORD_SECURITY_WEBHOOK not set, alerts disabled")
 			return
 		}
 		alertQueue = make(chan discordAlert, 300)
 		for i := 0; i < 2; i++ {
 			go alertWorker(i)
 		}
-		log.Println("[discord] webhook alerts enabled (2 workers, buffer 300)")
+		slog.Info("discord webhook alerts enabled", "workers", 2, "buffer", 300)
 	})
 }
 
@@ -87,19 +87,19 @@ func alertWorker(id int) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, discordWebhookURL, strings.NewReader(string(body)))
 		if err != nil {
 			cancel()
-			log.Printf("[discord] worker %d: build request: %v", id, err)
+			slog.Error("discord worker build request failed", "worker", id, "error", err)
 			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := httpClient.Do(req)
 		cancel()
 		if err != nil {
-			log.Printf("[discord] worker %d: send: %v", id, err)
+			slog.Error("discord worker send failed", "worker", id, "error", err)
 			continue
 		}
 		resp.Body.Close()
 		if resp.StatusCode == 429 {
-			log.Printf("[discord] worker %d: rate limited, sleeping 2s", id)
+			slog.Warn("discord worker rate limited", "worker", id)
 			time.Sleep(2 * time.Second)
 		}
 	}
@@ -142,7 +142,7 @@ func buildEmbed(alert discordAlert) discordEmbed {
 }
 
 func securityEvent(ctx context.Context, eventType, ip, path string, detail interface{}) {
-	log.Printf("[security] %s ip=%s path=%s", eventType, ip, path)
+	slog.Info("security event", "type", eventType, "ip", ip, "path", path)
 	if fsClient == nil {
 		return
 	}
@@ -154,21 +154,21 @@ func securityEvent(ctx context.Context, eventType, ip, path string, detail inter
 		CreatedAt: time.Now(),
 	})
 	if err != nil {
-		log.Printf("[security] write failed: %v", err)
+		slog.Error("security event write failed", "error", err)
 	}
 
 	alertSecurityEvent(eventType, ip, path, detail)
 }
 
 func alertSecurityEvent(eventType, ip, path string, detail interface{}) {
-	log.Printf("[security] %s ip=%s path=%s detail=%v", eventType, ip, path, detail)
+	slog.Info("security alert", "type", eventType, "ip", ip, "path", path)
 	if alertQueue == nil {
 		return
 	}
 	select {
 	case alertQueue <- discordAlert{eventType: eventType, ip: ip, path: path, detail: detail}:
 	default:
-		log.Printf("[discord] alert queue full, dropping %s", eventType)
+		slog.Warn("discord alert queue full, dropping event", "type", eventType)
 	}
 }
 
@@ -446,7 +446,7 @@ func handleSecurityDashboard(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if err != nil {
-			log.Printf("[dashboard] iter error: %v", err)
+			slog.Error("security dashboard iter error", "error", err)
 			break
 		}
 		var ev SecurityEvent

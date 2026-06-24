@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -38,7 +38,7 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, []StaffRole{})
 			return
 		}
-		log.Printf("[staff] Get staff doc: %v", err)
+		slog.Error("staff get error", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -46,7 +46,7 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 		Roles []StaffRole `json:"roles" firestore:"roles"`
 	}
 	if err := doc.DataTo(&data); err != nil {
-		log.Printf("[staff] DataTo error: %v", err)
+		slog.Error("staff DataTo error", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -100,7 +100,7 @@ func handleSaveStaff(w http.ResponseWriter, r *http.Request) {
 		return tx.Set(docRef, map[string]interface{}{"roles": roles}, firestore.Merge(firestore.FieldPath{"roles"}))
 	})
 	if err != nil {
-		log.Printf("[staff] save roles: %v", err)
+		slog.Error("staff save roles failed", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -165,7 +165,7 @@ func handleStaffAdd(w http.ResponseWriter, r *http.Request) {
 		if _, ok := err.(errValidation); ok {
 			sendError(w, http.StatusBadRequest, "Неверный индекс роли")
 		} else {
-			log.Printf("[staff] add player: %v", err)
+			slog.Error("staff add player failed", "error", err)
 			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		}
 		return
@@ -238,7 +238,7 @@ func handleCreateStaffRole(w http.ResponseWriter, r *http.Request) {
 		return tx.Set(docRef, data, firestore.Merge(firestore.FieldPath{"roles"}))
 	})
 	if err != nil {
-		log.Printf("[staff] create role: %v", err)
+		slog.Error("staff create role failed", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -295,7 +295,7 @@ func handleDeleteStaffRole(w http.ResponseWriter, r *http.Request) {
 		if _, ok := err.(errValidation); ok {
 			sendError(w, http.StatusBadRequest, "Неверный индекс роли")
 		} else {
-			log.Printf("[staff] delete role: %v", err)
+			slog.Error("staff delete role failed", "error", err)
 			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		}
 		return
@@ -375,7 +375,7 @@ func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
 		if _, ok := err.(errValidation); ok {
 			sendError(w, http.StatusBadRequest, "Неверный индекс роли")
 		} else {
-			log.Printf("[staff] update role: %v", err)
+			slog.Error("staff update role failed", "error", err)
 			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		}
 		return
@@ -458,7 +458,7 @@ func handleStaffRemove(w http.ResponseWriter, r *http.Request) {
 				sendError(w, http.StatusNotFound, "Игрок не найден")
 			}
 		} else {
-			log.Printf("[staff] remove player: %v", err)
+			slog.Error("staff remove player failed", "error", err)
 			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		}
 		return
@@ -516,7 +516,7 @@ func handleReorderStaffRoles(w http.ResponseWriter, r *http.Request) {
 		return tx.Set(docRef, data, firestore.Merge(firestore.FieldPath{"roles"}))
 	})
 	if err != nil {
-		log.Printf("[staff] reorder: %v", err)
+		slog.Error("staff reorder failed", "error", err)
 		if err.Error() == "invalid move" {
 			sendError(w, http.StatusBadRequest, "Некорректное перемещение")
 		} else {
@@ -551,13 +551,13 @@ func handleGetStaffTiers(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, map[string]interface{}{"gp": []StaffTierEntry{}, "deco": []StaffTierEntry{}})
 			return
 		}
-		log.Printf("[staff] Get tiers doc: %v", err)
+		slog.Error("staff get tiers error", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
 	var raw map[string]interface{}
 	if err := doc.DataTo(&raw); err != nil {
-		log.Printf("[staff] tiers DataTo error: %v", err)
+		slog.Error("staff tiers DataTo error", "error", err)
 		writeJSON(w, map[string]interface{}{"gp": []StaffTierEntry{}, "deco": []StaffTierEntry{}})
 		return
 	}
@@ -669,7 +669,7 @@ func handleSetStaffTier(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		log.Printf("[staff] set tier: %v", err)
+		slog.Error("staff set tier failed", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}

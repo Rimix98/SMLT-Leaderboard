@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
@@ -60,7 +60,7 @@ func handleSavePlayers(w http.ResponseWriter, r *http.Request) {
 		return tx.Set(docRef, map[string]interface{}{"players": players})
 	})
 	if err != nil {
-		log.Printf("[players] save: %v", err)
+		slog.Error("players save failed", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
@@ -126,7 +126,7 @@ func handleDeletePlayer(w http.ResponseWriter, r *http.Request) {
 		return tx.Set(docRef, map[string]interface{}{"players": data.Players})
 	})
 	if err != nil {
-		log.Printf("[players] delete: %v", err)
+		slog.Error("player delete failed", "name", req.Name, "error", err)
 		if err.Error() == "player not found" {
 			sendError(w, http.StatusNotFound, "Игрок не найден")
 		} else {
@@ -399,7 +399,7 @@ func handlePlayerHistory(w http.ResponseWriter, r *http.Request) {
 		Where("playerId", "==", playerID).
 		Limit(90).
 		Documents(ctx).GetAll(); err != nil {
-		log.Printf("history query error for %s: %v", playerID, err)
+		slog.Error("history query error", "playerID", playerID, "error", err)
 	} else {
 		for _, doc := range docs {
 			var entry PlayerHistoryEntry
@@ -548,7 +548,7 @@ func handleSaveHistorySnapshot(w http.ResponseWriter, r *http.Request) {
 		batch.Set(fsClient.Collection("player_history").Doc(docID), entry)
 	}
 	if _, err := batch.Commit(ctx); err != nil {
-		log.Printf("history snapshot commit error: %v", err)
+		slog.Error("history snapshot commit failed", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка сохранения снимка")
 		return
 	}

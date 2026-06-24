@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 	"crypto/subtle"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -18,7 +18,7 @@ func (s *firestoreCaptchaStore) Set(id string, value string) error {
 		"expiresAt": time.Now().Add(10 * time.Minute),
 	})
 	if err != nil {
-		log.Printf("[captcha] firestore set: %v", err)
+		slog.Error("captcha firestore set failed", "error", err)
 	}
 	return err
 }
@@ -40,14 +40,14 @@ func (s *firestoreCaptchaStore) Get(id string, clear bool) string {
 	if time.Now().After(data.ExpiresAt) {
 		if clear {
 			if _, delErr := s.client.Collection("captcha").Doc(id).Delete(ctx); delErr != nil {
-				log.Printf("[captcha] delete expired: %v", delErr)
+				slog.Error("captcha delete expired failed", "error", delErr)
 			}
 		}
 		return ""
 	}
 	if clear {
 		if _, delErr := s.client.Collection("captcha").Doc(id).Delete(ctx); delErr != nil {
-			log.Printf("[captcha] delete after get: %v", delErr)
+			slog.Error("captcha delete after get failed", "error", delErr)
 		}
 	}
 	return data.Value
@@ -118,7 +118,7 @@ func handleCaptcha(w http.ResponseWriter, r *http.Request) {
 	c := base64Captcha.NewCaptcha(drv, captchaStore)
 	id, b64s, _, err := c.Generate()
 	if err != nil {
-		log.Printf("[captcha] generate: %v", err)
+		slog.Error("captcha generation failed", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка генерации капчи")
 		return
 	}

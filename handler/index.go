@@ -1,9 +1,10 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"log"
+	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -12,7 +13,7 @@ import (
 func Handler(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			log.Printf("[panic] %v\n%s", rec, debug.Stack())
+			slog.Error("panic recovered", "error", rec, "stack", string(debug.Stack()))
 			sendError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 		}
 	}()
@@ -23,6 +24,10 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		reqID = hex.EncodeToString(idBytes)
 	}
 	w.Header().Set("X-Request-ID", reqID)
+
+	ctx := context.WithValue(r.Context(), ctxKeyReqID, reqID)
+	ctx = context.WithValue(ctx, ctxKeyIP, getRealIP(r))
+	r = r.WithContext(ctx)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
@@ -37,11 +42,6 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	origin := r.Header.Get("Origin")
 	if origin != "" {
-		allowedOrigins := map[string]bool{
-			"https://smltdemonlist.vercel.app": true,
-			"https://smlt-demonlist.ru":        true,
-			"https://www.smlt-demonlist.ru":    true,
-		}
 		if allowedOrigins[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")

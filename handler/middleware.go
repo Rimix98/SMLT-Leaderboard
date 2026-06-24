@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	mathrand "math/rand/v2"
 	"net"
 	"net/http"
@@ -15,6 +15,12 @@ import (
 
 	"github.com/microcosm-cc/bluemonday"
 )
+
+func logFrom(r *http.Request) *slog.Logger {
+	reqID, _ := r.Context().Value(ctxKeyReqID).(string)
+	ip, _ := r.Context().Value(ctxKeyIP).(string)
+	return slog.With("reqID", reqID, "ip", ip)
+}
 
 func hashIP(ip string) string {
 	if rateLimitSalt == "" {
@@ -83,7 +89,7 @@ func getRealIP(r *http.Request) string {
 }
 
 func sendError(w http.ResponseWriter, status int, msg string) {
-	log.Printf("[error] %d %s", status, msg)
+	slog.Warn("request error", "status", status, "message", msg)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
@@ -163,6 +169,7 @@ func requestPath(r *http.Request) string {
 
 func requireFirestore(w http.ResponseWriter) bool {
 	if fsErr != nil || fsClient == nil {
+		slog.Error("firestore unavailable", "error", fsErr)
 		sendError(w, http.StatusServiceUnavailable, "База данных недоступна")
 		return false
 	}

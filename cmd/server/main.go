@@ -1,11 +1,15 @@
 package main
 
 import (
-	"log"
+	"context"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"smlt-backend/handler"
 )
@@ -23,7 +27,8 @@ func main() {
 
 	absStaticDir, err := filepath.Abs(staticDir)
 	if err != nil {
-		log.Fatalf("Failed to resolve static dir: %v", err)
+		slog.Error("failed to resolve static dir", "error", err)
+		os.Exit(1)
 	}
 
 	fileSrv := http.FileServer(http.Dir(staticDir))
@@ -50,8 +55,30 @@ func main() {
 		http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
 	})
 
-	log.Printf("Server starting on :%s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
-		log.Fatalf("Server failed: %v", err)
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
+
+	go func() {
+		slog.Info("server starting", "port", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	slog.Info("shutting down server")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		slog.Error("server forced shutdown", "error", err)
+	}
+	slog.Info("server stopped")
 }

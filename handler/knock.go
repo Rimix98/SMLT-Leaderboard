@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -103,7 +103,7 @@ func (s *firestoreKnockStore) set(ip, key string, ttl time.Duration) {
 		"expiresAt": time.Now().Add(ttl),
 	})
 	if err != nil {
-		log.Printf("[knock] firestore set: %v", err)
+		slog.Error("knock firestore set failed", "error", err)
 	}
 }
 
@@ -112,7 +112,7 @@ func (s *firestoreKnockStore) delete(ip string) {
 	defer cancel()
 	_, err := fsClient.Collection("admin_knocks").Doc(ipToDocID(ip)).Delete(ctx)
 	if err != nil {
-		log.Printf("[knock] firestore delete: %v", err)
+		slog.Error("knock firestore delete failed", "error", err)
 	}
 }
 
@@ -165,7 +165,7 @@ func handleAdminKnock(w http.ResponseWriter, r *http.Request) {
 	}
 	ip := getRealIP(r)
 	adminKnockStore.set(ip, key, adminKnockTTL)
-	log.Printf("[knock] admin key issued (TTL=%v)", adminKnockTTL)
+	slog.Info("admin key issued", "ttl", adminKnockTTL)
 	writeJSON(w, map[string]interface{}{
 		"key":        key,
 		"ttl":        int(adminKnockTTL.Seconds()),
@@ -180,6 +180,6 @@ func auditLog(ctx context.Context, entry AuditEntry) {
 	entry.CreatedAt = time.Now()
 	_, err := fsClient.Collection("audit_log").NewDoc().Set(ctx, entry)
 	if err != nil {
-		log.Printf("[audit] failed to write log: %v", err)
+		slog.Error("audit log write failed", "action", entry.Action, "error", err)
 	}
 }

@@ -59,6 +59,13 @@ type errValidation struct{ msg string }
 
 func (e errValidation) Error() string { return e.msg }
 
+type ctxKey string
+
+const (
+	ctxKeyReqID ctxKey = "reqID"
+	ctxKeyIP    ctxKey = "ip"
+)
+
 type jwtKey struct {
 	Secret []byte
 	ID     string
@@ -135,6 +142,7 @@ type responseCache struct {
 
 type rateLimiter interface {
 	allow(ctx context.Context, key string, max int, window time.Duration) (bool, error)
+	remaining(ctx context.Context, key string, max int, window time.Duration) int
 }
 
 type memoryLimiter struct {

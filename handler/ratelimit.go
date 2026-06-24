@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -41,6 +41,21 @@ func (m *memoryLimiter) allow(_ context.Context, key string, max int, window tim
 	return true, nil
 }
 
+func (m *memoryLimiter) remaining(_ context.Context, key string, max int, window time.Duration) int {
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	b, ok := m.keys[key]
+	if !ok || now.After(b.resetAt) {
+		return max
+	}
+	r := max - b.count
+	if r < 0 {
+		return 0
+	}
+	return r
+}
+
 func (m *memoryLimiter) cleanup() {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
@@ -65,7 +80,7 @@ func newUpstashLimiter() *upstashLimiter {
 	redisURL := os.Getenv("UPSTASH_REDIS_REST_URL")
 	redisToken := os.Getenv("UPSTASH_REDIS_REST_TOKEN")
 	if redisURL == "" || redisToken == "" {
-		log.Println("[ratelimit] Upstash Redis not configured, using memory limiter")
+		slog.Warn("Upstash Redis not configured, using memory limiter")
 		return nil
 	}
 	return &upstashLimiter{
@@ -85,6 +100,22 @@ func (u *upstashLimiter) allow(ctx context.Context, key string, max int, window 
 		return true, err
 	}
 	return count <= max, nil
+}
+
+func (u *upstashLimiter) remaining(ctx context.Context, key string, max int, window time.Duration) int {
+	windowSeconds := int(window.Seconds())
+	if windowSeconds < 1 {
+		windowSeconds = 1
+	}
+	_, count, err := u.getOrCreate(ctx, key, max, windowSeconds)
+	if err != nil {
+		return max
+	}
+	r := max - count
+	if r < 0 {
+		return 0
+	}
+	return r
 }
 
 func (u *upstashLimiter) getOrCreate(ctx context.Context, key string, _ int, windowSec int) (ttl int, count int, err error) {
@@ -221,20 +252,20 @@ func initRateLimiter() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := ul.ping(ctx); err != nil {
-				log.Printf("[ratelimit] Upstash Redis connection failed: %v, falling back to memory limiter", err)
+				slog.Error("Upstash Redis connection failed, falling back to memory", "error", err)
 				ml := newMemoryLimiter()
 				globalRateLimiter = ml
 				rlStop = ml.stop
-				log.Println("[ratelimit] using in-memory limiter (fallback)")
+				slog.Info("using in-memory limiter (fallback)")
 				return
 			}
 			globalRateLimiter = ul
-			log.Println("[ratelimit] using Upstash Redis limiter")
+			slog.Info("using Upstash Redis limiter")
 		} else {
 			ml := newMemoryLimiter()
 			globalRateLimiter = ml
 			rlStop = ml.stop
-			log.Println("[ratelimit] using in-memory limiter")
+			slog.Info("using in-memory limiter")
 		}
 	})
 }

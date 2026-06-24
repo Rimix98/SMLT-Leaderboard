@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -32,10 +32,10 @@ func init() {
 func initAdminKnock() {
 	adminKnockOnce.Do(func() {
 		if fsClient != nil {
-			log.Println("[knock] using firestore store")
+			slog.Info("knock using firestore store")
 			adminKnockStore = &firestoreKnockStore{}
 		} else {
-			log.Println("[knock] using memory store")
+			slog.Info("knock using memory store")
 			adminKnockStore = newAdminKnockStore()
 		}
 	})
@@ -58,11 +58,12 @@ func initJWTSecrets() {
 	jwtSecretsOnce.Do(func() {
 		primary := os.Getenv("JWT_SECRET")
 		if primary == "" {
-			log.Println("[jwt] JWT_SECRET not set, auth will fail")
+			slog.Warn("JWT_SECRET not set, auth will fail")
 			return
 		}
 		if len(primary) < 32 {
-			log.Fatalf("[jwt] JWT_SECRET too short (%d bytes), need at least 32", len(primary))
+			slog.Error("JWT_SECRET too short", "bytes", len(primary), "min", 32)
+			os.Exit(1)
 		}
 		primaryJWTKey = []byte(primary)
 		primaryJWTID = "1"
@@ -73,7 +74,7 @@ func initJWTSecrets() {
 				break
 			}
 			if len(key) < 32 {
-				log.Printf("[jwt] JWT_SECRET_%d too short (%d bytes), skipping", i, len(key))
+				slog.Warn("JWT_SECRET too short, skipping", "index", i, "bytes", len(key))
 				continue
 			}
 			jwtSecrets = append(jwtSecrets, jwtKey{Secret: []byte(key), ID: fmt.Sprintf("%d", i)})
@@ -87,19 +88,19 @@ func initFirestore() {
 		creds := os.Getenv("FIRESTORE_CREDENTIALS")
 		if creds == "" {
 			fsErr = errors.New("FIRESTORE_CREDENTIALS not set")
-			log.Printf("[firestore] %v", fsErr)
+			slog.Warn("firestore not configured", "error", fsErr)
 			return
 		}
 		app, err := firebase.NewApp(ctx, nil, option.WithCredentialsJSON([]byte(creds)))
 		if err != nil {
 			fsErr = err
-			log.Printf("[firestore] init app: %v", err)
+			slog.Error("firestore init app failed", "error", err)
 			return
 		}
 		fsClient, err = app.Firestore(ctx)
 		if err != nil {
 			fsErr = err
-			log.Printf("[firestore] connect: %v", err)
+			slog.Error("firestore connect failed", "error", err)
 		}
 	})
 }
@@ -107,10 +108,10 @@ func initFirestore() {
 func ensureCaptcha() {
 	captchaOnce.Do(func() {
 		if fsClient != nil {
-			log.Println("[captcha] using firestore store")
+			slog.Info("captcha using firestore store")
 			captchaStore = &firestoreCaptchaStore{client: fsClient}
 		} else {
-			log.Println("[captcha] using default memory store")
+			slog.Info("captcha using default memory store")
 			captchaStore = base64Captcha.DefaultMemStore
 		}
 		captchaInst = base64Captcha.NewCaptcha(

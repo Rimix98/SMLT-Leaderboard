@@ -1,13 +1,44 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	"github.com/mojocn/base64Captcha"
 )
+
+var logger *slog.Logger
+
+func init() {
+	logger = slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
+}
+
+var allowedOrigins map[string]bool
+
+func init() {
+	env := os.Getenv("ALLOWED_ORIGINS")
+	if env != "" {
+		allowedOrigins = make(map[string]bool)
+		for _, o := range strings.Split(env, ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				allowedOrigins[o] = true
+			}
+		}
+	} else {
+		allowedOrigins = map[string]bool{
+			"https://smltdemonlist.vercel.app": true,
+			"https://smlt-demonlist.ru":        true,
+			"https://www.smlt-demonlist.ru":    true,
+		}
+	}
+}
 
 var (
 	fsClient *firestore.Client

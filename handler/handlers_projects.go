@@ -4,7 +4,7 @@ import (
 	crypto_rand "crypto/rand"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -37,7 +37,7 @@ func handleGetProjects(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if err != nil {
-			log.Printf("[projects] iter error: %v", err)
+			slog.Error("projects iter error", "error", err)
 			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 			return
 		}
@@ -65,7 +65,7 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 	}
 	var projectList []Project
 	if err := decodeRequestJSON(w, r, &projectList); err != nil {
-		log.Printf("[projects] decode error: %v", err)
+		slog.Error("projects decode error", "error", err)
 		sendError(w, http.StatusBadRequest, "Неверный формат JSON")
 		return
 	}
@@ -102,19 +102,19 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		if p.ID == "-" {
 			b := make([]byte, 8)
 			if _, err := crypto_rand.Read(b); err != nil {
-				log.Printf("[projects] rand error: %v", err)
+				slog.Error("projects rand error", "error", err)
 				sendError(w, http.StatusInternalServerError, "Ошибка генерации ID")
 				return
 			}
 			docID = fmt.Sprintf("-%x", b)
 		} else {
 			if err := validateProjectID(p.ID); err != nil {
-				log.Printf("[projects] invalid id %q: %v", p.ID, err)
+				slog.Error("invalid project id", "id", p.ID, "error", err)
 				sendError(w, http.StatusBadRequest, "Некорректный ID проекта")
 				return
 			}
 			if seen[p.ID] {
-				log.Printf("[projects] duplicate id %q", p.ID)
+				slog.Error("duplicate project id", "id", p.ID)
 				sendError(w, http.StatusBadRequest, "ID проекта уже существует")
 				return
 			}
@@ -123,7 +123,7 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		seen[docID] = true
 		ref := fsClient.Collection("projects").Doc(docID)
 		if _, err := ref.Set(ctx, p); err != nil {
-			log.Printf("[projects] set %q: %v", docID, err)
+			slog.Error("project set failed", "docID", docID, "error", err)
 			sendError(w, http.StatusInternalServerError, "Ошибка базы данных")
 			return
 		}
@@ -136,12 +136,12 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if err != nil {
-			log.Printf("[projects] delete iter: %v", err)
+			slog.Error("projects delete iter error", "error", err)
 			break
 		}
 		if !seen[doc.Ref.ID] {
 			if _, err := doc.Ref.Delete(ctx); err != nil {
-				log.Printf("[projects] delete %q: %v", doc.Ref.ID, err)
+				slog.Error("project delete failed", "docID", doc.Ref.ID, "error", err)
 			}
 		}
 	}

@@ -7,9 +7,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -180,9 +181,12 @@ func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func checkRateLimit(w http.ResponseWriter, r *http.Request, max int) bool {
 	ip := hashIP(getRealIP(r))
 	key := requestPath(r) + ":" + ip
+	remaining := globalRateLimiter.remaining(r.Context(), key, max, time.Minute)
+	w.Header().Set("X-RateLimit-Limit", strconv.Itoa(max))
+	w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
 	ok, err := globalRateLimiter.allow(r.Context(), key, max, time.Minute)
 	if err != nil {
-		log.Printf("[ratelimit] error: %v", err)
+		slog.Error("rate limit error", "error", err)
 	}
 	if !ok {
 		sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
@@ -221,7 +225,7 @@ func checkLoginRateLimit(w http.ResponseWriter, r *http.Request) bool {
 	}
 	ok, err := globalRateLimiter.allow(r.Context(), key, maxLoginAttempts, time.Minute)
 	if err != nil {
-		log.Printf("[ratelimit] login error: %v", err)
+		slog.Error("login rate limit error", "error", err)
 	}
 	if !ok {
 		sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
@@ -276,7 +280,7 @@ func checkFirestoreLoginLimit(w http.ResponseWriter, r *http.Request, key string
 			sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
 			return false
 		}
-		log.Printf("[ratelimit] firestore error: %v", err)
+		slog.Error("firestore login rate limit error", "error", err)
 		sendError(w, http.StatusTooManyRequests, "Слишком много запросов")
 		return false
 	}
@@ -399,12 +403,12 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	adminHash := os.Getenv("ADMIN_HASH")
 	if adminHash == "" {
-		log.Println("[login] ADMIN_HASH not set")
+		slog.Error("ADMIN_HASH not set")
 		sendError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 		return
 	}
 	if primaryJWTKey == nil {
-		log.Println("[login] JWT secrets not initialized")
+		slog.Error("JWT secrets not initialized")
 		sendError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 		return
 	}
@@ -422,7 +426,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	jti, err := generateJTI()
 	if err != nil {
-		log.Printf("[login] jti generation failed: %v", err)
+		slog.Error("jti generation failed", "error", err)
 		sendError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 		return
 	}
@@ -437,7 +441,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	token.Header["kid"] = primaryJWTID
 	tokenString, err := token.SignedString(primaryJWTKey)
 	if err != nil {
-		log.Printf("[login] token signing: %v", err)
+		slog.Error("token signing failed", "error", err)
 		sendError(w, http.StatusInternalServerError, "Ошибка выдачи токена")
 		return
 	}
@@ -466,7 +470,7 @@ func blacklistToken(ctx context.Context, jti string) {
 		"expiresAt":     time.Now().Add(24 * time.Hour),
 	})
 	if err != nil {
-		log.Printf("[auth] failed to blacklist token: %v", err)
+		slog.Error("failed to blacklist token", "jti", jti, "error", err)
 	}
 }
 
@@ -501,14 +505,14 @@ func cleanupExpiredBlacklistEntries() {
 			break
 		}
 		if err != nil {
-			log.Printf("[auth] blacklist cleanup iter: %v", err)
+			slog.Error("blacklist cleanup iter error", "error", err)
 			break
 		}
 		batch.Delete(doc.Ref)
 		atomic.AddInt64(&deleted, 1)
 	}
 	if n := atomic.LoadInt64(&deleted); n > 0 {
-		log.Printf("[auth] cleaned up %d expired blacklist entries", n)
+		slog.Info("cleaned up expired blacklist entries", "count", n)
 	}
 }
 
