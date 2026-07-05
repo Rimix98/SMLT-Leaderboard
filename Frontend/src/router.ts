@@ -5,7 +5,6 @@ const routes: RouteRecordRaw[] = [
   { path: '/leaderboard', name: 'leaderboard', component: () => import('./components/LeaderboardPage.vue'), meta: { title: 'Лидерборд -- SMLT', bodyClass: '' } },
   { path: '/projects', name: 'projects', component: () => import('./components/ProjectsPage.vue'), meta: { title: 'Проекты SMLT', bodyClass: '' } },
   { path: '/staff', name: 'staff', component: () => import('./components/StaffPage.vue'), meta: { title: 'Стафф -- SMLT', bodyClass: '' } },
-  { path: '/shame-board', name: 'shame-board', component: () => import('./components/ShameBoardPage.vue'), meta: { title: 'Доска позора -- SMLT', bodyClass: '' } },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 

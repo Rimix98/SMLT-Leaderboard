@@ -140,7 +140,7 @@ function closeInfoModal() {
         <router-link to="/leaderboard" class="nav-link" :class="{ active: currentPage === 'leaderboard' }">Лидерборд</router-link>
         <router-link to="/projects" class="nav-link" :class="{ active: currentPage === 'projects' }">Проекты</router-link>
         <router-link to="/staff" class="nav-link" :class="{ active: currentPage === 'staff' }">Стафф</router-link>
-        <router-link to="/shame-board" class="nav-link" :class="{ active: currentPage === 'shame-board' }">Доска позора</router-link>
+
       </nav>
       <div class="header-actions">
         <button class="btn btn-secondary btn-lg" @click="openInfoModal"><Info :size="16" /> Информация</button>

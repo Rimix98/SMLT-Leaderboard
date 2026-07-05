@@ -23,9 +23,7 @@ func init() {
 	initJWTSecrets()
 	initAdminKnock()
 	initDiscordAlerts()
-	initDiscordShame()
 	startTokenBlacklistCleanup()
-	go shameBoardNotificationLoop()
 	go cleanupCaptchaEscalation()
 }
 
