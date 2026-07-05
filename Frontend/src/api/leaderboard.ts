@@ -3,7 +3,7 @@ import { fetchWithAbort, parseJsonResponse, isAbortError, API_BASE, BACKEND_URL,
 import type { LeaderboardPlayer, LevelData, LevelRecord } from '../types'
 
 const DEFAULT_PLAYER_NAMES: string[] = [
-  "samoletik", "paradoxiz", "clokman", "itzslxnq", "H30n41k_GmD",
+  "samoletik", "clokman", "itzslxnq", "H30n41k_GmD",
   "Filkoty", "DarBeast", "Florned", "Marzyiiik", "euphoriak8",
   "npoctou_gamer", "NopanicGD", "CandyCloud22", "Vakum", "Daggit",
   "Loran", "tapxyhh", "SerGio", "Fanim59", "prostoymofficial",

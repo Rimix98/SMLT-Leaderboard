@@ -429,7 +429,7 @@ curl -X POST https://smltdemonlist.vercel.app/api/login \
 
 | Роль | Контакт |
 |------|---------|
-| Admin / сообщество | Discord **@ParadoXiZ** · Telegram **@ParadoXiZ.** |
+| Admin / сообщество | Discord **@samoletik** · Telegram **@samoletik** |
 | Backend & security | Discord **@rimix.98** |
 
 ---
