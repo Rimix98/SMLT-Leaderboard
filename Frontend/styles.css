@@ -124,17 +124,7 @@ body.home-page #app {
     isolation: isolate;
 }
 
-body.home-page #app::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image: url('Background_Image_DarkMode.png');
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    pointer-events: none;
-    z-index: -1;
-}
+
 
 body.home-page .nav-card {
     position: relative;
@@ -205,13 +195,7 @@ body.home-page .info-card {
     box-shadow: var(--shadow-md);
 }
 
-[data-theme="light"] body.home-page #app::before {
-    background-image: url('Background_Image_WhiteMode.png');
-}
 
-[data-theme="gray"] body.home-page #app::before {
-    background-image: url('Background_Image_GreyMode.png');
-}
 
 body.theme-transitioning {
     animation: themeFade 0.3s ease-in-out;
