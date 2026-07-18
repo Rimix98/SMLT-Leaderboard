@@ -428,6 +428,8 @@ func handleSecurityDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	since := time.Now().Add(-24 * time.Hour)
 
 	iter := fsClient.Collection("security_events").

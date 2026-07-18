@@ -808,3 +808,131 @@ func TestAlertSecurityEvent_QueueFull(t *testing.T) {
 		t.Errorf("queue should still have 1 item, got %d", len(q))
 	}
 }
+
+// ──────────────────────────────────────────────
+// Path traversal protection
+// ──────────────────────────────────────────────
+
+func TestPlayerHistory_TraversalPath(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/history/../../../etc/passwd", nil)
+	r.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+	Handler(w, r)
+	// Should return 400 (invalid playerId) or 404, NOT 200
+	if w.Code == http.StatusOK {
+		t.Error("path traversal should not return 200")
+	}
+}
+
+func TestPlayerHistory_ValidPlayerID(t *testing.T) {
+	// Valid alphanumeric ID should pass validation (may fail on Firestore, but shouldn't be 400 for validation)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/history/TestPlayer123", nil)
+	r.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+	Handler(w, r)
+	// Should NOT be 400 for validation (may be 503 if no Firestore)
+	if w.Code == http.StatusBadRequest {
+		t.Error("valid player ID should pass validation")
+	}
+}
+
+func TestPlayerHistory_TooLong(t *testing.T) {
+	longID := ""
+	for i := 0; i < 65; i++ {
+		longID += "a"
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/history/"+longID, nil)
+	r.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+	Handler(w, r)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("oversized playerId should return 400, got %d", w.Code)
+	}
+}
+
+func TestPlayerHistory_SpecialChars(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/history/<script>alert(1)</script>", nil)
+	r.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+	Handler(w, r)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("XSS in playerId should return 400, got %d", w.Code)
+	}
+}
+
+// ──────────────────────────────────────────────
+// Context timeout (smoke test: ensure handler doesn't hang)
+// ──────────────────────────────────────────────
+
+func TestLeaderboard_TimeoutDoesNotHang(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/leaderboard", nil)
+	r.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+	done := make(chan struct{})
+	go func() {
+		Handler(w, r)
+		close(done)
+	}()
+	select {
+	case <-done:
+		// ok
+	case <-time.After(45 * time.Second):
+		t.Error("leaderboard handler timed out (should complete within 35s)")
+	}
+}
+
+// ──────────────────────────────────────────────
+// Validate helpers
+// ──────────────────────────────────────────────
+
+func TestValidateProjectID_SpecialChars(t *testing.T) {
+	invalid := []string{
+		"../traversal",
+		"../../etc/passwd",
+		"project/../../../secret",
+		"project\x00null",
+	}
+	for _, id := range invalid {
+		if err := validateProjectID(id); err == nil {
+			t.Errorf("validateProjectID(%q) should be invalid", id)
+		}
+	}
+}
+
+func TestNormalizeColor_Empty(t *testing.T) {
+	c, err := normalizeColor("")
+	if err != nil {
+		t.Errorf("empty color should default to blue: %v", err)
+	}
+	if c != "#3b82f6" {
+		t.Errorf("empty color default = %q, want #3b82f6", c)
+	}
+}
+
+func TestValidateRoleName_SpecialChars(t *testing.T) {
+	invalid := []string{
+		"<script>",
+		"role<script>",
+		"admin\"injection",
+		"a",  // too short
+		"",   // empty
+	}
+	for _, name := range invalid {
+		if err := validateRoleName(name); err == nil {
+			t.Errorf("validateRoleName(%q) should be invalid", name)
+		}
+	}
+}
+
+func TestValidateNickname_Boundary(t *testing.T) {
+	// Exactly 32 chars should be valid
+	valid32 := "abcdefghijklmnopqrstuvwxyz123456"
+	if err := validateNickname(valid32); err != nil {
+		t.Errorf("32-char nickname should be valid: %v", err)
+	}
+	// 33 chars should be invalid
+	invalid33 := "abcdefghijklmnopqrstuvwxyz1234567"
+	if err := validateNickname(invalid33); err == nil {
+		t.Error("33-char nickname should be invalid")
+	}
+}

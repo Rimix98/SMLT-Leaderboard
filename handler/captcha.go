@@ -91,8 +91,7 @@ func cleanupCaptchaEscalation() {
 	defer ticker.Stop()
 	for range ticker.C {
 		captchaEscalation.Range(func(key, value interface{}) bool {
-			p := value.(*int)
-			if *p > 20 {
+			if p, ok := value.(*int); ok && *p > 20 {
 				captchaEscalation.Delete(key)
 			}
 			return true

@@ -32,6 +32,8 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	doc, err := fsClient.Collection("config").Doc("staff").Get(ctx)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
@@ -505,6 +507,9 @@ func handleReorderStaffRoles(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		idx := req.RoleIndex
+		if idx < 0 || idx >= len(data.Roles) {
+			return errValidation{"invalid role index"}
+		}
 		target := idx - 1
 		if req.Direction == "down" {
 			target = idx + 1
@@ -545,6 +550,8 @@ func handleGetStaffTiers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	doc, err := fsClient.Collection("config").Doc("staff").Get(ctx)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {

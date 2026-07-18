@@ -212,6 +212,8 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	leaderCtx, leaderCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer leaderCancel()
 	players := playersForLeaderboard(ctx)
 
 	type job struct {
@@ -233,7 +235,7 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			for {
 				select {
-				case <-ctx.Done():
+				case <-leaderCtx.Done():
 					return
 				case j, ok := <-jobs:
 					if !ok {
@@ -241,13 +243,13 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 					}
 					entry := FullPlayerData{Name: j.name}
 					u1 := fmt.Sprintf("https://api.demonlist.org/leaderboard/user/list?search=%s&limit=1", url.QueryEscape(j.name))
-					if body, err := fetchAPIWithRetry(ctx, u1, 2); err == nil {
+					if body, err := fetchAPIWithRetry(leaderCtx, u1, 2); err == nil {
 						json.Unmarshal(body, &entry.Data)
 					}
 					userID := extractUserID(entry.Data, j.name)
 					if userID != "" {
 						u2 := fmt.Sprintf("https://api.demonlist.org/user/record/list?user_id=%s&limit=50", userID)
-						if body, err := fetchAPIWithRetry(ctx, u2, 2); err == nil {
+						if body, err := fetchAPIWithRetry(leaderCtx, u2, 2); err == nil {
 							json.Unmarshal(body, &entry.Records)
 						}
 					}
@@ -381,9 +383,6 @@ func handlePlayerHistory(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
-	if !requireFirestore(w) {
-		return
-	}
 
 	playerID := strings.TrimPrefix(r.URL.Path, "/api/history/")
 	playerID = strings.TrimSuffix(playerID, "/")
@@ -391,8 +390,18 @@ func handlePlayerHistory(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "playerId обязателен")
 		return
 	}
+	if len(playerID) > 64 || !reAlphanumeric.MatchString(playerID) {
+		sendError(w, http.StatusBadRequest, "Некорректный playerId")
+		return
+	}
+
+	if !requireFirestore(w) {
+		return
+	}
 
 	ctx := r.Context()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	var entries []PlayerHistoryEntry
 
 	if docs, err := fsClient.Collection("player_history").

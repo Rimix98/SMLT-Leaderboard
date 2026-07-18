@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	crypto_rand "crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -29,6 +30,8 @@ func handleGetProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	iter := fsClient.Collection("projects").Documents(ctx)
 	projects := make([]Project, 0)
 	for {
@@ -129,7 +132,9 @@ func handleSaveProjects(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	iter := fsClient.Collection("projects").Documents(ctx)
+	cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cleanCancel()
+	iter := fsClient.Collection("projects").Documents(cleanCtx)
 	for {
 		doc, err := iter.Next()
 		if err == iterator.Done {
