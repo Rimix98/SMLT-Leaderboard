@@ -2579,9 +2579,8 @@ textarea:focus-visible {
     font-size: 1.05rem;
     font-weight: 850;
     letter-spacing: .03em;
+    color: var(--color-text-primary);
 }
-
-.smp-brand-title strong { color: #3b82f6; }
 
 .smp-brand-sub {
     font-size: var(--font-size-xs);

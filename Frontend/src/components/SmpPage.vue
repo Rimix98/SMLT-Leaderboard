@@ -89,7 +89,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <AppShell />
+  <AppShell>
+    <template #brand>
+      <div class="smp-brand">
+        <div>
+          <div class="smp-brand-title">SMLT SMP</div>
+          <div class="smp-brand-sub">Анархический сервер SMLT</div>
+        </div>
+      </div>
+    </template>
+  </AppShell>
 
   <main class="smp-main">
     <SmpHero :server-ip="SERVER_IP" @copy-ip="copyIp" />
