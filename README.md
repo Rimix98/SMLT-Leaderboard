@@ -35,7 +35,7 @@
 | [Демонлист](https://smltdemonlist.vercel.app/leaderboard) | Топ игроков, рекорды, hardest, флаги стран |
 | [Проекты](https://smltdemonlist.vercel.app/projects) | Коллабы: роли, статусы, участники, превью |
 | [Стафф](https://smltdemonlist.vercel.app/staff) | Роли сообщества, тиры, редактирование |
-| [SMP](https://smltdemonlist.vercel.app/smp) | Minecraft-сервер: статус, правила, карта, подключение |
+| [SMP](https://smltdemonlist.vercel.app/smp) | Minecraft-сервер: статус, правила, карта, подключение (`94.154.11.166` или `smltsetup.duckdns.org`) |
 
 > Первый заход на демонлист может занять **30–60 секунд** — данные подтягиваются с внешнего API для каждого игрока.
 
