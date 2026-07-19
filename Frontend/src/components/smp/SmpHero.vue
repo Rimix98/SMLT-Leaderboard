@@ -11,6 +11,10 @@ const emit = defineEmits<{
 
 const MAP_URL = 'https://smltsetup.duckdns.org'
 const SERVER_DOMAIN = 'smltsetup.duckdns.org'
+
+function scrollTo(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+}
 </script>
 
 <template>
@@ -22,7 +26,7 @@ const SERVER_DOMAIN = 'smltsetup.duckdns.org'
       <h1 class="smp-hero-title">Добро пожаловать на<br><span>SMLT SMP</span></h1>
       <p class="smp-hero-text">Не очень то и уютный Minecraft-сервер с выживанием, приключениями и не особо дружным сообществом</p>
       <div class="smp-hero-actions">
-        <a class="smp-btn smp-btn-primary" href="#start">Начать играть</a>
+        <a class="smp-btn smp-btn-primary" href="#start" @click.prevent="scrollTo('start')">Начать играть</a>
         <a class="smp-btn smp-btn-ghost" :href="MAP_URL" target="_blank" rel="noopener noreferrer">
           Открыть карту мира <ExternalLink :size="14" />
         </a>
@@ -36,9 +40,9 @@ const SERVER_DOMAIN = 'smltsetup.duckdns.org'
       </div>
       <p class="smp-hero-alt">или <code>{{ SERVER_DOMAIN }}</code></p>
     </div>
-    <a class="smp-scroll-hint" href="#status" aria-label="Прокрутить к статусу сервера">
+    <button class="smp-scroll-hint" type="button" @click="scrollTo('status')" aria-label="Прокрутить к статусу сервера">
       <span>Листайте вниз</span>
       <ChevronDown :size="18" />
-    </a>
+    </button>
   </section>
 </template>
