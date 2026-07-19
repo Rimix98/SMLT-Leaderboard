@@ -312,9 +312,11 @@ a:hover {
     color: var(--color-text-muted);
     border-radius: var(--border-radius-sm);
     cursor: pointer;
-    z-index: 100;
+    z-index: 200;
     transition: all var(--transition-fast);
     box-shadow: var(--shadow-sm);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
 }
 
 .host-btn:hover {
