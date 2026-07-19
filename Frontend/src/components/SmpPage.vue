@@ -10,6 +10,7 @@ import SmpHowTo from './smp/SmpHowTo.vue'
 import SmpFooter from './smp/SmpFooter.vue'
 import { fetchSMPStatus } from '../api/smp'
 import type { SMPStatus } from '../types'
+import { Gamepad2 } from '@lucide/vue'
 
 const SERVER_IP = '94.154.11.166'
 
@@ -91,14 +92,10 @@ onUnmounted(() => {
 
 <template>
   <AppShell>
-    <template #brand>
-      <div class="smp-brand">
-        <span class="smp-brand-mark">S</span>
-        <div>
-          <div class="smp-brand-title">SMLT <strong>SMP</strong></div>
-          <div class="smp-brand-sub">Minecraft-сервер</div>
-        </div>
-      </div>
+    <template #actions>
+      <a class="btn btn-primary btn-lg" :href="`minecraft://connect?server=${SERVER_IP}`">
+        <Gamepad2 :size="16" /> Подключиться
+      </a>
     </template>
   </AppShell>
 
