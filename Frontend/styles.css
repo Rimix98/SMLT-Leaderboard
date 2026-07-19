@@ -2651,12 +2651,13 @@ textarea:focus-visible {
 /* SMP Hero */
 .smp-hero {
     position: relative;
-    display: grid;
-    min-height: 700px;
-    place-items: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 85vh;
     overflow: hidden;
     isolation: isolate;
-    background: #0a0f0c;
+    background: #0a0d12;
 }
 
 .smp-hero-bg {
@@ -2672,7 +2673,7 @@ textarea:focus-visible {
     z-index: 1;
     inset: 0;
     content: "";
-    background: linear-gradient(180deg, rgba(10,15,12,.3) 0%, rgba(10,15,12,.7) 60%, #0a0f0c 100%);
+    background: linear-gradient(180deg, rgba(10,13,18,.3) 0%, rgba(10,13,18,.7) 60%, #0a0d12 100%);
 }
 
 .smp-hero-noise {
@@ -2687,7 +2688,7 @@ textarea:focus-visible {
 .smp-hero-content {
     position: relative;
     z-index: 3;
-    padding-top: 80px;
+    padding: 100px 0 80px;
 }
 
 .smp-hero-title {
@@ -2776,6 +2777,13 @@ textarea:focus-visible {
     text-transform: uppercase;
     transform: translateX(-50%);
     animation: smp-bounce 2s infinite;
+    text-decoration: none;
+    transition: color .2s ease;
+}
+
+.smp-scroll-hint:hover {
+    color: rgba(255,255,255,.85);
+    text-decoration: none;
 }
 
 /* SMP Sections */
@@ -2930,7 +2938,7 @@ textarea:focus-visible {
 
 /* SMP How To */
 .smp-start-section {
-    background: linear-gradient(180deg, var(--color-primary), #0d130f);
+    background: linear-gradient(180deg, var(--color-primary), #0a0d12);
 }
 
 .smp-start-heading { text-align: center; margin-inline: auto; }
