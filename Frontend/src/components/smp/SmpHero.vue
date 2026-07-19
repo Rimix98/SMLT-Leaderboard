@@ -10,6 +10,7 @@ const emit = defineEmits<{
 }>()
 
 const MAP_URL = 'https://smltsetup.duckdns.org'
+const SERVER_DOMAIN = 'smltsetup.duckdns.org'
 </script>
 
 <template>
@@ -33,6 +34,7 @@ const MAP_URL = 'https://smltsetup.duckdns.org'
           <Copy :size="16" />
         </button>
       </div>
+      <p class="smp-hero-alt">или <code>{{ SERVER_DOMAIN }}</code></p>
     </div>
     <a class="smp-scroll-hint" href="#status" aria-label="Прокрутить к статусу сервера">
       <span>Листайте вниз</span>

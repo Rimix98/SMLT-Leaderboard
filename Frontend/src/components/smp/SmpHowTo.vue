@@ -6,6 +6,8 @@ defineProps<{
 const emit = defineEmits<{
   copyIp: []
 }>()
+
+const SERVER_DOMAIN = 'smltsetup.duckdns.org'
 </script>
 
 <template>
@@ -20,7 +22,7 @@ const emit = defineEmits<{
         <li class="smp-reveal"><span>1</span><p>Запустите Minecraft нужной версии.</p></li>
         <li class="smp-reveal"><span>2</span><p>Откройте раздел «Сетевая игра».</p></li>
         <li class="smp-reveal"><span>3</span><p>Нажмите «Добавить сервер».</p></li>
-        <li class="smp-reveal"><span>4</span><p>Введите IP: <code>{{ serverIp }}</code>.</p></li>
+        <li class="smp-reveal"><span>4</span><p>Введите адрес: <code>{{ serverIp }}</code> или <code>{{ SERVER_DOMAIN }}</code>.</p></li>
         <li class="smp-reveal"><span>5</span><p>Подключитесь к серверу.</p></li>
       </ol>
       <div class="smp-join-card smp-reveal">

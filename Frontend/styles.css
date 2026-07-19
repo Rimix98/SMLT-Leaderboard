@@ -2744,6 +2744,18 @@ textarea:focus-visible {
     font-weight: 700;
 }
 
+.smp-hero-alt {
+    margin-top: 12px;
+    color: var(--color-text-muted);
+    font-size: .85rem;
+}
+
+.smp-hero-alt code {
+    color: var(--color-text-secondary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .85rem;
+}
+
 .smp-icon-copy {
     display: grid;
     width: 34px;
