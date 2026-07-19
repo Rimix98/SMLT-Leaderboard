@@ -12,7 +12,7 @@ const emit = defineEmits<{
   <section class="smp-section smp-start-section" id="start">
     <div class="smp-container">
       <div class="smp-section-heading smp-start-heading smp-reveal">
-        <p class="smp-eyebrow">Всего несколько шагов</p>
+        <p class="smp-eyebrow">Всего несколько шагов до безумия</p>
         <h2>Как начать играть</h2>
         <p>Подключение займёт меньше минуты. Подойдёт Minecraft версии <strong>1.21.11</strong>.</p>
       </div>

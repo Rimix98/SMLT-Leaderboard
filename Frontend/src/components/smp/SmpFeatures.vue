@@ -27,7 +27,7 @@ import { Gamepad2, Users, Star } from '@lucide/vue'
           <span class="smp-feature-number">03</span>
           <div class="smp-feature-icon"><Star :size="22" /></div>
           <h3>События</h3>
-          <p>Здесь НЕ будет НИ ОДНОГО ИВЕНТА🤑🤑🤑.</p>
+          <p>Какие то ивенты тут будут, но когда? Никто не знает.</p>
         </article>
       </div>
     </div>

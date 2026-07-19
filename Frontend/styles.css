@@ -331,6 +331,8 @@ a:hover {
 
 /* === Header === */
 .app-header {
+    position: relative;
+    z-index: 100;
     padding: var(--spacing-md) var(--spacing-lg);
     border-bottom: 1px solid var(--color-border);
     background: rgba(var(--color-primary), 0.8);
@@ -2537,7 +2539,7 @@ textarea:focus-visible {
     align-items: center;
     gap: 9px;
     margin: 0 0 22px;
-    color: #5cdb75;
+    color: #3b82f6;
     font-size: .76rem;
     font-weight: 800;
     letter-spacing: .16em;
@@ -2547,9 +2549,9 @@ textarea:focus-visible {
 .smp-live-dot {
     width: 7px;
     height: 7px;
-    background: #5cdb75;
+    background: #3b82f6;
     border-radius: 50%;
-    box-shadow: 0 0 0 6px rgba(92,219,117,.12);
+    box-shadow: 0 0 0 6px rgba(59,130,246,.12);
     animation: smp-pulse 2s infinite;
 }
 
@@ -2566,11 +2568,11 @@ textarea:focus-visible {
     height: 36px;
     place-items: center;
     color: #071008;
-    background: #5cdb75;
+    background: #3b82f6;
     border-radius: 8px 8px 11px 8px;
     font-weight: 950;
     font-size: 1rem;
-    box-shadow: 7px 7px 0 rgba(92,219,117,.13);
+    box-shadow: 7px 7px 0 rgba(59,130,246,.13);
 }
 
 .smp-brand-title {
@@ -2579,7 +2581,7 @@ textarea:focus-visible {
     letter-spacing: .03em;
 }
 
-.smp-brand-title strong { color: #5cdb75; }
+.smp-brand-title strong { color: #3b82f6; }
 
 .smp-brand-sub {
     font-size: var(--font-size-xs);
@@ -2596,7 +2598,7 @@ textarea:focus-visible {
     letter-spacing: .03em;
 }
 
-.smp-brand-inline strong { color: #5cdb75; }
+.smp-brand-inline strong { color: #3b82f6; }
 
 /* SMP Buttons */
 .smp-btn {
@@ -2619,12 +2621,12 @@ textarea:focus-visible {
 
 .smp-btn-primary {
     color: #071008;
-    background: #5cdb75;
+    background: #3b82f6;
     box-shadow: 0 12px 30px rgba(92, 219, 117, .16);
 }
 
 .smp-btn-primary:hover {
-    background: #78ed8d;
+    background: #60a5fa;
     box-shadow: 0 16px 36px rgba(92, 219, 117, .25);
 }
 
@@ -2693,8 +2695,8 @@ textarea:focus-visible {
 }
 
 .smp-hero-title span {
-    color: #5cdb75;
-    text-shadow: 0 10px 40px rgba(92,219,117,.13);
+    color: #3b82f6;
+    text-shadow: 0 10px 40px rgba(59,130,246,.13);
 }
 
 .smp-hero-text {
@@ -2741,16 +2743,16 @@ textarea:focus-visible {
     height: 34px;
     padding: 8px;
     place-items: center;
-    color: #5cdb75;
+    color: #3b82f6;
     border: 0;
     border-radius: 8px;
-    background: rgba(92,219,117,.12);
+    background: rgba(59,130,246,.12);
     cursor: pointer;
     transition: background-color .2s ease, transform .2s ease;
 }
 
 .smp-icon-copy:hover {
-    background: rgba(92,219,117,.22);
+    background: rgba(59,130,246,.22);
     transform: scale(1.05);
 }
 
@@ -2810,7 +2812,7 @@ textarea:focus-visible {
 }
 
 .smp-feature-card:hover {
-    border-color: rgba(92,219,117,.35);
+    border-color: rgba(59,130,246,.35);
     box-shadow: 0 18px 50px rgba(0,0,0,.25);
     transform: translateY(-7px);
 }
@@ -2830,10 +2832,10 @@ textarea:focus-visible {
     height: 53px;
     margin: 55px 0 30px;
     place-items: center;
-    color: #5cdb75;
-    border: 1px solid rgba(92,219,117,.25);
+    color: #3b82f6;
+    border: 1px solid rgba(59,130,246,.25);
     border-radius: 13px;
-    background: rgba(92,219,117,.08);
+    background: rgba(59,130,246,.08);
 }
 
 .smp-feature-card h3 { margin: 0 0 10px; font-size: 1.35rem; }
@@ -2853,7 +2855,7 @@ textarea:focus-visible {
     width: 500px;
     height: 500px;
     content: "";
-    background: rgba(92,219,117,.07);
+    background: rgba(59,130,246,.07);
     border-radius: 50%;
     filter: blur(80px);
 }
@@ -2913,7 +2915,7 @@ textarea:focus-visible {
 .smp-rules-list li:last-child { border-bottom: 1px solid var(--color-border); }
 
 .smp-rules-list span {
-    color: #5cdb75;
+    color: #3b82f6;
     font-family: ui-monospace, monospace;
     font-size: .72rem;
 }
@@ -2949,7 +2951,7 @@ textarea:focus-visible {
     width: calc(100% - 68px);
     height: 1px;
     content: "";
-    background: linear-gradient(90deg, #5cdb75, rgba(92,219,117,.12));
+    background: linear-gradient(90deg, #3b82f6, rgba(59,130,246,.12));
 }
 
 .smp-steps span {
@@ -2960,15 +2962,15 @@ textarea:focus-visible {
     height: 49px;
     margin: 0 auto 20px;
     place-items: center;
-    color: #5cdb75;
-    border: 1px solid rgba(92,219,117,.4);
+    color: #3b82f6;
+    border: 1px solid rgba(59,130,246,.4);
     border-radius: 13px;
     background: var(--color-surface-2);
     font-weight: 850;
 }
 
 .smp-steps p { color: var(--color-text-secondary); font-size: .9rem; }
-.smp-steps code { color: #5cdb75; font-family: ui-monospace, monospace; }
+.smp-steps code { color: #3b82f6; font-family: ui-monospace, monospace; }
 
 .smp-join-card {
     display: flex;
@@ -2978,9 +2980,9 @@ textarea:focus-visible {
     gap: 30px;
     margin: 70px auto 0;
     padding: 25px 28px;
-    border: 1px solid rgba(92,219,117,.23);
+    border: 1px solid rgba(59,130,246,.23);
     border-radius: 18px;
-    background: linear-gradient(110deg, rgba(92,219,117,.11), rgba(255,255,255,.025));
+    background: linear-gradient(110deg, rgba(59,130,246,.11), rgba(255,255,255,.025));
 }
 
 .smp-join-card div { display: flex; flex-direction: column; }
@@ -3042,7 +3044,7 @@ textarea:focus-visible {
     gap: 4px;
 }
 
-.smp-footer-link:hover { color: #5cdb75; }
+.smp-footer-link:hover { color: #3b82f6; }
 
 .smp-footer-bottom {
     display: flex;
@@ -3067,7 +3069,7 @@ textarea:focus-visible {
     gap: 9px;
     padding: 14px 18px;
     color: #071008;
-    background: #5cdb75;
+    background: #3b82f6;
     border-radius: 11px;
     box-shadow: 0 15px 50px rgba(0,0,0,.4);
     font-weight: 800;
@@ -3084,7 +3086,7 @@ textarea:focus-visible {
     width: 20px;
     height: 20px;
     place-items: center;
-    color: #5cdb75;
+    color: #3b82f6;
     background: #071008;
     border-radius: 50%;
     font-size: .72rem;
@@ -3092,7 +3094,7 @@ textarea:focus-visible {
 
 /* SMP Animations */
 @keyframes smp-pulse {
-    50% { box-shadow: 0 0 0 10px rgba(92,219,117,0); }
+    50% { box-shadow: 0 0 0 10px rgba(59,130,246,0); }
 }
 
 @keyframes smp-bounce {
@@ -3147,7 +3149,7 @@ textarea:focus-visible {
     .smp-rules-list p { font-size: .98rem; }
     .smp-steps { display: flex; flex-direction: column; gap: 0; }
     .smp-steps li { display: grid; grid-template-columns: 48px 1fr; align-items: center; gap: 16px; padding: 13px 0; text-align: left; }
-    .smp-steps li:not(:last-child)::after { top: 61px; left: 24px; display: block; width: 1px; height: 26px; background: linear-gradient(#5cdb75, transparent); }
+    .smp-steps li:not(:last-child)::after { top: 61px; left: 24px; display: block; width: 1px; height: 26px; background: linear-gradient(#3b82f6, transparent); }
     .smp-steps span { width: 46px; height: 46px; margin: 0; }
     .smp-join-card { align-items: stretch; flex-direction: column; margin-top: 45px; }
     .smp-join-card .smp-btn { width: 100%; }
