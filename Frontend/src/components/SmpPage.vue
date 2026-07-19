@@ -7,7 +7,6 @@ import SmpFeatures from './smp/SmpFeatures.vue'
 import SmpMap from './smp/SmpMap.vue'
 import SmpRules from './smp/SmpRules.vue'
 import SmpHowTo from './smp/SmpHowTo.vue'
-import SmpFooter from './smp/SmpFooter.vue'
 import { fetchSMPStatus } from '../api/smp'
 import type { SMPStatus } from '../types'
 
@@ -100,8 +99,6 @@ onUnmounted(() => {
     <SmpRules />
     <SmpHowTo :server-ip="SERVER_IP" @copy-ip="copyIp" />
   </main>
-
-  <SmpFooter :server-ip="SERVER_IP" @copy-ip="copyIp" />
 
   <Teleport to="body">
     <div class="smp-toast" :class="{ show: toastVisible }" role="status" aria-live="polite">
