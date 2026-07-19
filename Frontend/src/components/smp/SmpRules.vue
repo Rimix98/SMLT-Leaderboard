@@ -9,10 +9,9 @@
       <ol class="smp-rules-list">
         <li class="smp-reveal"><span>01</span><p>Уважайте других игроков.</p></li>
         <li class="smp-reveal"><span>02</span><p>Не используйте читы и запрещённые модификации.</p></li>
-        <li class="smp-reveal"><span>03</span><p>Не ломайте чужие постройки.</p></li>
-        <li class="smp-reveal"><span>04</span><p>Не создавайте лаг-машины.</p></li>
-        <li class="smp-reveal"><span>05</span><p>Не используйте ошибки и уязвимости сервера.</p></li>
-        <li class="smp-reveal"><span>06</span><p>Следуйте указаниям администрации.</p></li>
+        <li class="smp-reveal"><span>03</span><p>Не создавайте лаг-машины.</p></li>
+        <li class="smp-reveal"><span>04</span><p>Не используйте ошибки и уязвимости сервера.</p></li>
+        <li class="smp-reveal"><span>05</span><p>Следуйте указаниям администрации.</p></li>
       </ol>
     </div>
   </section>
