@@ -93,9 +93,9 @@ onUnmounted(() => {
 <template>
   <AppShell>
     <template #actions>
-      <a class="btn btn-primary btn-lg" :href="`minecraft://connect?server=${SERVER_IP}`">
+      <button class="btn btn-primary btn-lg" @click="copyIp">
         <Gamepad2 :size="16" /> Подключиться
-      </a>
+      </button>
     </template>
   </AppShell>
 
