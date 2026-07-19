@@ -9,6 +9,7 @@ import SmpRules from './smp/SmpRules.vue'
 import SmpHowTo from './smp/SmpHowTo.vue'
 import { fetchSMPStatus } from '../api/smp'
 import type { SMPStatus } from '../types'
+import { Globe } from '@lucide/vue'
 
 const SERVER_IP = '94.154.11.166'
 
@@ -92,6 +93,7 @@ onUnmounted(() => {
   <AppShell>
     <template #brand>
       <div class="smp-brand">
+        <Globe :size="20" class="smp-brand-icon" />
         <div>
           <div class="smp-brand-title">SMLT SMP</div>
           <div class="smp-brand-sub">Анархический сервер SMLT</div>

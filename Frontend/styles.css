@@ -2564,6 +2564,11 @@ textarea:focus-visible {
     gap: 11px;
 }
 
+.smp-brand-icon {
+    color: #3b82f6;
+    flex-shrink: 0;
+}
+
 .smp-brand-mark {
     display: grid;
     width: 36px;
