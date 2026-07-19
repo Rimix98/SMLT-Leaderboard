@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Copy, ExternalLink, ChevronDown } from '@lucide/vue'
+import { Copy, ExternalLink } from '@lucide/vue'
 
 defineProps<{
   serverIp: string
@@ -11,10 +11,6 @@ const emit = defineEmits<{
 
 const MAP_URL = 'https://smltsetup.duckdns.org'
 const SERVER_DOMAIN = 'smltsetup.duckdns.org'
-
-function scrollTo(id: string) {
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
-}
 </script>
 
 <template>
@@ -26,7 +22,7 @@ function scrollTo(id: string) {
       <h1 class="smp-hero-title">Добро пожаловать на<br><span>SMLT SMP</span></h1>
       <p class="smp-hero-text">Не очень то и уютный Minecraft-сервер с выживанием, приключениями и не особо дружным сообществом</p>
       <div class="smp-hero-actions">
-        <a class="smp-btn smp-btn-primary" href="#start" @click.prevent="scrollTo('start')">Начать играть</a>
+        <a class="smp-btn smp-btn-primary" href="#start">Начать играть</a>
         <a class="smp-btn smp-btn-ghost" :href="MAP_URL" target="_blank" rel="noopener noreferrer">
           Открыть карту мира <ExternalLink :size="14" />
         </a>
@@ -40,9 +36,5 @@ function scrollTo(id: string) {
       </div>
       <p class="smp-hero-alt">или <code>{{ SERVER_DOMAIN }}</code></p>
     </div>
-    <button class="smp-scroll-hint" type="button" @click="scrollTo('status')" aria-label="Прокрутить к статусу сервера">
-      <span>Листайте вниз</span>
-      <ChevronDown :size="18" />
-    </button>
   </section>
 </template>

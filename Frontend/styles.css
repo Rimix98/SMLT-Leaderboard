@@ -2775,29 +2775,6 @@ textarea:focus-visible {
     transform: scale(1.05);
 }
 
-.smp-scroll-hint {
-    position: absolute;
-    z-index: 3;
-    bottom: 34px;
-    left: 50%;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    color: rgba(255,255,255,.55);
-    font-size: .72rem;
-    letter-spacing: .1em;
-    text-transform: uppercase;
-    transform: translateX(-50%);
-    animation: smp-bounce 2s infinite;
-    text-decoration: none;
-    transition: color .2s ease;
-}
-
-.smp-scroll-hint:hover {
-    color: rgba(255,255,255,.85);
-    text-decoration: none;
-}
-
 /* SMP Sections */
 .smp-section { padding: 128px 0; }
 
@@ -3123,10 +3100,7 @@ textarea:focus-visible {
     50% { box-shadow: 0 0 0 10px rgba(59,130,246,0); }
 }
 
-@keyframes smp-bounce {
-    0%, 100% { transform: translateX(-50%) translateY(0); }
-    50% { transform: translateX(-50%) translateY(6px); }
-}
+
 
 /* SMP Responsive */
 @media (max-width: 980px) {
@@ -3151,7 +3125,6 @@ textarea:focus-visible {
     .smp-hero-actions .smp-btn { width: 100%; }
     .smp-hero-ip { width: 100%; justify-content: space-between; gap: 8px; margin-top: 25px; }
     .smp-hero-ip-label { display: none; }
-    .smp-scroll-hint { display: none; }
     .smp-status-section { margin-top: -25px; }
     .smp-status-card { display: block; padding: 25px 22px; }
     .smp-status-main { margin-bottom: 25px; }
