@@ -140,6 +140,7 @@ function closeInfoModal() {
         <router-link to="/leaderboard" class="nav-link" :class="{ active: currentPage === 'leaderboard' }">Лидерборд</router-link>
         <router-link to="/projects" class="nav-link" :class="{ active: currentPage === 'projects' }">Проекты</router-link>
         <router-link to="/staff" class="nav-link" :class="{ active: currentPage === 'staff' }">Стафф</router-link>
+        <router-link to="/smp" class="nav-link" :class="{ active: currentPage === 'smp' }">SMP</router-link>
 
       </nav>
       <div class="header-actions">
@@ -194,7 +195,7 @@ function closeInfoModal() {
               <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span style="color: var(--color-secondary);">@samoletik</span></div>
             </div>
             <div style="padding: var(--spacing-md); background: var(--color-surface-2); border-radius: var(--border-radius-md); border: 1px solid var(--color-border); border-left: 3px solid var(--color-success);">
-              <div style="color: var(--color-text-muted); font-size: var(--font-size-xs); margin-bottom: var(--spacing-xs); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em;"><Lock :size="12" /> За безопасность и бекенд отвечал</div>
+              <div style="color: var(--color-text-muted); font-size: var(--font-size-xs); margin-bottom: var(--spacing-xs); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em;"><Lock :size="12" /> За безопасность и бэкенд отвечал</div>
               <div style="font-weight: 500;">Discord: <span style="color: var(--color-secondary);">@rimix.98</span></div>
               <div style="font-weight: 500; margin-top: var(--spacing-xs);">Telegram: <span style="color: var(--color-secondary);">@Rimix980</span></div>
             </div>

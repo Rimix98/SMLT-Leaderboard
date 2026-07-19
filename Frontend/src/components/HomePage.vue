@@ -63,7 +63,7 @@ import { Trophy, Folder, Users, ClipboardList, Lock } from '@lucide/vue'
               </div>
             </div>
             <div class="info-item security">
-              <span class="info-label"><Lock :size="12" /> За безопасность и бекенд отвечал</span>
+              <span class="info-label"><Lock :size="12" /> За безопасность и бэкенд отвечал</span>
               <div style="font-weight: 500;">
                 Discord: <span class="highlight">@rimix.98</span><br>
                 Telegram: <span class="highlight">@Rimix980</span>
