@@ -9,7 +9,7 @@ const emit = defineEmits<{
   copyIp: []
 }>()
 
-const MAP_URL = 'http://94.154.11.166:8100/'
+const MAP_URL = 'https://smltsetup.duckdns.org'
 </script>
 
 <template>

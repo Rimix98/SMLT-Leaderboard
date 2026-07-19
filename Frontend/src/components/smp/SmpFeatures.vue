@@ -7,8 +7,8 @@ import { Gamepad2, Users, Star } from '@lucide/vue'
     <div class="smp-container">
       <div class="smp-section-heading smp-reveal">
         <p class="smp-eyebrow">Место, куда хочется вернуться</p>
-        <h2>Minecraft без лишнего шума</h2>
-        <p>Наш сервер создан для спокойной и интересной игры. Здесь можно строить города, исследовать мир, торговать с другими игроками и участвовать в событиях.</p>
+        <h2>Minecraft </h2>
+        <p>Вроде бы обычный сервер, да? Но на самом деле сдесь вирусы очень стращный омагад SMLT_setup.zip</p>
       </div>
       <div class="smp-feature-grid">
         <article class="smp-feature-card smp-reveal">
