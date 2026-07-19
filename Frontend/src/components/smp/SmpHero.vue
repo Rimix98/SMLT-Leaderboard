@@ -19,7 +19,7 @@ const MAP_URL = 'https://smltsetup.duckdns.org'
     <div class="smp-container smp-hero-content smp-reveal">
       <p class="smp-eyebrow"><span class="smp-live-dot"></span> Сервер уже открыт</p>
       <h1 class="smp-hero-title">Добро пожаловать на<br><span>SMLT SMP</span></h1>
-      <p class="smp-hero-text">Уютный Minecraft-сервер с выживанием, приключениями и дружным сообществом</p>
+      <p class="smp-hero-text">Не очень то и уютный Minecraft-сервер с выживанием, приключениями и не особо дружным сообществом</p>
       <div class="smp-hero-actions">
         <a class="smp-btn smp-btn-primary" href="#start">Начать играть</a>
         <a class="smp-btn smp-btn-ghost" :href="MAP_URL" target="_blank" rel="noopener noreferrer">
