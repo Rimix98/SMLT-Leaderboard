@@ -98,3 +98,12 @@ export interface Store {
   staffTiers: StaffTierEntry[]
   selectedRoleColor: string
 }
+
+export interface SMPStatus {
+  online: boolean
+  playersMax: number
+  playersOnline: number
+  version: string
+  serverIp: string
+  fetchedAt: string
+}

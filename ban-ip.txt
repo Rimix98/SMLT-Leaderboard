@@ -1,9 +1,0 @@
-Открой консоль браузера на smltdemonlist.vercel.app (залогинен):
-
-const csrf = document.cookie.split(';').find(c=>c.includes('csrf_token')).split('=')[1];
-fetch('/api/security/ip-ban', {
-  method:'POST',
-  credentials:'include',
-  headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
-  body: JSON.stringify({ip:'46.166.104.125', reason:'Samoletik?', duration:0})
-}).then(r=>r.json()).then(console.log)

@@ -42,6 +42,8 @@ export default tseslint.config(
         Set: 'readonly',
         MouseEvent: 'readonly',
         Node: 'readonly',
+        navigator: 'readonly',
+        IntersectionObserver: 'readonly',
       },
     },
     rules: {

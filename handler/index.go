@@ -85,6 +85,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/players/delete":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),
 		"/api/security/ip-ban":    rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPBan))),
 		"/api/security/ip-unban":  rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleIPUnban))),
+		"/api/smp/status":         rateLimitMiddleware(15)(handleSMPStatus),
 
 	}
 
