@@ -35,6 +35,7 @@
 | [Демонлист](https://smltdemonlist.vercel.app/leaderboard) | Топ игроков, рекорды, hardest, флаги стран |
 | [Проекты](https://smltdemonlist.vercel.app/projects) | Коллабы: роли, статусы, участники, превью |
 | [Стафф](https://smltdemonlist.vercel.app/staff) | Роли сообщества, тиры, редактирование |
+| [SMP](https://smltdemonlist.vercel.app/smp) | Minecraft-сервер: статус, правила, карта, подключение |
 
 > Первый заход на демонлист может занять **30–60 секунд** — данные подтягиваются с внешнего API для каждого игрока.
 
@@ -88,6 +89,13 @@
 - Вход **Хоста**: пароль → JWT в **HttpOnly**-куке → управление игроками и проектами
 - Тосты и плавные переходы состояний
 
+### SMP (Minecraft-сервер)
+
+- Статус сервера в реальном времени (онлайн/офлайн, игроки, версия)
+- Правила сервера и руководство по подключению
+- Интерактивная карта мира
+- Пинг сервера через TCP (Server List Ping протокол)
+
 ---
 
 ## 🛠 Стек
@@ -124,12 +132,14 @@ flowchart LR
   subgraph External
     DL[Demonlist.org API]
     FS[(Firestore)]
+    MC[Minecraft Server]
   end
 
   UI -->|REST /api/*| API
   API --> RL
   API --> FS
   API --> DL
+  API -->|TCP Ping| MC
 ```
 
 **Поток данных лидерборда:** браузер → `/api/leaderboard` → для каждого ника запросы к Demonlist → JSON на фронт → таблица и профили.
@@ -145,15 +155,26 @@ SMLT-Leaderboard/
 ├── cmd/
 │   └── server/
 │       └── main.go           # Локальный dev-сервер
+├── handler/
+│   ├── handlers_smp.go       # Пинг Minecraft-сервера (TCP)
+│   └── ...                   # Остальные хэндлеры
 ├── Frontend/
 │   ├── src/
-│   │   ├── api/              # Модули: auth, staff, projects, leaderboard, utils
+│   │   ├── api/              # Модули: auth, staff, projects, leaderboard, smp, utils
 │   │   ├── components/       # Vue-компоненты
 │   │   │   ├── AppShell.vue        # Обёртка: шапка, навигация, модалки
 │   │   │   ├── HomePage.vue        # Главная страница
 │   │   │   ├── LeaderboardPage.vue # Лидерборд и топ уровней
 │   │   │   ├── ProjectsPage.vue    # Коллабы
 │   │   │   ├── StaffPage.vue       # Стафф-роли
+│   │   │   ├── SmpPage.vue         # SMP (Minecraft-сервер)
+│   │   │   ├── smp/               # Компоненты SMP
+│   │   │   │   ├── SmpHero.vue     # Hero-секция
+│   │   │   │   ├── SmpStatus.vue   # Статус сервера
+│   │   │   │   ├── SmpFeatures.vue # Преимущества
+│   │   │   │   ├── SmpMap.vue      # Карта мира
+│   │   │   │   ├── SmpRules.vue    # Правила
+│   │   │   │   └── SmpHowTo.vue    # Как начать играть
 │   │   │   ├── ProfileModal.vue    # Модалка профиля игрока
 │   │   │   ├── CountryModal.vue    # Модалка страны
 │   │   │   ├── LevelVictorsModal.vue # Модалка викторов уровня
@@ -166,6 +187,8 @@ SMLT-Leaderboard/
 │   │   ├── utils/            # Утилиты (debounce, modal)
 │   │   ├── main.ts           # Точка входа
 │   │   └── App.vue           # Корневой компонент
+│   ├── public/
+│   │   └── hero.webp         # Фоновое изображение SMP
 │   ├── styles.css            # Глобальные стили
 │   ├── index.html            # SPA entry
 │   └── package.json
@@ -294,6 +317,7 @@ vercel dev
 - http://localhost:3000/leaderboard — лидерборд
 - http://localhost:3000/projects — проекты
 - http://localhost:3000/staff — стафф
+- http://localhost:3000/smp — Minecraft-сервер
 
 ```bash
 cd api && go build .
@@ -342,6 +366,7 @@ cd api && go build .
 | `GET` | `/api/staff` | — | Стафф-роли |
 | `POST` | `/api/staff/save` | 🍪🔑 | Сохранить роли |
 | `POST` | `/api/staff/sync-discord` | 🍪🔑 | Синхронизировать роли из Discord |
+| `GET` | `/api/smp/status` | — | Статус Minecraft-сервера (TCP ping) |
 | `GET` | `/api/captcha` | — | Генерация CAPTCHA |
 
 > 🍪 = требует куку `auth_token` · 🔑 = требует admin knock key
@@ -448,6 +473,6 @@ curl -X POST https://smltdemonlist.vercel.app/api/login \
 
 [⬆ Наверх](#smlt-demonlist)
 
-**Последнее обновление:** июнь 2026
+**Последнее обновление:** июль 2026
 
 </div>
