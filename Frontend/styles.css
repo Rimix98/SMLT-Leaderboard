@@ -2648,15 +2648,23 @@ textarea:focus-visible {
     place-items: center;
     overflow: hidden;
     isolation: isolate;
-    background: linear-gradient(135deg, #0d1510 0%, #111a14 50%, #0d1510 100%);
+    background: #0a0f0c;
+}
+
+.smp-hero-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: url('/hero.webp') center/cover no-repeat;
+    opacity: .55;
 }
 
 .smp-hero::before {
     position: absolute;
-    z-index: -1;
+    z-index: 1;
     inset: 0;
     content: "";
-    background: radial-gradient(circle at 73% 45%, rgba(92,219,117,.10), transparent 30%);
+    background: linear-gradient(180deg, rgba(10,15,12,.3) 0%, rgba(10,15,12,.7) 60%, #0a0f0c 100%);
 }
 
 .smp-hero-noise {
@@ -2670,7 +2678,7 @@ textarea:focus-visible {
 
 .smp-hero-content {
     position: relative;
-    z-index: 2;
+    z-index: 3;
     padding-top: 80px;
 }
 
@@ -2748,7 +2756,7 @@ textarea:focus-visible {
 
 .smp-scroll-hint {
     position: absolute;
-    z-index: 2;
+    z-index: 3;
     bottom: 34px;
     left: 50%;
     display: flex;

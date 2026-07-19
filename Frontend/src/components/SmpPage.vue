@@ -10,7 +10,6 @@ import SmpHowTo from './smp/SmpHowTo.vue'
 import SmpFooter from './smp/SmpFooter.vue'
 import { fetchSMPStatus } from '../api/smp'
 import type { SMPStatus } from '../types'
-import { Gamepad2 } from '@lucide/vue'
 
 const SERVER_IP = '94.154.11.166'
 
@@ -91,13 +90,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <AppShell>
-    <template #actions>
-      <button class="btn btn-primary btn-lg" @click="copyIp">
-        <Gamepad2 :size="16" /> Подключиться
-      </button>
-    </template>
-  </AppShell>
+  <AppShell />
 
   <main class="smp-main">
     <SmpHero :server-ip="SERVER_IP" @copy-ip="copyIp" />

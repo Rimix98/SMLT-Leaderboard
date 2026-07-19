@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ExternalLink } from '@lucide/vue'
 
-const MAP_URL = 'https://map.example.com'
+const MAP_URL = 'http://94.154.11.166:8100/'
 </script>
 
 <template>

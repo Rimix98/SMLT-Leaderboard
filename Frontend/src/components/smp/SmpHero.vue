@@ -9,11 +9,12 @@ const emit = defineEmits<{
   copyIp: []
 }>()
 
-const MAP_URL = 'https://map.example.com'
+const MAP_URL = 'http://94.154.11.166:8100/'
 </script>
 
 <template>
   <section class="smp-hero">
+    <div class="smp-hero-bg" aria-hidden="true"></div>
     <div class="smp-hero-noise" aria-hidden="true"></div>
     <div class="smp-container smp-hero-content smp-reveal">
       <p class="smp-eyebrow"><span class="smp-live-dot"></span> Сервер уже открыт</p>
