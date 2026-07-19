@@ -14,7 +14,7 @@ const emit = defineEmits<{
       <div class="smp-section-heading smp-start-heading smp-reveal">
         <p class="smp-eyebrow">Всего несколько шагов</p>
         <h2>Как начать играть</h2>
-        <p>Подключение займёт меньше минуты. Подойдёт Minecraft версии <strong>1.21</strong>.</p>
+        <p>Подключение займёт меньше минуты. Подойдёт Minecraft версии <strong>1.21.11</strong>.</p>
       </div>
       <ol class="smp-steps">
         <li class="smp-reveal"><span>1</span><p>Запустите Minecraft нужной версии.</p></li>

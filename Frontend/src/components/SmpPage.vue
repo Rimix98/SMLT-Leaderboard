@@ -58,7 +58,7 @@ onMounted(async () => {
       online: false,
       playersMax: 0,
       playersOnline: 0,
-      version: '1.21',
+      version: '1.21.11',
       serverIp: SERVER_IP,
       fetchedAt: new Date().toISOString(),
     }
