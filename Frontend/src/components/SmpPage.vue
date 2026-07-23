@@ -55,9 +55,16 @@ async function refreshStatus() {
   try {
     serverStatus.value = await fetchSMPStatus()
   } catch {
-    if (serverStatus.value) {
-      serverStatus.value = { ...serverStatus.value, online: false, fetchedAt: new Date().toISOString() }
+    serverStatus.value = {
+      online: false,
+      playersOnline: 0,
+      playersMax: 0,
+      version: '—',
+      serverIp: SERVER_IP,
+      fetchedAt: new Date().toISOString(),
     }
+  } finally {
+    loading.value = false
   }
 }
 
