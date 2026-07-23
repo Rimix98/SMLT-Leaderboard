@@ -19,6 +19,7 @@ const loading = ref(true)
 const toastVisible = ref(false)
 const toastMessage = ref('')
 let toastTimer: ReturnType<typeof setTimeout> | null = null
+let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 function showToast(message: string) {
   toastMessage.value = message
@@ -50,21 +51,19 @@ async function copyIp() {
 
 let revealObserver: IntersectionObserver | null = null
 
-onMounted(async () => {
+async function refreshStatus() {
   try {
     serverStatus.value = await fetchSMPStatus()
   } catch {
-    serverStatus.value = {
-      online: false,
-      playersMax: 0,
-      playersOnline: 0,
-      version: '1.21.11',
-      serverIp: SERVER_IP,
-      fetchedAt: new Date().toISOString(),
+    if (serverStatus.value) {
+      serverStatus.value = { ...serverStatus.value, online: false, fetchedAt: new Date().toISOString() }
     }
-  } finally {
-    loading.value = false
   }
+}
+
+onMounted(async () => {
+  await refreshStatus()
+  refreshTimer = setInterval(refreshStatus, 45_000)
 
   const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const items = document.querySelectorAll('.smp-reveal')
@@ -86,6 +85,7 @@ onMounted(async () => {
 onUnmounted(() => {
   revealObserver?.disconnect()
   if (toastTimer) clearTimeout(toastTimer)
+  if (refreshTimer) clearInterval(refreshTimer)
 })
 </script>
 

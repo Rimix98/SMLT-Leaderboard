@@ -454,8 +454,8 @@ curl -X POST https://smltdemonlist.vercel.app/api/login \
 
 | Роль | Контакт |
 |------|---------|
-| Admin / сообщество | Discord **@.samoletik** · Telegram **@samoletik** |
-| Backend & security | Discord **@rimix.98** |
+| Admin & сообщество | Discord **@.samoletik** · Telegram **@samoletik** |
+| Backend & security | Discord **@rimix.98** · Telegtam **@Rimix980** |
 
 ---
 
