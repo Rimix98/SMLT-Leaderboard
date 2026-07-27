@@ -189,7 +189,7 @@ func isHoneypot(path string) bool {
 		return true
 	}
 	for p := range honeypotPaths {
-		if strings.HasPrefix(cleaned, p) {
+		if cleaned == p || cleaned == p+"/" {
 			return true
 		}
 	}

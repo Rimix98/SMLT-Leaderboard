@@ -165,6 +165,7 @@ func handleAdminKnock(w http.ResponseWriter, r *http.Request) {
 	}
 	ip := getRealIP(r)
 	adminKnockStore.set(ip, key, adminKnockTTL)
+	securityEvent(r.Context(), "admin_knock_issued", ip, "/api/knock-knock-admin", nil)
 	slog.Info("admin key issued", "ttl", adminKnockTTL)
 	writeJSON(w, map[string]interface{}{
 		"key":        key,

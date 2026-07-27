@@ -25,7 +25,7 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 
 	if cached, ok := cacheGet("staff"); ok {
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=120")
+		w.Header().Set("Cache-Control", "private, max-age=60, stale-while-revalidate=120")
 		w.Header().Set("X-Cache", "HIT")
 		w.Write(cached)
 		return
@@ -55,7 +55,7 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 	body, _ := json.Marshal(data.Roles)
 	cacheSet("staff", body, 2*time.Minute)
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=120")
+	w.Header().Set("Cache-Control", "private, max-age=60, stale-while-revalidate=120")
 	w.Header().Set("X-Cache", "MISS")
 	w.Write(body)
 }

@@ -4,16 +4,16 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net/http"
-	"runtime/debug"
 	"strings"
 )
 
 func Handler(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			slog.Error("panic recovered", "error", rec, "stack", string(debug.Stack()))
+			slog.Error("panic recovered", "error", fmt.Sprintf("%v", rec))
 			sendError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 		}
 	}()

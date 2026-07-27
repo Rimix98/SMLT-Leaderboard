@@ -26,8 +26,11 @@ import (
 func lookupJWTSecret(kid string) ([]byte, error) {
 	jwtSecretsMu.RLock()
 	defer jwtSecretsMu.RUnlock()
-	if kid == "" && len(jwtSecrets) > 0 {
-		return jwtSecrets[0].Secret, nil
+	if len(jwtSecrets) == 0 {
+		return nil, errors.New("no jwt secrets configured")
+	}
+	if kid == "" {
+		return nil, errors.New("empty kid not allowed")
 	}
 	for _, k := range jwtSecrets {
 		if k.ID == kid {
@@ -88,6 +91,12 @@ func verifyTokenVersion(ctx context.Context, claims *jwt.MapClaims) error {
 }
 
 func rotateToken(w http.ResponseWriter, r *http.Request, claims *jwt.MapClaims) {
+	iat, _ := (*claims)["iat"].(float64)
+	issuedAt := time.Unix(int64(iat), 0)
+	if time.Since(issuedAt) < 30*time.Minute {
+		return
+	}
+
 	newJTI, err := generateJTI()
 	if err != nil {
 		return

@@ -147,14 +147,14 @@ func (u *upstashLimiter) getOrCreate(ctx context.Context, key string, _ int, win
 		return -1, 1, nil
 	}
 
-	count, err = u.incrAndTTL(ctx, key)
+	count, err = u.incrAndTTL(ctx, key, windowSec)
 	if err != nil {
 		return 0, 0, err
 	}
 	return 0, count, nil
 }
 
-func (u *upstashLimiter) incrAndTTL(ctx context.Context, key string) (int, error) {
+func (u *upstashLimiter) incrAndTTL(ctx context.Context, key string, windowSec int) (int, error) {
 	cmd := url.PathEscape(fmt.Sprintf("INCR %s", key))
 	reqURL := fmt.Sprintf("%s/%s", u.url, cmd)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
@@ -187,6 +187,18 @@ func (u *upstashLimiter) incrAndTTL(ctx context.Context, key string) (int, error
 		}
 		return getCount, nil
 	}
+
+	expireCmd := url.PathEscape(fmt.Sprintf("EXPIRE %s %d", key, windowSec))
+	expireURL := fmt.Sprintf("%s/%s", u.url, expireCmd)
+	expireReq, err := http.NewRequestWithContext(ctx, http.MethodGet, expireURL, nil)
+	if err == nil {
+		expireReq.SetBasicAuth("default", u.token)
+		expireResp, err := u.http.Do(expireReq)
+		if err == nil {
+			expireResp.Body.Close()
+		}
+	}
+
 	return count, nil
 }
 

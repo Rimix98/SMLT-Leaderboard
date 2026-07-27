@@ -150,8 +150,15 @@ func validateDemonlistURL(rawURL string) error {
 	if parsed.Scheme != "https" {
 		return errors.New("only https allowed")
 	}
-	if parsed.Host != "api.demonlist.org" {
+	if parsed.User != nil {
+		return errors.New("userinfo not allowed")
+	}
+	host := parsed.Hostname()
+	if host != "api.demonlist.org" {
 		return errors.New("only api.demonlist.org allowed")
+	}
+	if parsed.Port() != "" && parsed.Port() != "443" {
+		return errors.New("only default port allowed")
 	}
 	return nil
 }

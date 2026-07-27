@@ -1203,8 +1203,8 @@ func TestLookupJWTSecret_EmptyID(t *testing.T) {
 	jwtSecretsMu.Unlock()
 
 	secret, err := lookupJWTSecret("")
-	if err != nil || string(secret) != "primary" {
-		t.Errorf("lookupJWTSecret('') = %q, %v (should return primary)", secret, err)
+	if err == nil {
+		t.Errorf("lookupJWTSecret('') should reject empty kid, got %q", secret)
 	}
 }
 

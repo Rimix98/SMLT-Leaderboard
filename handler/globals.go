@@ -27,8 +27,20 @@ func init() {
 		allowedOrigins = make(map[string]bool)
 		for _, o := range strings.Split(env, ",") {
 			o = strings.TrimSpace(o)
+			if o == "*" {
+				slog.Error("ALLOWED_ORIGINS must not contain wildcard '*', ignoring")
+				continue
+			}
 			if o != "" {
 				allowedOrigins[o] = true
+			}
+		}
+		if len(allowedOrigins) == 0 {
+			slog.Warn("ALLOWED_ORIGINS produced empty list, using defaults")
+			allowedOrigins = map[string]bool{
+				"https://smltdemonlist.vercel.app": true,
+				"https://smlt-demonlist.ru":        true,
+				"https://www.smlt-demonlist.ru":    true,
 			}
 		}
 	} else {
