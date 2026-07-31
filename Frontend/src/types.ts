@@ -1,56 +1,3 @@
-export interface StaffPlayer {
-  nickname: string
-  discord?: string
-}
-
-export interface StaffRole {
-  name: string
-  color: string
-  players: StaffPlayer[]
-  tiersEnabled?: boolean
-}
-
-export interface StaffTierEntry {
-  nickname: string
-  tier: TierKey
-}
-
-export type TierKey = 'priority' | 'base' | 'reserve' | 'na'
-
-export interface TierConfig {
-  label: string
-  color: string
-}
-
-export interface ParticipantPart {
-  gp: string[]
-  deco: string[]
-  transition: string
-}
-
-export interface ParticipantConfig {
-  host: string
-  parts: ParticipantPart[]
-  endScreen: string[]
-  playtest: string[]
-  verifier: string[]
-  merger: string[]
-  merger2: string[]
-  showcaser: string
-  fxMode: boolean
-  soloGp: string | null
-}
-
-export interface Project {
-  name: string
-  videoId: string
-  id: string
-  comment: string
-  status: string
-  verifier: string
-  participants: string[]
-}
-
 export interface LevelRecord {
   status: string
   percent?: number
@@ -92,11 +39,7 @@ export interface Store {
   theme: string
   players: LeaderboardPlayer[]
   allPlayers: LeaderboardPlayer[]
-  projects: Project[]
   levels: LevelsState
-  staffRoles: StaffRole[]
-  staffTiers: StaffTierEntry[]
-  selectedRoleColor: string
 }
 
 export interface SMPStatus {
@@ -107,3 +50,5 @@ export interface SMPStatus {
   serverIp: string
   fetchedAt: string
 }
+
+export type LocaleCode = 'ru' | 'en'

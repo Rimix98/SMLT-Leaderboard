@@ -12,33 +12,6 @@ import (
 	"cloud.google.com/go/firestore"
 )
 
-type StaffPlayer struct {
-	Nickname string `json:"nickname" firestore:"nickname"`
-	Discord  string `json:"discord" firestore:"discord"`
-}
-
-type StaffRole struct {
-	Name         string        `json:"name" firestore:"name"`
-	Color        string        `json:"color" firestore:"color"`
-	Players      []StaffPlayer `json:"players" firestore:"players"`
-	TiersEnabled bool          `json:"tiersEnabled" firestore:"tiersEnabled"`
-}
-
-type StaffTierEntry struct {
-	Nickname string `json:"nickname" firestore:"nickname"`
-	Tier     string `json:"tier" firestore:"tier"`
-}
-
-type Project struct {
-	Name         string   `json:"name" firestore:"name"`
-	VideoID      string   `json:"videoId" firestore:"videoId"`
-	ID           string   `json:"id" firestore:"id"`
-	Comment      string   `json:"comment" firestore:"comment"`
-	Status       string   `json:"status" firestore:"status"`
-	Verifier     string   `json:"verifier" firestore:"verifier"`
-	Participants []string `json:"participants" firestore:"participants"`
-}
-
 type Player struct {
 	Name string `json:"name" firestore:"name"`
 }
@@ -143,6 +116,9 @@ type responseCache struct {
 type rateLimiter interface {
 	allow(ctx context.Context, key string, max int, window time.Duration) (bool, error)
 	remaining(ctx context.Context, key string, max int, window time.Duration) int
+	// check выполняет решение «разрешить/нет» и подсчёт remaining за одну операцию,
+	// чтобы избежать двойного INCR в распределённых (Upstash) бэкендах.
+	check(ctx context.Context, key string, max int, window time.Duration) (allowed bool, remaining int, err error)
 }
 
 type memoryLimiter struct {
@@ -213,17 +189,9 @@ type IPBan struct {
 	BannedBy  string    `firestore:"bannedBy" json:"bannedBy"`
 }
 
-type staffData struct {
-	Roles []StaffRole `json:"roles" firestore:"roles"`
-}
-
 var (
-	reProjectID    = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,50}$`)
 	reAlphanumeric = regexp.MustCompile(`^[\p{L}0-9 _.\-]+$`)
 	reDiscord      = regexp.MustCompile(`^[a-zA-Z0-9 _.\-#]+$`)
-	reVideoID      = regexp.MustCompile(`^[a-zA-Z0-9_-]{11}$`)
-	reRoleName     = regexp.MustCompile(`^[\p{L}0-9 _.\-]+$`)
-	reHexColor     = regexp.MustCompile(`^#?[0-9a-fA-F]{6}$`)
 	reCaptchaID    = regexp.MustCompile(`^[a-zA-Z0-9]{8,64}$`)
 )
 
@@ -237,3 +205,8 @@ var defaultPlayerNames = []string{
 }
 
 var errRateLimitExceeded = errors.New("rate limit exceeded")
+
+// Сентинели для доменных ошибок, возвращаемых из Firestore-транзакций.
+var (
+	errPlayerNotFound = errors.New("player not found")
+)

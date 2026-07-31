@@ -42,6 +42,9 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	origin := r.Header.Get("Origin")
 	if origin != "" {
+		// Vary: Origin обязателен при отражении Allow-Origin с credentials,
+		// иначе промежуточный кэш может отдать закэшированный credentialed-ответ другому origin.
+		w.Header().Add("Vary", "Origin")
 		if allowedOrigins[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
@@ -68,18 +71,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		"/api/leaderboard":        rateLimitMiddleware(30)(handleLeaderboard),
 		"/api/leaderboard/check":  rateLimitMiddleware(30)(handleLeaderboardCheck),
 		"/api/history/snapshot":   rateLimitMiddleware(5)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveHistorySnapshot)))),
-		"/api/staff":              rateLimitMiddleware(60)(handleGetStaff),
 		"/api/security/dashboard": rateLimitMiddleware(10)(authMiddleware(handleSecurityDashboard)),
 		"/api/knock-knock-admin":  rateLimitMiddleware(10)(authMiddleware(csrfMiddleware(handleAdminKnock))),
-		"/api/staff/add":          rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffAdd)))),
-		"/api/staff/role":         rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRole)))),
-		"/api/staff/remove":       rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleStaffRemove)))),
-		"/api/staff/reorder":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleReorderStaffRoles)))),
-		"/api/staff/tiers":        rateLimitMiddleware(60)(handleGetStaffTiers),
-		"/api/staff/tier":         rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSetStaffTier)))),
-		"/api/staff/save":         rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveStaff)))),
-		"/api/projects":           rateLimitMiddleware(60)(handleGetProjects),
-		"/api/projects/save":      rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSaveProjects)))),
 		"/api/players":            rateLimitMiddleware(60)(handleGetPlayers),
 		"/api/players/save":       rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleSavePlayers)))),
 		"/api/players/delete":     rateLimitMiddleware(30)(knockMiddleware(authMiddleware(csrfMiddleware(handleDeletePlayer)))),

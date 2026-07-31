@@ -1,0 +1,117 @@
+{
+  "nav": {
+    "home": "Главная",
+    "leaderboard": "Лидерборд",
+    "smp": "SMP"
+  },
+  "theme": {
+    "toggle": "Сменить тему",
+    "dark": "Тёмная",
+    "light": "Светлая",
+    "gray": "Серая"
+  },
+  "host": {
+    "loginTitle": "Войти как хост",
+    "logout": "Выйти",
+    "login": "Войти",
+    "label": "Хост",
+    "passwordLabel": "Введите пароль",
+    "passwordPlaceholder": "Пароль",
+    "captchaImage": "Капча",
+    "captchaRefresh": "Обновить капчу",
+    "captchaPlaceholder": "Код с картинки"
+  },
+  "home": {
+    "heroTitle": "Что такое SMLT?",
+    "heroIntro1": "SMLT — это дискорд сервер, где происходят разные ивенты: коллабы, турниры, прохождения уровней по частям и даже игры в майнкрафте.",
+    "heroIntro2": "Все участники сервера — участники SMLT, независимо от скилла.",
+    "heroBody": "Идея нашего сервера — {highlight}.",
+    "highlight": "удовольствие",
+    "leaderboardCardTitle": "Лидерборд",
+    "leaderboardCardDesc": "Лучшие слееры SMLT",
+    "adminLabel": "Админ",
+    "adPlaceholder": "Здесь могла быть ваша реклама",
+    "discordServerLabel": "Discord сервер",
+    "securityLabel": "За безопасность и бэкенд отвечал"
+  },
+  "leaderboard": {
+    "title": "Лидерборд SMLT",
+    "subtitle": "Лидерборд и топ уровней",
+    "loading": "Загрузка лидерборда...",
+    "error": "Не удалось загрузить лидерборд",
+    "searchPlaceholder": "Поиск по нику...",
+    "searchLevelPlaceholder": "Поиск по уровню...",
+    "columnPlayer": "Игрок",
+    "columnPoints": "Очки",
+    "columnRank": "Позиция",
+    "columnVictors": "Викторов",
+    "expandedShow": "Показать ещё",
+    "expandedHide": "Свернуть",
+    "noPlayers": "Игроки не найдены",
+    "noPlayersHint": "Попробуйте изменить поисковый запрос",
+    "noLevels": "Нет данных об уровнях",
+    "noLevelsHint": "Уровни появятся после добавления записей",
+    "noCountryData": "Нет данных",
+    "statsPlayers": "Игроков",
+    "statsAverage": "Среднее очков",
+    "statsLevels": "Пройдено уровней",
+    "statsTop": "Топ уровень",
+    "statsTitle": "Статистика",
+    "countryStats": "По странам",
+    "tabPlayers": "Топ игроков",
+    "tabLevels": "Топ уровней",
+    "adminPanelTitle": "Управление игроками",
+    "levelsCount": "уровней",
+    "playersTotal": "{count} игроков",
+    "unknown": "Неизвестно"
+  },
+  "profile": {
+    "titleFallback": "Профиль",
+    "score": "Очки",
+    "globalTop": "Глобальный топ",
+    "levelsCount": "Уровней",
+    "country": "Страна:",
+    "countryUnknown": "Не указана",
+    "recordsTitle": "Пройденные уровни ({count})",
+    "recordUnknownLevel": "Неизвестно",
+    "noRecords": "Нет записей"
+  },
+  "country": {
+    "unknown": "Неизвестно",
+    "noData": "Нет данных"
+  },
+  "modal": {
+    "levelTitleFallback": "Уровень",
+    "noVictors": "Нет викторов"
+  },
+  "addPlayer": {
+    "nickLabel": "Ник игрока:",
+    "cancel": "Отмена",
+    "submit": "Добавить игрока",
+    "submitting": "Добавление...",
+    "hostOnlyAdd": "Только хост может добавлять игроков",
+    "hostOnlyDelete": "Только хост может удалять игроков"
+  },
+  "addPlayerInline": {
+    "label": "Ник или айди в GDL:",
+    "placeholder": "Например: samoletik",
+    "cancel": "Отмена",
+    "submit": "Добавить",
+    "submitting": "Добавление..."
+  },
+  "common": {
+    "yes": "Да",
+    "no": "Нет",
+    "cancel": "Отмена",
+    "save": "Сохранить",
+    "loading": "Загрузка...",
+    "error": "Ошибка",
+    "retry": "Повторить",
+    "info": "Информация"
+  },
+  "lang": {
+    "ru": "Русский",
+    "en": "English",
+    "switchLabel": "Язык"
+  }
+}

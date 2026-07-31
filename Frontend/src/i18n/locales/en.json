@@ -1,0 +1,117 @@
+{
+  "nav": {
+    "home": "Home",
+    "leaderboard": "Leaderboard",
+    "smp": "SMP"
+  },
+  "theme": {
+    "toggle": "Switch theme",
+    "dark": "Dark",
+    "light": "Light",
+    "gray": "Gray"
+  },
+  "host": {
+    "loginTitle": "Sign in as host",
+    "logout": "Log out",
+    "login": "Sign in",
+    "label": "Host",
+    "passwordLabel": "Enter password",
+    "passwordPlaceholder": "Password",
+    "captchaImage": "Captcha",
+    "captchaRefresh": "Refresh captcha",
+    "captchaPlaceholder": "Code from image"
+  },
+  "home": {
+    "heroTitle": "What is SMLT?",
+    "heroIntro1": "SMLT is a Discord server where we host events like collabs, tournaments, per-part level runs, and even Minecraft sessions.",
+    "heroIntro2": "Everyone on the server is part of SMLT, regardless of skill.",
+    "heroBody": "Our server's idea is {highlight}.",
+    "highlight": "fun",
+    "leaderboardCardTitle": "Leaderboard",
+    "leaderboardCardDesc": "Best SMLT slayers",
+    "adminLabel": "Admin",
+    "adPlaceholder": "Your ad could be here",
+    "discordServerLabel": "Discord server",
+    "securityLabel": "Security & backend"
+  },
+  "leaderboard": {
+    "title": "SMLT Leaderboard",
+    "subtitle": "Leaderboard and top levels",
+    "loading": "Loading leaderboard...",
+    "error": "Failed to load leaderboard",
+    "searchPlaceholder": "Search by name...",
+    "searchLevelPlaceholder": "Search by level...",
+    "columnPlayer": "Player",
+    "columnPoints": "Points",
+    "columnRank": "Rank",
+    "columnVictors": "Victors",
+    "expandedShow": "Show more",
+    "expandedHide": "Collapse",
+    "noPlayers": "No players found",
+    "noPlayersHint": "Try changing the search query",
+    "noLevels": "No level data",
+    "noLevelsHint": "Levels will appear once records are added",
+    "noCountryData": "No data",
+    "statsPlayers": "Players",
+    "statsAverage": "Average points",
+    "statsLevels": "Levels cleared",
+    "statsTop": "Top level",
+    "statsTitle": "Stats",
+    "countryStats": "By country",
+    "tabPlayers": "Top players",
+    "tabLevels": "Top levels",
+    "adminPanelTitle": "Player management",
+    "levelsCount": "levels",
+    "playersTotal": "{count} players",
+    "unknown": "Unknown"
+  },
+  "profile": {
+    "titleFallback": "Profile",
+    "score": "Points",
+    "globalTop": "Global rank",
+    "levelsCount": "Levels",
+    "country": "Country:",
+    "countryUnknown": "Not specified",
+    "recordsTitle": "Cleared levels ({count})",
+    "recordUnknownLevel": "Unknown",
+    "noRecords": "No records"
+  },
+  "country": {
+    "unknown": "Unknown",
+    "noData": "No data"
+  },
+  "modal": {
+    "levelTitleFallback": "Level",
+    "noVictors": "No victors"
+  },
+  "addPlayer": {
+    "nickLabel": "Player nickname:",
+    "cancel": "Cancel",
+    "submit": "Add player",
+    "submitting": "Adding...",
+    "hostOnlyAdd": "Only host can add players",
+    "hostOnlyDelete": "Only host can delete players"
+  },
+  "addPlayerInline": {
+    "label": "GDL nickname or ID:",
+    "placeholder": "e.g.: samoletik",
+    "cancel": "Cancel",
+    "submit": "Add",
+    "submitting": "Adding..."
+  },
+  "common": {
+    "yes": "Yes",
+    "no": "No",
+    "cancel": "Cancel",
+    "save": "Save",
+    "loading": "Loading...",
+    "error": "Error",
+    "retry": "Retry",
+    "info": "About"
+  },
+  "lang": {
+    "ru": "Russian",
+    "en": "English",
+    "switchLabel": "Language"
+  }
+}

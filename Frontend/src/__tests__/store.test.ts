@@ -6,19 +6,13 @@ describe('store', () => {
     store.isHost = false
     store.players = []
     store.allPlayers = []
-    store.projects = []
     store.levels = { all: null, levelData: null, expanded: false, filter: '', _body: null }
-    store.staffRoles = []
-    store.staffTiers = []
   })
 
   it('has correct default values', () => {
     expect(store.isHost).toBe(false)
     expect(store.players).toEqual([])
     expect(store.allPlayers).toEqual([])
-    expect(store.projects).toEqual([])
-    expect(store.staffRoles).toEqual([])
-    expect(store.staffTiers).toEqual([])
   })
 
   it('defaults theme to dark', () => {

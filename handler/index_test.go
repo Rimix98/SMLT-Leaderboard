@@ -201,7 +201,6 @@ func TestIsBlockedPath(t *testing.T) {
 func TestIsBlockedPath_Allowed(t *testing.T) {
 	allowed := []string{
 		"/api/leaderboard",
-		"/api/projects",
 		"/api/login",
 		"/index.html",
 		"/leaderboard.html",
@@ -261,98 +260,6 @@ func TestIpToDocID(t *testing.T) {
 				t.Errorf("ipToDocID(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
-	}
-}
-
-// ──────────────────────────────────────────────
-// Validation functions
-// ──────────────────────────────────────────────
-
-func TestValidateProjectID(t *testing.T) {
-	valid := []string{"my-project", "test_123", "a", "A-B_C-d-50"}
-	for _, id := range valid {
-		if err := validateProjectID(id); err != nil {
-			t.Errorf("validateProjectID(%q) should be valid: %v", id, err)
-		}
-	}
-	invalid := []string{"", "has space", "special!@#", "too$long", "../traversal"}
-	for _, id := range invalid {
-		if err := validateProjectID(id); err == nil {
-			t.Errorf("validateProjectID(%q) should be invalid", id)
-		}
-	}
-}
-
-func TestValidateProjectID_MaxLength(t *testing.T) {
-	if err := validateProjectID("a"); err != nil {
-		t.Errorf("single char should be valid: %v", err)
-	}
-	long := ""
-	for i := 0; i < 51; i++ {
-		long += "a"
-	}
-	if err := validateProjectID(long); err == nil {
-		t.Error("51 chars should be invalid")
-	}
-}
-
-func TestValidateNickname(t *testing.T) {
-	if err := validateNickname("Player1"); err != nil {
-		t.Errorf("valid nickname should pass: %v", err)
-	}
-	if err := validateNickname(""); err == nil {
-		t.Error("empty nickname should fail")
-	}
-	if err := validateNickname("a"); err != nil {
-		t.Errorf("single char nickname should pass: %v", err)
-	}
-	long := ""
-	for i := 0; i < 33; i++ {
-		long += "a"
-	}
-	if err := validateNickname(long); err == nil {
-		t.Error("33 char nickname should fail")
-	}
-}
-
-func TestValidateDiscord(t *testing.T) {
-	if err := validateDiscord(""); err != nil {
-		t.Errorf("empty discord should be valid: %v", err)
-	}
-	if err := validateDiscord("user#1234"); err != nil {
-		t.Errorf("valid discord should pass: %v", err)
-	}
-	if err := validateDiscord("User Name#5678"); err != nil {
-		t.Errorf("valid discord with spaces should pass: %v", err)
-	}
-	long := ""
-	for i := 0; i < 65; i++ {
-		long += "a"
-	}
-	if err := validateDiscord(long); err == nil {
-		t.Error("65 char discord should fail")
-	}
-	if err := validateDiscord("user<script>"); err == nil {
-		t.Error("discord with angle brackets should fail")
-	}
-}
-
-func TestValidateRoleName(t *testing.T) {
-	if err := validateRoleName("Admin"); err != nil {
-		t.Errorf("valid role name should pass: %v", err)
-	}
-	if err := validateRoleName("A"); err == nil {
-		t.Error("single char role name should fail")
-	}
-	long := ""
-	for i := 0; i < 33; i++ {
-		long += "a"
-	}
-	if err := validateRoleName(long); err == nil {
-		t.Error("33 char role name should fail")
-	}
-	if err := validateRoleName("admin<script>"); err == nil {
-		t.Error("role name with angle brackets should fail")
 	}
 }
 
@@ -428,7 +335,7 @@ func TestRequestPath(t *testing.T) {
 		{"normal path", "/api/leaderboard", "/api/leaderboard", "/api/leaderboard"},
 		{"api root", "/api", "/api?foo=bar", "/api?foo=bar"},
 		{"api trailing slash", "/api/", "/api/?foo=bar", "/api/?foo=bar"},
-		{"no trailing slash", "/api/projects", "/api/projects", "/api/projects"},
+		{"no trailing slash", "/api/players", "/api/players", "/api/players"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -466,7 +373,6 @@ func TestIsHoneypot(t *testing.T) {
 func TestIsHoneypot_Allowed(t *testing.T) {
 	allowed := []string{
 		"/api/leaderboard",
-		"/api/projects",
 		"/api/login",
 		"/index.html",
 		"/",
@@ -506,24 +412,6 @@ func TestRegexPatterns(t *testing.T) {
 		invalid []string
 	}{
 		{
-			name:    "reProjectID",
-			re:      reProjectID,
-			valid:   []string{"a", "my-project", "test_123", "ABC-DEF-1234567890"},
-			invalid: []string{"", "has space", "special!@#", "a]"},
-		},
-		{
-			name:    "reVideoID",
-			re:      reVideoID,
-			valid:   []string{"dQw4w9WgXcQ", "abc123DEFG_"},
-			invalid: []string{"", "short", "too-long-video-id-123456", "special!"},
-		},
-		{
-			name:    "reHexColor",
-			re:      reHexColor,
-			valid:   []string{"#ff0000", "ff0000", "00ff00", "#00FF00"},
-			invalid: []string{"", "red", "#fff", "#gggggg", "ff00"},
-		},
-		{
 			name:    "reCaptchaID",
 			re:      reCaptchaID,
 			valid:   []string{"abc12345", "a1b2c3d4e5f6g7h8"},
@@ -540,12 +428,6 @@ func TestRegexPatterns(t *testing.T) {
 			re:      reDiscord,
 			valid:   []string{"user#1234", "User Name", "test.discrim"},
 			invalid: []string{"user<script>", "user@name"},
-		},
-		{
-			name:    "reRoleName",
-			re:      reRoleName,
-			valid:   []string{"Admin", "Team Leader", "test-role", "A"},
-			invalid: []string{"admin<script>", ""},
 		},
 	}
 	for _, tt := range tests {
@@ -671,42 +553,6 @@ func TestHandler_NotFound(t *testing.T) {
 	Handler(w, r)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("unknown route should return 404, got %d", w.Code)
-	}
-}
-
-// ──────────────────────────────────────────────
-// normalizeColor
-// ──────────────────────────────────────────────
-
-func TestNormalizeColor(t *testing.T) {
-	tests := []struct {
-		name      string
-		input     string
-		wantColor string
-		wantErr   bool
-	}{
-		{"empty defaults to blue", "", "#3b82f6", false},
-		{"valid with hash", "#ff0000", "#ff0000", false},
-		{"valid without hash", "ff0000", "#ff0000", false},
-		{"valid uppercase", "#00FF00", "#00FF00", false},
-		{"valid mixed case", "Aa1b2C", "#Aa1b2C", false},
-		{"invalid hex", "red", "", true},
-		{"too short", "#fff", "", true},
-		{"too long", "#ffffff00", "", true},
-		{"special chars", "#gggggg", "", true},
-		{"spaces", "#ff 00 00", "", true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := normalizeColor(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("normalizeColor(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
-				return
-			}
-			if got != tt.wantColor {
-				t.Errorf("normalizeColor(%q) = %q, want %q", tt.input, got, tt.wantColor)
-			}
-		})
 	}
 }
 
@@ -884,55 +730,3 @@ func TestLeaderboard_TimeoutDoesNotHang(t *testing.T) {
 // ──────────────────────────────────────────────
 // Validate helpers
 // ──────────────────────────────────────────────
-
-func TestValidateProjectID_SpecialChars(t *testing.T) {
-	invalid := []string{
-		"../traversal",
-		"../../etc/passwd",
-		"project/../../../secret",
-		"project\x00null",
-	}
-	for _, id := range invalid {
-		if err := validateProjectID(id); err == nil {
-			t.Errorf("validateProjectID(%q) should be invalid", id)
-		}
-	}
-}
-
-func TestNormalizeColor_Empty(t *testing.T) {
-	c, err := normalizeColor("")
-	if err != nil {
-		t.Errorf("empty color should default to blue: %v", err)
-	}
-	if c != "#3b82f6" {
-		t.Errorf("empty color default = %q, want #3b82f6", c)
-	}
-}
-
-func TestValidateRoleName_SpecialChars(t *testing.T) {
-	invalid := []string{
-		"<script>",
-		"role<script>",
-		"admin\"injection",
-		"a",  // too short
-		"",   // empty
-	}
-	for _, name := range invalid {
-		if err := validateRoleName(name); err == nil {
-			t.Errorf("validateRoleName(%q) should be invalid", name)
-		}
-	}
-}
-
-func TestValidateNickname_Boundary(t *testing.T) {
-	// Exactly 32 chars should be valid
-	valid32 := "abcdefghijklmnopqrstuvwxyz123456"
-	if err := validateNickname(valid32); err != nil {
-		t.Errorf("32-char nickname should be valid: %v", err)
-	}
-	// 33 chars should be invalid
-	invalid33 := "abcdefghijklmnopqrstuvwxyz1234567"
-	if err := validateNickname(invalid33); err == nil {
-		t.Error("33-char nickname should be invalid")
-	}
-}

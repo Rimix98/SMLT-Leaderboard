@@ -434,37 +434,6 @@ func TestHandler_AllPublicEndpoints(t *testing.T) {
 
 	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
 
-	// Staff tiers requires Firestore (returns 503 without it)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/api/staff/tiers", nil)
-	r.Header.Set("User-Agent", ua)
-	r.RemoteAddr = "10.0.0.1:1234"
-	Handler(w, r)
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("GET /api/staff/tiers without Firestore: got %d, want %d", w.Code, http.StatusServiceUnavailable)
-	}
-
-	// Endpoints requiring Firestore return 503
- firestoreEndpoints := []struct {
-		method string
-		path   string
-	}{
-		{http.MethodGet, "/api/projects"},
-		{http.MethodGet, "/api/staff"},
-	}
-	for _, ep := range firestoreEndpoints {
-		t.Run(ep.method+" "+ep.path+"_no_firestore", func(t *testing.T) {
-			w := httptest.NewRecorder()
-			r := httptest.NewRequest(ep.method, ep.path, nil)
-			r.Header.Set("User-Agent", ua)
-			r.RemoteAddr = "10.0.0.2:1234"
-			Handler(w, r)
-			if w.Code != http.StatusServiceUnavailable {
-				t.Errorf("%s %s without Firestore: got %d, want %d", ep.method, ep.path, w.Code, http.StatusServiceUnavailable)
-			}
-		})
-	}
-
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -555,13 +524,6 @@ func TestHandler_UnauthorizedEndpoints(t *testing.T) {
 	}{
 		{"/api/players/save", http.MethodPost},
 		{"/api/players/delete", http.MethodPost},
-		{"/api/projects/save", http.MethodPost},
-		{"/api/staff/save", http.MethodPost},
-		{"/api/staff/add", http.MethodPost},
-		{"/api/staff/remove", http.MethodPost},
-		{"/api/staff/role", http.MethodPost},
-		{"/api/staff/reorder", http.MethodPost},
-		{"/api/staff/tier", http.MethodPost},
 	}
 
 	for _, ep := range knockEndpoints {
@@ -839,7 +801,7 @@ func TestKnockMiddleware_NoKey(t *testing.T) {
 	handler := knockMiddleware(inner)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPost, "/api/staff/save", nil)
+	r := httptest.NewRequest(http.MethodPost, "/api/players/save", nil)
 	r.Header.Set("User-Agent", ua)
 	r.RemoteAddr = "20.0.0.1:1234"
 	handler(w, r)
@@ -862,7 +824,7 @@ func TestKnockMiddleware_WrongKey(t *testing.T) {
 	handler := knockMiddleware(inner)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPost, "/api/staff/save", nil)
+	r := httptest.NewRequest(http.MethodPost, "/api/players/save", nil)
 	r.Header.Set("User-Agent", ua)
 	r.Header.Set("X-Admin-Path-Key", "wrong-key")
 	r.RemoteAddr = "21.0.0.1:1234"
@@ -886,7 +848,7 @@ func TestKnockMiddleware_CorrectKey(t *testing.T) {
 	handler := knockMiddleware(inner)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPost, "/api/staff/save", nil)
+	r := httptest.NewRequest(http.MethodPost, "/api/players/save", nil)
 	r.Header.Set("User-Agent", ua)
 	r.Header.Set("X-Admin-Path-Key", "correct-key")
 	r.RemoteAddr = "22.0.0.1:1234"
@@ -1110,11 +1072,8 @@ func TestIsBlockedPath_NotInBlockList(t *testing.T) {
 func TestIsBlockedPath_NormalPaths(t *testing.T) {
 	normal := []string{
 		"/api/leaderboard",
-		"/api/projects",
-		"/api/staff",
 		"/index.html",
 		"/leaderboard.html",
-		"/projects.html",
 	}
 	for _, p := range normal {
 		if isBlockedPath(p) {

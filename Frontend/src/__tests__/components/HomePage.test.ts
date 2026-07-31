@@ -22,14 +22,12 @@ describe('HomePage', () => {
     const wrapper = shallowMount(HomePage)
     const html = wrapper.html()
     expect(html).toContain('Лидерборд')
-    expect(html).toContain('Проекты')
-    expect(html).toContain('Стафф')
   })
 
   it('contains nav-card links', () => {
     const wrapper = shallowMount(HomePage)
     const links = wrapper.findAll('.nav-card')
-    expect(links.length).toBeGreaterThanOrEqual(3)
+    expect(links.length).toBeGreaterThanOrEqual(1)
   })
 
   it('renders description text', () => {

@@ -3,8 +3,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: () => import('./components/HomePage.vue'), meta: { title: 'SMLT - Главная', bodyClass: 'home-page' } },
   { path: '/leaderboard', name: 'leaderboard', component: () => import('./components/LeaderboardPage.vue'), meta: { title: 'Лидерборд -- SMLT', bodyClass: '' } },
-  { path: '/projects', name: 'projects', component: () => import('./components/ProjectsPage.vue'), meta: { title: 'Проекты SMLT', bodyClass: '' } },
-  { path: '/staff', name: 'staff', component: () => import('./components/StaffPage.vue'), meta: { title: 'Стафф -- SMLT', bodyClass: '' } },
+
   { path: '/smp', name: 'smp', component: () => import('./components/SmpPage.vue'), meta: { title: 'SMLT SMP — Minecraft-сервер', bodyClass: '' } },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
